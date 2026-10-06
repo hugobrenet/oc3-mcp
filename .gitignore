@@ -1,0 +1,8 @@
+/oc3-mcp
+/bin/
+*.test
+*.out
+.env
+.env.*
+*.key
+*.pem
