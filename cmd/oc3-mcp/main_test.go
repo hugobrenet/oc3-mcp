@@ -86,7 +86,7 @@ func TestMCPInitializeAndListTools(t *testing.T) {
 			t.Fatalf("tool %s is not read-only", tool.Name)
 		}
 	}
-	if strings.Join(names, ",") != "get_node,list_nodes" {
+	if strings.Join(names, ",") != "get_node,get_service,list_nodes,list_services" {
 		t.Fatalf("tools = %v", names)
 	}
 }

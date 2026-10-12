@@ -10,7 +10,9 @@ import (
 // fakeCollector answers the GetJSON calls of the core with a fixed body and
 // records the requests.
 type fakeCollector struct {
-	body     string
+	body string
+	// bodies answers a path with its own body instead of body.
+	bodies   map[string]string
 	err      error
 	requests []fakeRequest
 }
@@ -24,6 +26,9 @@ func (f *fakeCollector) GetJSON(_ context.Context, path string, query url.Values
 	f.requests = append(f.requests, fakeRequest{path: path, query: query})
 	if f.err != nil {
 		return f.err
+	}
+	if body, ok := f.bodies[path]; ok {
+		return json.Unmarshal([]byte(body), output)
 	}
 	return json.Unmarshal([]byte(f.body), output)
 }
