@@ -259,31 +259,10 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 // GetNode reads one node by its exact name or node ID. A name held by
 // several nodes is refused with their IDs.
 func (s *Service) GetNode(ctx context.Context, node string) (NodeDetails, error) {
-	if node == "" || strings.ContainsAny(node, "/ ") {
-		return NodeDetails{}, fmt.Errorf("node must be one exact node name or node ID")
-	}
-	if err := validateFilterValue("node", node); err != nil {
+	n, err := s.lookupNode(ctx, node, nodeDetailProps)
+	if err != nil {
 		return NodeDetails{}, err
 	}
-	query := url.Values{}
-	query.Set("props", strings.Join(nodeDetailProps, ","))
-	query.Set("meta", "false")
-	var response collectorList[collectorNode]
-	if err := s.client.GetJSON(ctx, "/nodes/"+url.PathEscape(node), query, &response); err != nil {
-		return NodeDetails{}, fmt.Errorf("get node %s: %w", node, err)
-	}
-	switch len(response.Data) {
-	case 0:
-		return NodeDetails{}, fmt.Errorf("get node %s: not found in the collector", node)
-	case 1:
-	default:
-		ids := make([]string, 0, len(response.Data))
-		for _, item := range response.Data {
-			ids = append(ids, item.NodeID+" (cluster "+item.ClusterID+")")
-		}
-		return NodeDetails{}, fmt.Errorf("get node %s: the name matches %d nodes, pass one node ID: %s", node, len(ids), strings.Join(ids, ", "))
-	}
-	n := response.Data[0]
 	return NodeDetails{
 		Provenance: s.newProvenance(),
 		Node: NodeIdentity{
@@ -311,4 +290,34 @@ func (s *Service) GetNode(ctx context.Context, node string) (NodeDetails, error)
 			HardwareObsAlertDate: n.HWObsAlertDate, OSObsWarnDate: n.OSObsWarnDate, OSObsAlertDate: n.OSObsAlertDate,
 		},
 	}, nil
+}
+
+// lookupNode reads the props of one node by its exact name or node ID, and
+// refuses a name several nodes hold.
+func (s *Service) lookupNode(ctx context.Context, node string, props []string) (collectorNode, error) {
+	if node == "" || strings.ContainsAny(node, "/ ") {
+		return collectorNode{}, fmt.Errorf("node must be one exact node name or node ID")
+	}
+	if err := validateFilterValue("node", node); err != nil {
+		return collectorNode{}, err
+	}
+	query := url.Values{}
+	query.Set("props", strings.Join(props, ","))
+	query.Set("meta", "false")
+	var response collectorList[collectorNode]
+	if err := s.client.GetJSON(ctx, "/nodes/"+url.PathEscape(node), query, &response); err != nil {
+		return collectorNode{}, fmt.Errorf("get node %s: %w", node, err)
+	}
+	switch len(response.Data) {
+	case 0:
+		return collectorNode{}, fmt.Errorf("get node %s: not found in the collector", node)
+	case 1:
+		return response.Data[0], nil
+	default:
+		ids := make([]string, 0, len(response.Data))
+		for _, item := range response.Data {
+			ids = append(ids, item.NodeID+" (cluster "+item.ClusterID+")")
+		}
+		return collectorNode{}, fmt.Errorf("get node %s: the name matches %d nodes, pass one node ID: %s", node, len(ids), strings.Join(ids, ", "))
+	}
 }

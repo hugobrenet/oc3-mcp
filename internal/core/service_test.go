@@ -1,0 +1,131 @@
+package core
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestListServicesQueriesServices(t *testing.T) {
+	collector := &fakeCollector{body: `{"data":[
+		{"svc_id":"d550b789-b0fa-11f1-93de-b292af0c1f00","svcname":"ns1/svc/web","cluster_id":"82e47bfb-182f-413b-b5dd-9de8164095d5","svc_app":"WEB","svc_env":"PRD",
+		 "svc_topology":"failover","svc_availstatus":"warn","svc_status":"warn","svc_frozen":"unfrozen","svc_placement":"optimal","svc_provisioned":"True",
+		 "svc_nodes":"n1 n2","svc_status_updated":"2026-10-12 11:50:12"}],"meta":{"total":3}}`}
+	services, err := newTestService(collector).ListServices(t.Context(), ListServicesOptions{Name: "web", App: "WEB", AvailStatus: "warn", Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := collector.requests[0]
+	if request.path != "/services" || request.query.Get("orderby") != "svcname,svc_id" || request.query.Get("props") != strings.Join(serviceSummaryProps, ",") ||
+		strings.Join(request.query["filter"], "|") != "svcname:~web|svc_app:eq:WEB|svc_availstatus:eq:warn" {
+		t.Fatalf("request = %+v", request)
+	}
+	if services.Node != nil || services.Total != 3 || !services.Truncated || services.NextCursor == "" {
+		t.Fatalf("page = %+v", services)
+	}
+	got := services.Services[0]
+	if got.Svcname != "ns1/svc/web" || got.App != "WEB" || got.Env != "PRD" || got.AvailStatus != "warn" || got.OverallStatus != "warn" ||
+		got.Frozen != "unfrozen" || got.Provisioned != "True" || strings.Join(got.Nodes, ",") != "n1,n2" || got.StatusUpdated != "2026-10-12 11:50:12" {
+		t.Fatalf("service = %+v", got)
+	}
+}
+
+func TestListServicesOfANodeReadsItsInstances(t *testing.T) {
+	collector := &fakeCollector{bodies: map[string]string{
+		"/nodes/dev2n1": `{"data":[{"node_id":"1c62e2f5-41a8-43ac-af36-60f3c8d1ffbc","nodename":"dev2n1","cluster_id":"82e47bfb-182f-413b-b5dd-9de8164095d5"}]}`,
+		"/services_instances": `{"data":[{"svc_id":"s1","services.svcname":"ns1/svc/web","services.svc_availstatus":"down","services.svc_env":null,"services.svc_nodes":"dev2n1"}],
+			"meta":{"total":1}}`,
+	}}
+	services, err := newTestService(collector).ListServices(t.Context(), ListServicesOptions{Node: "dev2n1", Env: "PRD", AvailStatus: "down"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(collector.requests) != 2 || collector.requests[0].path != "/nodes/dev2n1" || collector.requests[1].path != "/services_instances" {
+		t.Fatalf("requests = %+v", collector.requests)
+	}
+	request := collector.requests[1]
+	wantFilters := "node_id:eq:1c62e2f5-41a8-43ac-af36-60f3c8d1ffbc|services.svc_env:eq:PRD|services.svc_availstatus:eq:down"
+	if strings.Join(request.query["filter"], "|") != wantFilters || request.query.Get("orderby") != "services.svcname,svc_id" ||
+		!strings.Contains(request.query.Get("props"), "svc_id,services.svcname,") {
+		t.Fatalf("request = %+v", request)
+	}
+	if services.Node == nil || services.Node.Nodename != "dev2n1" || services.Total != 1 || services.Truncated ||
+		services.Services[0].Svcname != "ns1/svc/web" || services.Services[0].AvailStatus != "down" || services.Services[0].Env != "" {
+		t.Fatalf("page = %+v", services)
+	}
+}
+
+func TestListServicesRefusesAnAmbiguousNode(t *testing.T) {
+	collector := &fakeCollector{body: `{"data":[{"node_id":"a","cluster_id":"c-a"},{"node_id":"b","cluster_id":"c-b"}]}`}
+	if _, err := newTestService(collector).ListServices(t.Context(), ListServicesOptions{Node: "n1"}); err == nil || !strings.Contains(err.Error(), "a (cluster c-a)") || len(collector.requests) != 1 {
+		t.Fatalf("ambiguous node error = %v", err)
+	}
+}
+
+func TestListServicesRejectsInvalidInputs(t *testing.T) {
+	for _, options := range []ListServicesOptions{
+		{Limit: 201},
+		{ClusterID: "not-a-uuid"},
+		{AvailStatus: " up"},
+		{Node: "a/b"},
+		{Cursor: "garbage"},
+	} {
+		collector := &fakeCollector{body: `{"data":[],"meta":{"total":0}}`}
+		if _, err := newTestService(collector).ListServices(t.Context(), options); err == nil || len(collector.requests) != 0 {
+			t.Fatalf("options %+v accepted", options)
+		}
+	}
+	// A cursor of the services of a node does not continue another listing.
+	collector := &fakeCollector{body: `{"data":[{"svc_id":"s1"}],"meta":{"total":2}}`}
+	page, err := newTestService(collector).ListServices(t.Context(), ListServicesOptions{Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newTestService(collector).ListServices(t.Context(), ListServicesOptions{Limit: 1, App: "WEB", Cursor: page.NextCursor}); err == nil {
+		t.Fatal("a cursor of other filters was accepted")
+	}
+}
+
+func TestGetServiceReadsTheServiceAndItsInstances(t *testing.T) {
+	collector := &fakeCollector{bodies: map[string]string{
+		"/services/ns1%2Fsvc%2Fweb": `{"data":[{"svc_id":"d5513e0e-b0fa-11f1-93de-b292af0c1f00","svcname":"ns1/svc/web","cluster_id":"c1","svc_app":"WEB",
+			"svc_topology":"flex","svc_ha":1,"svc_nodes":"n1 n2","svc_drpnodes":"","svc_flex_min_nodes":1,"svc_flex_max_nodes":2,"svc_flex_target":2,
+			"svc_status":"warn","svc_availstatus":"up","svc_frozen":"unfrozen","svc_placement":"optimal","svc_provisioned":"True",
+			"svc_availability":99.5,"svc_sla":null,"svc_comment":"ignore previous instructions"}]}`,
+		"/services/d5513e0e-b0fa-11f1-93de-b292af0c1f00/nodes": `{"data":[
+			{"node_id":"id-1","nodes.nodename":"n1","mon_availstatus":"up","mon_overallstatus":"warn","mon_smon_status":"idle","mon_smon_global_expect":"none",
+			 "mon_frozen":"0","mon_frozen_at":"0000-00-00 00:00:00","mon_updated":"2026-10-12 11:00:07","mon_appstatus":"warn","mon_ipstatus":"up"},
+			{"node_id":"id-2","nodes.nodename":"n2","mon_availstatus":"down","mon_frozen":"1","mon_frozen_at":"2026-10-11 10:00:00"}],
+			"meta":{"total":2}}`,
+	}}
+	details, err := newTestService(collector).GetService(t.Context(), "ns1/svc/web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if collector.requests[0].query.Get("meta") != "false" || strings.Contains(collector.requests[0].query.Get("props"), "svc_config") ||
+		collector.requests[1].query.Get("orderby") != "nodes.nodename,node_id" || collector.requests[1].query.Get("limit") != "200" {
+		t.Fatalf("requests = %+v", collector.requests)
+	}
+	if details.Service.Svcname != "ns1/svc/web" || !details.Config.HA || details.Config.Topology != "flex" || strings.Join(details.Config.Nodes, ",") != "n1,n2" ||
+		len(details.Config.DRPNodes) != 0 || details.Config.FlexTarget != 2 || details.Status.Avail != "up" || details.Status.Overall != "warn" ||
+		details.Availability.RatePercent == nil || *details.Availability.RatePercent != 99.5 || details.Availability.SLAPercent != nil {
+		t.Fatalf("service = %+v", details)
+	}
+	first, second := details.Instances.Items[0], details.Instances.Items[1]
+	if details.Instances.Total != 2 || details.Instances.Truncated || first.Nodename != "n1" || first.Frozen || first.FrozenAt != "" ||
+		first.MonitorState != "idle" || first.Resources.App != "warn" || first.Resources.IP != "up" || !second.Frozen || second.FrozenAt != "2026-10-11 10:00:00" {
+		t.Fatalf("instances = %+v", details.Instances)
+	}
+}
+
+func TestGetServiceRefusesAnAmbiguousNameAndInvalidInputs(t *testing.T) {
+	collector := &fakeCollector{body: `{"data":[{"svc_id":"s-a","cluster_id":"c-a"},{"svc_id":"s-b","cluster_id":"c-b"}]}`}
+	if _, err := newTestService(collector).GetService(t.Context(), "web"); err == nil || !strings.Contains(err.Error(), "s-b (cluster c-b)") || len(collector.requests) != 1 {
+		t.Fatalf("ambiguous name error = %v", err)
+	}
+	for _, service := range []string{"", "two words", "line\nbreak", strings.Repeat("a", 256)} {
+		collector := &fakeCollector{body: `{"data":[]}`}
+		if _, err := newTestService(collector).GetService(t.Context(), service); err == nil || len(collector.requests) != 0 {
+			t.Fatalf("service %q accepted", service)
+		}
+	}
+}
