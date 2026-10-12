@@ -2,6 +2,7 @@
 domain: service
 tools:
   - get_service
+  - get_service_status_history
   - list_services
 stability: experimental
 ---
@@ -15,7 +16,8 @@ or degraded, and where a service runs, without a diagnostic verdict.
 
 Implementation:
 
-- business logic: `internal/core/service.go`, with the shared list helpers of
+- business logic: `internal/core/service.go` and
+  `internal/core/service_status_history.go`, with the shared list helpers of
   `internal/core/collector_list.go` and the node lookup of
   `internal/core/node.go`;
 - MCP definitions: `internal/tools/service.go`.
@@ -120,3 +122,49 @@ Each instance holds `node_id`, `nodename`, `avail`, `overall`,
 `monitor_state` (such as `idle`), `monitor_global_expect` (such as `none`),
 `frozen`, `frozen_at`, `updated`, and `resources`: the status of its `ip`,
 `fs`, `disk`, `container`, `share`, `sync`, `app` and `hb` resources.
+
+### `get_service_status_history`
+
+Returns the status history of one service over the last days, or with `node`,
+that of its instance on that node. Use it to tell since when a service or an
+instance is down, how often it changed status, and its availability rate.
+
+#### Collector API
+
+The MCP first resolves the service, and the node when given, as
+`get_service` and `get_node` do, then reads:
+
+```text
+GET /api/services/<svc_id>/status_log?days=<days>
+GET /api/services/<svc_id>/instances/<node_id>/status_log?days=<days>
+```
+
+The justifications of the periods are written through other collector routes,
+which no tool calls.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `service` | One exact service name or service ID. A name several services hold is refused with their service IDs |
+| `node` | Optional exact node name or node ID: the history of the instance on that node instead of the service |
+| `days` | Optional days of history, 1 to 365, default 7 |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `service`, `node` | The service, and the node with `node`, the history is about |
+| `days` | The days asked |
+| `availability` | For the service only: `from`, `to`, `rate_percent`, `available_seconds`, `excluded_seconds`, `counted_seconds` |
+| `total`, `count`, `truncated` | Periods the collector returned, periods kept, and whether the oldest were left out after 500 |
+| `periods[]` | Oldest first: `begin`, `end`, and `status` for the service or `avail` and `overall` for an instance, with `ack` when justified |
+
+The collector computes the rate as the time up or standby up over the counted
+time, from the start of the history when later than the days asked. The time
+no status covers counts as downtime; justified downtime marked not to count is
+left out, in `excluded_seconds`. A justification `ack` holds `comment`
+(untrusted text), `counted`, `acked_by` and `acked_on`. The end of the current
+period is the last status received. Periods are in collector local time
+without a zone.
