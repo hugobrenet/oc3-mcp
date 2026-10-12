@@ -133,3 +133,27 @@ func TestServiceToolsReadTheCollector(t *testing.T) {
 		t.Fatalf("missing service = %+v", result)
 	}
 }
+
+func TestAlertToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/alerts":
+			if strings.Join(r.URL.Query()["filter"], "|") != "dash_severity:gte:3" {
+				t.Errorf("filters = %q", r.URL.Query()["filter"])
+			}
+			_, _ = w.Write([]byte(`{"data":[{"id":1,"dash_type":"service unavailable","dash_severity":3,"alert":"current availability status: down","svc_id":"s1","services.svcname":"web"}],"meta":{"total":1}}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, alerts := call("list_alerts", map[string]any{"min_severity": 3})
+	items, _ := alerts["alerts"].([]any)
+	if result.IsError || alerts["total"] != float64(1) || len(items) != 1 || items[0].(map[string]any)["severity"] != float64(3) {
+		t.Fatalf("list_alerts = %+v", alerts)
+	}
+	result, _ = call("list_alerts", map[string]any{"min_severity": 9})
+	if !result.IsError {
+		t.Fatal("min_severity 9 was accepted")
+	}
+}
