@@ -12,7 +12,9 @@ import (
 type fakeCollector struct {
 	body string
 	// bodies answers a path with its own body instead of body.
-	bodies   map[string]string
+	bodies map[string]string
+	// answer, when set, answers instead of bodies and body.
+	answer   func(path string, query url.Values) string
 	err      error
 	requests []fakeRequest
 }
@@ -26,6 +28,9 @@ func (f *fakeCollector) GetJSON(_ context.Context, path string, query url.Values
 	f.requests = append(f.requests, fakeRequest{path: path, query: query})
 	if f.err != nil {
 		return f.err
+	}
+	if f.answer != nil {
+		return json.Unmarshal([]byte(f.answer(path, query)), output)
 	}
 	if body, ok := f.bodies[path]; ok {
 		return json.Unmarshal([]byte(body), output)

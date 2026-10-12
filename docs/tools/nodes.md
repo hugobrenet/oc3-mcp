@@ -3,6 +3,7 @@ domain: node
 tools:
   - get_node
   - get_node_san_topology
+  - list_node_disks
   - list_nodes
 stability: experimental
 ---
@@ -16,8 +17,8 @@ without a diagnostic verdict.
 
 Implementation:
 
-- business logic: `internal/core/node.go` and `internal/core/node_san.go`,
-  with the shared list helpers of `internal/core/collector_list.go`;
+- business logic: `internal/core/node.go`, `internal/core/node_san.go` and
+  `internal/core/node_disk.go`, with the shared list helpers of `internal/core/collector_list.go`;
 - MCP definitions: `internal/tools/node.go`.
 
 The collector stores what the node daemons push, plus the properties set by
@@ -168,3 +169,53 @@ from a switch to an array port: `from`, `from_port`, `to`, `to_port` and
 `46,47`, and one speed per cable. The fabric of a path is the fabric of its
 first switch. An array reached through a single fabric, or by a single
 adapter, has one entry in `fabrics` or `hbas`.
+
+### `list_node_disks`
+
+Returns one page of the disks one node sees, as the collector knows them, with
+the other nodes seeing each shared disk. Use it to tell which LUNs a node sees,
+on which storage array, which service uses them, and whether a disk is visible
+from the other nodes a service may fail over to.
+
+The collector merges what the agent of each node reports, the disks it sees
+and the service using each, with what the storage arrays declare. A disk used
+by several services is one row per service. A shared disk is named by its
+world wide identifier, such as `36001405…`. A local disk is named by its device,
+such as `vda` or `zd0`, which other nodes reuse for other disks: it is never
+reported as shared.
+
+#### Collector API
+
+The MCP first resolves the node, as `get_node` does, then reads the page and
+the other nodes of its shared disks:
+
+```text
+GET /api/disks?props=…&orderby=disk_id,svc_id&filter=node_id:eq:<node_id>&filter=…&limit=…&offset=…
+GET /api/disks?props=disk_id,node_id,nodename&filter=disk_id:in:<disk_id>,…&limit=5000&meta=false
+```
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `node` | One exact node name or node ID. A name several nodes hold is refused with their node IDs |
+| `disk_id` | Optional text the disk ID contains, case-insensitive, such as the end of a world wide identifier |
+| `limit` | Optional page size, 1 to 200, default 100 |
+| `cursor` | Optional `next_cursor` of a previous call with the same filters |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `node` | The node whose disks are listed |
+| `total` | Disk rows matching the filters, as the collector counts them |
+| `count`, `truncated` | Rows in this page, and whether more remain |
+| `disks[]` | `disk_id`, `size_mb`, `used_mb`, `vendor`, `model`, `array`, `array_disk_group`, `disk_group`, `region`, `svc_id`, `svcname`, `shared_with`, `updated` |
+| `next_cursor` | Opaque cursor of the next page, when `truncated` |
+
+Sizes are in MiB. `array` and `array_disk_group` are empty when no storage
+array declares the disk, `svcname` when the collector does not know the
+service using it. `disk_group` is the disk group the node reports, such as a
+volume group or a pool. `shared_with` lists the other nodes seeing the same
+disk, and is empty for a local disk.
