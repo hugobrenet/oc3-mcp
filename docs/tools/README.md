@@ -10,6 +10,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 |---|---|---|
 | Nodes | `list_nodes`, `get_node` | [Node tools](nodes.md) |
 | Services | `list_services`, `get_service`, `get_service_status_history` | [Service tools](services.md) |
+| Service actions | `list_service_actions`, `get_service_action_logs` | [Service action tools](service-actions.md) |
 | Alerts | `list_alerts` | [Alert tools](alerts.md) |
 
 ## Conventions
