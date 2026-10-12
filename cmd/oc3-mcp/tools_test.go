@@ -112,6 +112,11 @@ func TestServiceToolsReadTheCollector(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s1","svcname":"ns1/svc/web","svc_availstatus":"down","svc_availability":42.5}]}`))
 		case "/services/s1/nodes":
 			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","nodes.nodename":"n1","mon_availstatus":"down","mon_frozen":"0"}],"meta":{"total":1}}`))
+		case "/resources":
+			if strings.Join(r.URL.Query()["filter"], "|") != "svc_id:eq:s1|res_status:eq:down" {
+				t.Errorf("filters = %q", r.URL.Query()["filter"])
+			}
+			_, _ = w.Write([]byte(`{"data":[{"rid":"disk#1","res_type":"disk.disk","res_status":"down","nodes.nodename":"n1","res_disable":"T"}],"meta":{"total":1}}`))
 		case "/services/s1/status_log":
 			if r.URL.Query().Get("days") != "30" {
 				t.Errorf("days = %q", r.URL.Query().Get("days"))
@@ -132,6 +137,11 @@ func TestServiceToolsReadTheCollector(t *testing.T) {
 	availability, _ := service["availability"].(map[string]any)
 	if result.IsError || instances["total"] != float64(1) || availability["rate_percent"] != 42.5 {
 		t.Fatalf("get_service = %+v", service)
+	}
+	result, resources := call("list_service_resources", map[string]any{"service": "ns1/svc/web", "status": "down"})
+	items, _ := resources["resources"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["disabled"] != true || items[0].(map[string]any)["nodename"] != "n1" {
+		t.Fatalf("list_service_resources = %+v", resources)
 	}
 	result, history := call("get_service_status_history", map[string]any{"service": "ns1/svc/web", "days": 30})
 	rate, _ := history["availability"].(map[string]any)
