@@ -256,3 +256,37 @@ func TestClusterToolsReadTheCollector(t *testing.T) {
 		t.Fatalf("list_clusters = %+v", clusters)
 	}
 }
+
+func TestPackageToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/nodes/n1":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","nodename":"n1"}]}`))
+		case "/nodes/n2":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-2","nodename":"n2"}]}`))
+		case "/packages":
+			_, _ = w.Write([]byte(`{"data":[{"pkg_name":"gh","pkg_version":"2"}],"meta":{"total":1}}`))
+		case "/packages/diff":
+			if r.URL.Query().Get("node_ids") != "id-1,id-2" {
+				t.Errorf("node_ids = %q", r.URL.Query().Get("node_ids"))
+			}
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","pkg_name":"gh","pkg_version":"2"}],"meta":{"nodes":[{"node_id":"id-1","nodename":"n1"},{"node_id":"id-2","nodename":"n2"}]}}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, differences := call("list_package_differences", map[string]any{"nodes": []string{"n1", "n2"}})
+	items, _ := differences["packages"].([]any)
+	if result.IsError || differences["missing"] != float64(1) || len(items) != 1 || items[0].(map[string]any)["missing_on"].([]any)[0] != "n2" {
+		t.Fatalf("list_package_differences = %+v", differences)
+	}
+	result, packages := call("list_node_packages", map[string]any{"node": "n1", "name": "gh"})
+	items, _ = packages["packages"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["version"] != "2" {
+		t.Fatalf("list_node_packages = %+v", packages)
+	}
+	if result, _ := call("list_package_differences", map[string]any{"nodes": []string{"n1"}}); !result.IsError {
+		t.Fatal("a single node was accepted")
+	}
+}
