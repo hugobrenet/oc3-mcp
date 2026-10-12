@@ -1,0 +1,150 @@
+{
+ "data": {
+  "links": [
+   {
+    "head": "switch:1000c4f57ca10101",
+    "head_port": "0",
+    "speeds": [
+     16
+    ],
+    "tail": "server:00000000-0000-4000-8000-000000000001",
+    "tail_port": "21000024ff4a1b10"
+   },
+   {
+    "head": "switch:1000c4f57cb10101",
+    "head_port": "0",
+    "speeds": [
+     16
+    ],
+    "tail": "server:00000000-0000-4000-8000-000000000001",
+    "tail_port": "21000024ff4a1b11"
+   },
+   {
+    "head": "switch:1000c4f57ca10201",
+    "head_port": "0,1",
+    "speeds": [
+     32,
+     32
+    ],
+    "tail": "switch:1000c4f57ca10101",
+    "tail_port": "46,47"
+   },
+   {
+    "head": "array:lyn-vsp-01",
+    "head_port": "50060e8012c0a700",
+    "speeds": [
+     32
+    ],
+    "tail": "switch:1000c4f57ca10201",
+    "tail_port": "16"
+   },
+   {
+    "head": "array:lyn-vsp-01",
+    "head_port": "50060e8012c0a710",
+    "speeds": [
+     32
+    ],
+    "tail": "switch:1000c4f57ca10201",
+    "tail_port": "17"
+   },
+   {
+    "head": "switch:1000c4f57cb10201",
+    "head_port": "0,1",
+    "speeds": [
+     32,
+     32
+    ],
+    "tail": "switch:1000c4f57cb10101",
+    "tail_port": "46,47"
+   },
+   {
+    "head": "array:lyn-vsp-01",
+    "head_port": "50060e8012c0a701",
+    "speeds": [
+     32
+    ],
+    "tail": "switch:1000c4f57cb10201",
+    "tail_port": "16"
+   },
+   {
+    "head": "array:lyn-vsp-01",
+    "head_port": "50060e8012c0a711",
+    "speeds": [
+     32
+    ],
+    "tail": "switch:1000c4f57cb10201",
+    "tail_port": "17"
+   }
+  ],
+  "nodes": [
+   {
+    "id": "server:00000000-0000-4000-8000-000000000001",
+    "kind": "server",
+    "label": "lyn-prd-db01",
+    "ports": [
+     "21000024ff4a1b10",
+     "21000024ff4a1b11"
+    ],
+    "rank": 0
+   },
+   {
+    "fabric": "lyn-fabric-a",
+    "id": "switch:1000c4f57ca10101",
+    "kind": "switch",
+    "label": "lyn-sana-edge01",
+    "ports": [
+     "0",
+     "46,47"
+    ],
+    "rank": 1
+   },
+   {
+    "fabric": "lyn-fabric-b",
+    "id": "switch:1000c4f57cb10101",
+    "kind": "switch",
+    "label": "lyn-sanb-edge01",
+    "ports": [
+     "0",
+     "46,47"
+    ],
+    "rank": 1
+   },
+   {
+    "fabric": "lyn-fabric-a",
+    "id": "switch:1000c4f57ca10201",
+    "kind": "switch",
+    "label": "lyn-sana-core01",
+    "ports": [
+     "0,1",
+     "16",
+     "17"
+    ],
+    "rank": 2
+   },
+   {
+    "fabric": "lyn-fabric-b",
+    "id": "switch:1000c4f57cb10201",
+    "kind": "switch",
+    "label": "lyn-sanb-core01",
+    "ports": [
+     "0,1",
+     "16",
+     "17"
+    ],
+    "rank": 2
+   },
+   {
+    "id": "array:lyn-vsp-01",
+    "kind": "array",
+    "label": "lyn-vsp-01",
+    "ports": [
+     "50060e8012c0a700",
+     "50060e8012c0a701",
+     "50060e8012c0a710",
+     "50060e8012c0a711"
+    ],
+    "rank": 3
+   }
+  ]
+ }
+}

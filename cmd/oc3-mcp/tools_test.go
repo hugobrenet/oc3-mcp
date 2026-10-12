@@ -320,3 +320,25 @@ func TestFrozenToolsReadTheCollector(t *testing.T) {
 		t.Fatalf("list_frozen_instances = %+v", instances)
 	}
 }
+
+func TestSanToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/nodes/n1":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","nodename":"n1"}]}`))
+		case "/nodes/id-1/san":
+			_, _ = w.Write([]byte(`{"data":{"nodes":[{"id":"server:id-1","kind":"server","label":"n1","ports":["hba"]},
+				{"id":"switch:a","kind":"switch","label":"sw-a","fabric":"fab-a"},{"id":"array:x","kind":"array","label":"x"}],
+				"links":[{"tail":"server:id-1","tail_port":"hba","head":"switch:a","head_port":"1","speeds":[16]},
+				{"tail":"switch:a","tail_port":"2","head":"array:x","head_port":"t1","speeds":[32]}]}}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, topology := call("get_node_san_topology", map[string]any{"node": "n1"})
+	arrays, _ := topology["arrays"].([]any)
+	if result.IsError || topology["wired"] != true || len(arrays) != 1 || arrays[0].(map[string]any)["paths"] != float64(1) {
+		t.Fatalf("get_node_san_topology = %+v", topology)
+	}
+}
