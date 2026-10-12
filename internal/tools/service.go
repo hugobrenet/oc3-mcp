@@ -26,6 +26,14 @@ type GetServiceInput struct {
 
 type GetServiceOutput = core.ServiceDetails
 
+type GetServiceStatusHistoryInput struct {
+	Service string `json:"service" jsonschema:"one exact service name, such as ns/svc/name, or collector service ID"`
+	Node    string `json:"node,omitempty" jsonschema:"optional exact node name or node ID; returns the history of the instance on that node instead of the service"`
+	Days    int    `json:"days,omitempty" jsonschema:"optional days of history between 1 and 365; defaults to 7"`
+}
+
+type GetServiceStatusHistoryOutput = core.ServiceStatusHistory
+
 func RegisterServiceTools(registrar *Registrar, service *core.Service) error {
 	if err := addTool(
 		registrar,
@@ -67,6 +75,27 @@ func RegisterServiceTools(registrar *Registrar, service *core.Service) error {
 				return nil, GetServiceOutput{}, err
 			}
 			return nil, details, nil
+		},
+	); err != nil {
+		return err
+	}
+	if err := addTool(
+		registrar,
+		&mcp.Tool{
+			Name:  "get_service_status_history",
+			Title: "Get service status history",
+			Description: "Read the status history of one OpenSVC service from the collector over the last days, 7 by default and 365 at most: the periods of one availability status, oldest first, with their justification when a responsible gave one, " +
+				"and the availability rate the collector computes over them, where the time no status covers counts as downtime and justified downtime marked not to count is left out. " +
+				"With node, the periods of one availability and overall status of the instance on that node instead, without rate. Use it to tell since when a service or instance is down. " +
+				"Names several items hold are refused with their IDs. The 500 most recent periods are kept. Collector dates are in its local time without a zone.",
+			Annotations: readOnlyClosedWorldAnnotations(),
+		},
+		func(ctx context.Context, _ *mcp.CallToolRequest, input GetServiceStatusHistoryInput) (*mcp.CallToolResult, GetServiceStatusHistoryOutput, error) {
+			history, err := service.GetServiceStatusHistory(ctx, core.ServiceStatusHistoryOptions{Service: input.Service, Node: input.Node, Days: input.Days})
+			if err != nil {
+				return nil, GetServiceStatusHistoryOutput{}, err
+			}
+			return nil, history, nil
 		},
 	); err != nil {
 		return err
