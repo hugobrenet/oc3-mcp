@@ -409,3 +409,23 @@ func TestResourceHistoryToolsReadTheCollector(t *testing.T) {
 		t.Fatalf("get_service_resource_history = %+v", history)
 	}
 }
+
+func TestCollectorEventToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/logs":
+			if r.URL.Query()["filter"][0] != "log_action:!in:user.login,user.logout" {
+				t.Errorf("filters = %q", r.URL.Query()["filter"])
+			}
+			_, _ = w.Write([]byte(`{"data":[{"id":1,"log_date":"2026-10-07 12:42:33","log_action":"service.action","log_level":"info","log_user":"admin@example.com","log_fmt":"run %(action)s","log_dict":"{\"action\":\"thaw\"}"}],"meta":{"total":1}}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, events := call("list_collector_events", map[string]any{})
+	items, _ := events["events"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["message"] != "run thaw" {
+		t.Fatalf("list_collector_events = %+v", events)
+	}
+}
