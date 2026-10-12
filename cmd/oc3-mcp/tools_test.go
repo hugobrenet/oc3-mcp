@@ -240,3 +240,19 @@ func TestCheckToolsReadTheCollector(t *testing.T) {
 		t.Fatal("list_node_checks without node succeeded")
 	}
 }
+
+func TestClusterToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.EscapedPath() != "/clusters" {
+			notFound(w, "missing")
+			return
+		}
+		_, _ = w.Write([]byte(`{"data":[{"cluster_id":"82e47bfb-182f-413b-b5dd-9de8164095d5","cluster_name":"reliable-leopard","cluster_nodes":"n1, n2","quorum":1}],"meta":{"total":1}}`))
+	})
+	result, clusters := call("list_clusters", map[string]any{"name": "reliable"})
+	items, _ := clusters["clusters"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["name"] != "reliable-leopard" || len(items[0].(map[string]any)["nodes"].([]any)) != 2 {
+		t.Fatalf("list_clusters = %+v", clusters)
+	}
+}
