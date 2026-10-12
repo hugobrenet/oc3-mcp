@@ -8,13 +8,17 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/opensvc/oc3-mcp/internal/client"
 	"github.com/opensvc/oc3-mcp/internal/config"
+	"github.com/opensvc/oc3-mcp/internal/core"
+	"github.com/opensvc/oc3-mcp/internal/tools"
 )
 
 const (
@@ -33,6 +37,14 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	collector, err := newCollectorClient(cfg)
+	if err != nil {
+		return err
+	}
+	handler, err := newHandler(core.New(collector))
+	if err != nil {
+		return err
+	}
 	// Validate TLS material before binding the TCP listener.
 	certificate, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
 	if err != nil {
@@ -44,7 +56,7 @@ func run() error {
 	}
 	defer listener.Close()
 	server := &http.Server{
-		Handler: newHandler(),
+		Handler: handler,
 		TLSConfig: &tls.Config{
 			MinVersion:   tls.VersionTLS12,
 			Certificates: []tls.Certificate{certificate},
@@ -80,15 +92,44 @@ func run() error {
 	return nil
 }
 
-func newHandler() http.Handler {
+// newCollectorClient reads the collector account and prepares the client
+// without contacting the collector.
+func newCollectorClient(cfg config.Config) (*client.Client, error) {
+	collectorURL, err := url.Parse(cfg.CollectorURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse OpenSVC collector URL: %w", err)
+	}
+	credentials, err := client.LoadBasicCredentials(cfg.CollectorCredentialsFile, collectorURL.Hostname())
+	if err != nil {
+		return nil, err
+	}
+	httpClient, err := client.NewHTTPClient(cfg.CollectorURL, cfg.CollectorCAFile, credentials)
+	if err != nil {
+		return nil, err
+	}
+	return client.New(cfg.CollectorURL, httpClient)
+}
+
+func newHandler(service *core.Service) (http.Handler, error) {
 	server := mcp.NewServer(&mcp.Implementation{Name: serverName, Version: serverVersion}, &mcp.ServerOptions{
 		Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{}},
 	})
+	registrar, err := tools.NewRegistrar(server)
+	if err != nil {
+		return nil, err
+	}
+	for _, register := range []func(*tools.Registrar, *core.Service) error{
+		// One Register function per tool domain, added with its tools.
+	} {
+		if err := register(registrar, service); err != nil {
+			return nil, err
+		}
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", getHealth)
 	mux.Handle("/mcp", mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
 		Stateless: true, JSONResponse: true,
 		CrossOriginProtection: &http.CrossOriginProtection{},
 	}))
-	return http.MaxBytesHandler(mux, 1<<20)
+	return http.MaxBytesHandler(mux, 1<<20), nil
 }
