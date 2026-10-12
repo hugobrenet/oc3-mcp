@@ -332,31 +332,10 @@ func (s *Service) ListServices(ctx context.Context, options ListServicesOptions)
 // instances. A name held by several services is refused with their IDs. The
 // configuration text is left out.
 func (s *Service) GetService(ctx context.Context, service string) (ServiceDetails, error) {
-	if service == "" || strings.ContainsAny(service, " ") {
-		return ServiceDetails{}, fmt.Errorf("service must be one exact service name or service ID")
-	}
-	if err := validateFilterValue("service", service); err != nil {
+	svc, err := s.lookupService(ctx, service, serviceDetailProps)
+	if err != nil {
 		return ServiceDetails{}, err
 	}
-	query := url.Values{}
-	query.Set("props", strings.Join(serviceDetailProps, ","))
-	query.Set("meta", "false")
-	var response collectorList[collectorService]
-	if err := s.client.GetJSON(ctx, "/services/"+url.PathEscape(service), query, &response); err != nil {
-		return ServiceDetails{}, fmt.Errorf("get service %s: %w", service, err)
-	}
-	switch len(response.Data) {
-	case 0:
-		return ServiceDetails{}, fmt.Errorf("get service %s: not found in the collector", service)
-	case 1:
-	default:
-		ids := make([]string, 0, len(response.Data))
-		for _, item := range response.Data {
-			ids = append(ids, item.SvcID+" (cluster "+item.ClusterID+")")
-		}
-		return ServiceDetails{}, fmt.Errorf("get service %s: the name matches %d services, pass one service ID: %s", service, len(ids), strings.Join(ids, ", "))
-	}
-	svc := response.Data[0]
 
 	instanceQuery := url.Values{}
 	instanceQuery.Set("props", strings.Join(serviceInstanceProps, ","))
@@ -407,4 +386,34 @@ func (s *Service) GetService(ctx context.Context, service string) (ServiceDetail
 		})
 	}
 	return result, nil
+}
+
+// lookupService reads the props of one service by its exact name or service
+// ID, and refuses a name several services hold.
+func (s *Service) lookupService(ctx context.Context, service string, props []string) (collectorService, error) {
+	if service == "" || strings.ContainsAny(service, " ") {
+		return collectorService{}, fmt.Errorf("service must be one exact service name or service ID")
+	}
+	if err := validateFilterValue("service", service); err != nil {
+		return collectorService{}, err
+	}
+	query := url.Values{}
+	query.Set("props", strings.Join(props, ","))
+	query.Set("meta", "false")
+	var response collectorList[collectorService]
+	if err := s.client.GetJSON(ctx, "/services/"+url.PathEscape(service), query, &response); err != nil {
+		return collectorService{}, fmt.Errorf("get service %s: %w", service, err)
+	}
+	switch len(response.Data) {
+	case 0:
+		return collectorService{}, fmt.Errorf("get service %s: not found in the collector", service)
+	case 1:
+		return response.Data[0], nil
+	default:
+		ids := make([]string, 0, len(response.Data))
+		for _, item := range response.Data {
+			ids = append(ids, item.SvcID+" (cluster "+item.ClusterID+")")
+		}
+		return collectorService{}, fmt.Errorf("get service %s: the name matches %d services, pass one service ID: %s", service, len(ids), strings.Join(ids, ", "))
+	}
 }
