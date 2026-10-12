@@ -2,6 +2,7 @@
 domain: service
 tools:
   - get_service
+  - get_service_resource_history
   - get_service_status_history
   - list_frozen_instances
   - list_service_resources
@@ -20,7 +21,8 @@ Implementation:
 
 - business logic: `internal/core/service.go`,
   `internal/core/service_status_history.go`,
-  `internal/core/service_resource.go` and
+  `internal/core/service_resource.go`,
+  `internal/core/service_resource_history.go` and
   `internal/core/service_frozen_instance.go`, with the shared list helpers of
   `internal/core/collector_list.go` and the node lookup of
   `internal/core/node.go`;
@@ -257,3 +259,57 @@ GET /api/services_instances?props=…&orderby=mon_frozen_at,svc_id,node_id&filte
 `frozen_at` is in collector local time without a zone, while
 `provenance.observed_at` is in UTC: to ask for the instances frozen for more
 than a duration, compute the date in the collector local time.
+
+### `get_service_resource_history`
+
+Returns the status history of the resources of one service, on all its nodes
+or one, grouped by resource and node. Use it to tell since when a resource is
+down or degraded, on which nodes, and which resource changed status first. It
+is the level below `get_service_status_history`, which describes the service.
+
+#### Collector API
+
+The MCP first resolves the service, and the node when given, then reads the
+periods and the nodes of the service, to name them:
+
+```text
+GET /api/services/<svc_id>/resources/logs?props=…&limit=5000
+GET /api/services/<svc_id>/nodes/<node_id>/resources/logs?props=…&limit=5000
+GET /api/services/<svc_id>/nodes?props=node_id,nodes.nodename&limit=1000&meta=false
+```
+
+The routes neither filter nor sort the periods: the MCP reads at most 5000,
+filters and sorts them.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `service` | One exact service name or service ID. A name several services hold is refused with their service IDs |
+| `node` | Optional exact node name or node ID: the resources of the instance on that node |
+| `rid` | Optional exact resource ID, such as `container#1` or `fs#1` |
+| `status` | Optional exact resource status, such as `down`, `warn` or `undef` |
+| `since` | Optional; keeps the periods ending at or after this date, in collector local time: `YYYY-MM-DD`, `YYYY-MM-DD HH:MM` or `YYYY-MM-DD HH:MM:SS` |
+| `limit` | Optional number of the most recent matching periods to return, 1 to 500, **default 100** |
+
+By default, only the **100 most recent matching periods** are returned, across
+all the resources and nodes: a service with many resources holds hundreds of
+periods. Narrow the history with `node`, `rid`, `status` or `since`, or raise
+`limit`, to see older periods.
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `service`, `node` | The service, and the node with `node`, the filters resolved to |
+| `read`, `matching`, `count` | Periods read, matching the filters, and returned |
+| `resources[]` | One per resource and node: `rid`, `node_id`, `nodename`, `current_status`, `since`, `last_reported`, and `periods[]` with their `begin`, `end`, `status` and `log` |
+| `truncated` | Whether periods were left unread after 5000, or older matching ones left out after `limit` |
+
+Each resource and node gives the status of its most recent matching period,
+since when, and when the agent last reported it; its periods follow, the most
+recent first. The end of the current period is the last status the agent
+reported. `nodename` is empty for a node the service no longer has an instance
+on. `log` is the status message of the period, cut to 4 KiB: untrusted text.
+Periods are in collector local time without a zone.

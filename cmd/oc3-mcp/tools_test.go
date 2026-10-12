@@ -388,3 +388,24 @@ func TestStatsToolsReadTheCollector(t *testing.T) {
 		t.Fatal("an unknown group was accepted")
 	}
 }
+
+func TestResourceHistoryToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/services/web":
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s1","svcname":"web"}]}`))
+		case "/services/s1/resources/logs":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","rid":"fs#1","res_status":"down","res_begin":"2026-10-11 23:00:00","res_end":"2026-10-12 10:00:00"}],"meta":{"total":1}}`))
+		case "/services/s1/nodes":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","nodes.nodename":"n1"}]}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, history := call("get_service_resource_history", map[string]any{"service": "web"})
+	resources, _ := history["resources"].([]any)
+	if result.IsError || len(resources) != 1 || resources[0].(map[string]any)["current_status"] != "down" || resources[0].(map[string]any)["nodename"] != "n1" {
+		t.Fatalf("get_service_resource_history = %+v", history)
+	}
+}
