@@ -9,10 +9,22 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/opensvc/oc3-mcp/internal/config"
+	"github.com/opensvc/oc3-mcp/internal/core"
+	"github.com/opensvc/oc3-mcp/internal/testutil"
 )
 
+func newTestHandler(t *testing.T) http.Handler {
+	t.Helper()
+	handler, err := newHandler(core.New(nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return handler
+}
+
 func TestHealth(t *testing.T) {
-	server := httptest.NewTLSServer(newHandler())
+	server := httptest.NewTLSServer(newTestHandler(t))
 	defer server.Close()
 	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
 		t.Run(method, func(t *testing.T) {
@@ -47,7 +59,7 @@ func TestHealth(t *testing.T) {
 }
 
 func TestMCPInitializeAndEmptyTools(t *testing.T) {
-	server := httptest.NewTLSServer(newHandler())
+	server := httptest.NewTLSServer(newTestHandler(t))
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
@@ -68,5 +80,27 @@ func TestMCPInitializeAndEmptyTools(t *testing.T) {
 	}
 	if len(tools.Tools) != 0 {
 		t.Fatalf("expected no tools, got %d", len(tools.Tools))
+	}
+}
+
+func TestNewCollectorClientReadsCredentialsWithoutContactingTheCollector(t *testing.T) {
+	collector := testutil.NewCollector(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("startup contacted the collector")
+	}))
+	cfg := config.Config{
+		CollectorURL:             collector.URL,
+		CollectorCAFile:          collector.CAFile,
+		CollectorCredentialsFile: testutil.WriteNetrc(t, "127.0.0.1", testutil.CollectorLogin, testutil.CollectorPassword, 0o600),
+	}
+	if _, err := newCollectorClient(cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg.CollectorCredentialsFile = testutil.WriteNetrc(t, "127.0.0.1", testutil.CollectorLogin, testutil.CollectorPassword, 0o644)
+	if _, err := newCollectorClient(cfg); err == nil {
+		t.Fatal("a credentials file readable by others was accepted")
+	}
+	cfg.CollectorCredentialsFile = testutil.WriteNetrc(t, "collector.example.com", testutil.CollectorLogin, testutil.CollectorPassword, 0o600)
+	if _, err := newCollectorClient(cfg); err == nil {
+		t.Fatal("credentials for another machine were accepted")
 	}
 }
