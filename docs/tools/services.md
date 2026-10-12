@@ -3,6 +3,7 @@ domain: service
 tools:
   - get_service
   - get_service_status_history
+  - list_service_resources
   - list_services
 stability: experimental
 ---
@@ -16,8 +17,9 @@ or degraded, and where a service runs, without a diagnostic verdict.
 
 Implementation:
 
-- business logic: `internal/core/service.go` and
-  `internal/core/service_status_history.go`, with the shared list helpers of
+- business logic: `internal/core/service.go`,
+  `internal/core/service_status_history.go` and
+  `internal/core/service_resource.go`, with the shared list helpers of
   `internal/core/collector_list.go` and the node lookup of
   `internal/core/node.go`;
 - MCP definitions: `internal/tools/service.go`.
@@ -168,3 +170,44 @@ left out, in `excluded_seconds`. A justification `ack` holds `comment`
 (untrusted text), `counted`, `acked_by` and `acked_on`. The end of the current
 period is the last status received. Periods are in collector local time
 without a zone.
+
+### `list_service_resources`
+
+Returns one page of the resources of one service, as its agents last reported
+them, one per node, sorted by node name then resource ID. Use it to find which
+resource of a service is down or degraded, and on which node.
+
+#### Collector API
+
+The MCP first resolves the service, and the node when given, then reads:
+
+```text
+GET /api/resources?props=…&orderby=nodes.nodename,rid,id&filter=svc_id:eq:<svc_id>&filter=…&limit=…&offset=…
+```
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `service` | One exact service name or service ID. A name several services hold is refused with their service IDs |
+| `node` | Optional exact node name or node ID: only the resources of the instance on that node |
+| `status` | Optional exact resource status, such as `up`, `down`, `warn`, `n/a`, `undef`, `stdby up` or `stdby down` |
+| `type` | Optional exact resource driver, such as `fs.flag`, `disk.disk` or `container.kvm` |
+| `limit` | Optional page size, 1 to 200, default 100 |
+| `cursor` | Optional `next_cursor` of a previous call with the same filters |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `service`, `node` | The service, and the node with `node`, the filters resolved to |
+| `total` | Resources matching the filters, as the collector counts them |
+| `count`, `truncated` | Resources in this page, and whether more remain |
+| `resources[]` | `rid`, `type`, `status`, `description`, `log`, `log_truncated`, `node_id`, `nodename`, `monitored`, `disabled`, `optional`, `vmname`, `changed`, `updated` |
+| `next_cursor` | Opaque cursor of the next page, when `truncated` |
+
+`log` is the last status message the agent reported for the resource, cut to
+4 KiB; it may be empty. `description` and `log` are untrusted text. `changed`
+is when the status last changed and `updated` when the agent last reported the
+resource, both as the collector gives them.
