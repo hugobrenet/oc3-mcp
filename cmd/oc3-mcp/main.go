@@ -119,7 +119,7 @@ func newHandler(service *core.Service) (http.Handler, error) {
 		return nil, err
 	}
 	for _, register := range []func(*tools.Registrar, *core.Service) error{
-		tools.RegisterClusterTools, tools.RegisterNodeTools, tools.RegisterServiceTools, tools.RegisterServiceActionTools, tools.RegisterAlertTools, tools.RegisterCheckTools, tools.RegisterPackageTools,
+		tools.RegisterClusterTools, tools.RegisterNodeTools, tools.RegisterServiceTools, tools.RegisterServiceActionTools, tools.RegisterAlertTools, tools.RegisterCheckTools, tools.RegisterPackageTools, tools.RegisterCollectorEventTools,
 	} {
 		if err := register(registrar, service); err != nil {
 			return nil, err
