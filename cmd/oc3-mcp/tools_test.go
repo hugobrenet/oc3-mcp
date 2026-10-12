@@ -363,3 +363,28 @@ func TestDiskToolsReadTheCollector(t *testing.T) {
 		t.Fatalf("list_node_disks = %+v", disks)
 	}
 }
+
+func TestStatsToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/nodes/n1":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","nodename":"n1"}]}`))
+		case "/nodes/id-1/stats":
+			if r.URL.Query().Get("group") != "mem" {
+				t.Errorf("group = %q", r.URL.Query().Get("group"))
+			}
+			_, _ = w.Write([]byte(`{"data":[{"metric":"pct_memused","points":[[1791792000,70.5],[1791792600,77.6]]}]}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, stats := call("get_node_stats", map[string]any{"node": "n1", "group": "mem"})
+	series, _ := stats["series"].([]any)
+	if result.IsError || len(series) != 1 || series[0].(map[string]any)["max"] != 77.6 {
+		t.Fatalf("get_node_stats = %+v", stats)
+	}
+	if result, _ := call("get_node_stats", map[string]any{"node": "n1", "group": "gpu"}); !result.IsError {
+		t.Fatal("an unknown group was accepted")
+	}
+}

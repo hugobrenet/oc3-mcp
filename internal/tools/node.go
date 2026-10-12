@@ -41,6 +41,18 @@ type ListNodeDisksInput struct {
 
 type ListNodeDisksOutput = core.NodeDiskList
 
+type GetNodeStatsInput struct {
+	Node    string `json:"node" jsonschema:"one exact node name or collector node ID"`
+	Group   string `json:"group" jsonschema:"the statistics group: cpu, mem, swap, proc, block, netdev, netdev_err or blockdev"`
+	Days    int    `json:"days,omitempty" jsonschema:"optional days of history; defaults to 1; at most 1095, or 30 for netdev, netdev_err and blockdev"`
+	Metric  string `json:"metric,omitempty" jsonschema:"optional exact metric, such as usr, pct_memused, ldavg_15 or pct_util"`
+	Device  string `json:"device,omitempty" jsonschema:"optional exact device, for the netdev, netdev_err and blockdev groups"`
+	Samples int    `json:"samples,omitempty" jsonschema:"optional number of equal time slices, up to 48, whose means are returned per series to show the trend; 0 by default"`
+	At      string `json:"at,omitempty" jsonschema:"optional UTC time, RFC 3339 such as 2026-10-12T14:30:00Z, to read the value of each series at that time; the days read are extended to cover it"`
+}
+
+type GetNodeStatsOutput = core.NodeStats
+
 func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 	if err := addTool(
 		registrar,
@@ -103,6 +115,30 @@ func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 				return nil, ListNodeDisksOutput{}, err
 			}
 			return nil, disks, nil
+		},
+	); err != nil {
+		return err
+	}
+	if err := addTool(
+		registrar,
+		&mcp.Tool{
+			Name:  "get_node_stats",
+			Title: "Get node statistics",
+			Description: "Sum up the performance statistics the OpenSVC collector keeps for one node over the last days, for one group: cpu (usr, sys, iowait, idle, steal… in %), mem (pct_memused, pct_commit, kb…), swap, proc (load averages, process counts), block (I/O), netdev and netdev_err per interface, or blockdev per disk. " +
+				"Each series gives its last, lowest, mean and highest value with the time of the highest, and with samples the means of equal time slices to show the trend. " +
+				"Use it to tell whether a node is or was loaded, saturated or swapping, and when. Filter by metric, or by device for the device groups, which hold one series per device. " +
+				"With at, each series also gives its value at that time, from the closest point. " +
+				"The resolution is a minute over half an hour, ten minutes over three days, an hour over ninety days, a day beyond: the older the time, the coarser the point. Times are UTC.",
+			Annotations: readOnlyClosedWorldAnnotations(),
+		},
+		func(ctx context.Context, _ *mcp.CallToolRequest, input GetNodeStatsInput) (*mcp.CallToolResult, GetNodeStatsOutput, error) {
+			stats, err := service.GetNodeStats(ctx, core.GetNodeStatsOptions{
+				Node: input.Node, Group: input.Group, Days: input.Days, Metric: input.Metric, Device: input.Device, Samples: input.Samples, At: input.At,
+			})
+			if err != nil {
+				return nil, GetNodeStatsOutput{}, err
+			}
+			return nil, stats, nil
 		},
 	); err != nil {
 		return err
