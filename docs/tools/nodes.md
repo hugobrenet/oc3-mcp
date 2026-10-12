@@ -3,6 +3,7 @@ domain: node
 tools:
   - get_node
   - get_node_san_topology
+  - get_node_stats
   - list_node_disks
   - list_nodes
 stability: experimental
@@ -17,8 +18,9 @@ without a diagnostic verdict.
 
 Implementation:
 
-- business logic: `internal/core/node.go`, `internal/core/node_san.go` and
-  `internal/core/node_disk.go`, with the shared list helpers of `internal/core/collector_list.go`;
+- business logic: `internal/core/node.go`, `internal/core/node_san.go`,
+  `internal/core/node_disk.go` and `internal/core/node_stats.go`, with the
+  shared list helpers of `internal/core/collector_list.go`;
 - MCP definitions: `internal/tools/node.go`.
 
 The collector stores what the node daemons push, plus the properties set by
@@ -219,3 +221,64 @@ array declares the disk, `svcname` when the collector does not know the
 service using it. `disk_group` is the disk group the node reports, such as a
 volume group or a pool. `shared_with` lists the other nodes seeing the same
 disk, and is empty for a local disk.
+
+### `get_node_stats`
+
+Sums up the performance statistics the collector keeps for one node over the
+last days, for one group. Use it to tell whether a node is or was loaded,
+saturated or swapping, and when: the CPU, memory, swap, load, I/O and network
+usage, where `get_node` only gives the capacity of the node.
+
+The collector keeps the statistics the agents push, in series of points whose
+resolution coarsens with age: a minute over half an hour, ten minutes over
+three days, an hour over ninety days, a day beyond.
+
+| Group | Series |
+|---|---|
+| `cpu` | `usr`, `sys`, `iowait`, `idle`, `steal`, `nice`, `irq`, `soft`, `guest`, `gnice`, in % |
+| `mem` | `pct_memused`, `pct_commit`, `kbmemused`, `kbavail`, `kbcached`… |
+| `swap` | `pct_swpused`, `kbswpused`… |
+| `proc` | load averages `ldavg_1`, `ldavg_5`, `ldavg_15`, process counts |
+| `block` | I/O operations and throughput of the node |
+| `netdev`, `netdev_err` | traffic and errors per network interface |
+| `blockdev` | utilization, queue and latency per disk |
+
+The metrics are named as the collector names them, after sar; their names
+tell their units. The device groups hold one series per device and metric.
+
+#### Collector API
+
+The MCP first resolves the node, as `get_node` does, then reads:
+
+```text
+GET /api/nodes/<node_id>/stats?group=<group>&days=<days>
+```
+
+The route has no time range: it returns the last days up to now.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `node` | One exact node name or node ID. A name several nodes hold is refused with their node IDs |
+| `group` | `cpu`, `mem`, `swap`, `proc`, `block`, `netdev`, `netdev_err` or `blockdev` |
+| `days` | Optional days of history, default 1, at most 1095, or 30 for the device groups |
+| `metric` | Optional exact metric, such as `usr` or `pct_memused` |
+| `device` | Optional exact device, for the device groups |
+| `samples` | Optional number of equal time slices, up to 48, whose means each series returns to show the trend; 0 by default |
+| `at` | Optional UTC time, RFC 3339, to read the value of each series at that time. The days read are extended to cover it, within the limit of the group |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `node`, `group`, `days`, `at` | What the statistics are about; `days` is the days read |
+| `total_series` | Series the collector returned, before the filters |
+| `count`, `truncated` | Series returned, and whether some were left out after 200 |
+| `series[]` | `metric`, `device`, `points`, `first_at`, `last_at`, `last`, `min`, `avg`, `max`, `max_at`, and with `at` the `at_value` of the closest point at `at_point`, and with `samples` the `samples[]` with their `at` and `value` |
+| `devices` | For a device group, the devices having series, to pass as `device` |
+
+Times are UTC. A series without points has null values. The value at a time is
+that of the closest point: its distance to the time asked depends on the
+resolution of the period. Means are rounded to three decimals.
