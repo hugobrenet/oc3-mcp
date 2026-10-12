@@ -52,6 +52,8 @@ language is not exposed.
 | `cluster_id` | Optional exact cluster ID |
 | `app` | Optional exact collector app |
 | `env` | Optional exact node environment, such as `PRD` or `DEV` |
+| `frozen` | Optional; `true` lists only the frozen nodes |
+| `frozen_before` | Optional; lists only the nodes frozen at or before this date, in collector local time: `YYYY-MM-DD`, `YYYY-MM-DD HH:MM` or `YYYY-MM-DD HH:MM:SS`. It implies `frozen` |
 | `limit` | Optional page size, 1 to 200, default 50 |
 | `cursor` | Optional `next_cursor` of a previous call with the same filters |
 
@@ -65,11 +67,16 @@ spaces. A cursor used with other filters is refused.
 | `provenance` | Collector API source and MCP collection time |
 | `total` | Nodes matching the filters, as the collector counts them |
 | `count`, `truncated` | Nodes in this page, and whether more remain |
-| `nodes[]` | `node_id`, `nodename`, `cluster_id`, `app`, `env`, `asset_status`, `os`, `agent_version`, `last_comm`, `frozen` |
+| `nodes[]` | `node_id`, `nodename`, `cluster_id`, `app`, `env`, `asset_status`, `os`, `agent_version`, `last_comm`, `frozen`, `frozen_at` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
 
 Pages follow the collector offsets: a node added or removed between two calls
 can shift the following pages.
+
+`frozen_at` is always returned, empty when the node is not frozen. It is also
+empty for a frozen node when the collector does not store the freeze date its
+daemon reports: `frozen_before` then lists no node, while `frozen` still lists
+them. `last_comm` is not the freeze date.
 
 ### `get_node`
 

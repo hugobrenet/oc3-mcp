@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -127,5 +128,43 @@ func TestGetNodeRejectsInvalidNodes(t *testing.T) {
 		if _, err := newTestService(collector).GetNode(t.Context(), node); err == nil || len(collector.requests) != 0 {
 			t.Fatalf("node %q accepted", node)
 		}
+	}
+}
+
+func TestListNodesFiltersFrozenNodes(t *testing.T) {
+	collector := &fakeCollector{body: `{"data":[{"node_id":"n-1","nodename":"dev2n1","node_frozen":"T","node_frozen_at":""}],"meta":{"total":1}}`}
+	nodes, err := newTestService(collector).ListNodes(t.Context(), ListNodesOptions{Frozen: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filters := strings.Join(collector.requests[0].query["filter"], "|"); filters != "node_frozen:eq:T" ||
+		!strings.Contains(collector.requests[0].query.Get("props"), "node_frozen_at") {
+		t.Fatalf("request = %+v", collector.requests[0])
+	}
+	if !nodes.Nodes[0].Frozen || nodes.Nodes[0].FrozenAt != "" {
+		t.Fatalf("nodes = %+v", nodes.Nodes)
+	}
+	collector = &fakeCollector{body: `{"data":[],"meta":{"total":0}}`}
+	if _, err := newTestService(collector).ListNodes(t.Context(), ListNodesOptions{FrozenBefore: "2026-10-01 12:00"}); err != nil {
+		t.Fatal(err)
+	}
+	if filters := strings.Join(collector.requests[0].query["filter"], "|"); filters != "node_frozen:eq:T|node_frozen_at:lte:2026-10-01 12:00" {
+		t.Fatalf("frozen_before filters = %q", filters)
+	}
+	for _, date := range []string{"yesterday", "2026-10-01T12:00:00", "2026-10-01 12"} {
+		collector := &fakeCollector{body: `{"data":[],"meta":{"total":0}}`}
+		if _, err := newTestService(collector).ListNodes(t.Context(), ListNodesOptions{FrozenBefore: date}); err == nil || len(collector.requests) != 0 {
+			t.Fatalf("frozen_before %q accepted", date)
+		}
+	}
+}
+
+func TestNodeSummaryAlwaysCarriesFrozenAt(t *testing.T) {
+	data, err := json.Marshal(NodeSummary{NodeID: "n-1", Nodename: "dev2n1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"frozen_at":""`) {
+		t.Fatalf("summary = %s", data)
 	}
 }

@@ -8,12 +8,14 @@ import (
 )
 
 type ListNodesInput struct {
-	Name      string `json:"name,omitempty" jsonschema:"optional text the node name contains, case-insensitive"`
-	ClusterID string `json:"cluster_id,omitempty" jsonschema:"optional exact cluster ID"`
-	App       string `json:"app,omitempty" jsonschema:"optional exact collector app"`
-	Env       string `json:"env,omitempty" jsonschema:"optional exact node environment, such as PRD or DEV"`
-	Limit     int    `json:"limit,omitempty" jsonschema:"optional page size between 1 and 200; defaults to 50"`
-	Cursor    string `json:"cursor,omitempty" jsonschema:"optional next_cursor returned by a previous call with the same filters"`
+	Name         string `json:"name,omitempty" jsonschema:"optional text the node name contains, case-insensitive"`
+	ClusterID    string `json:"cluster_id,omitempty" jsonschema:"optional exact cluster ID"`
+	App          string `json:"app,omitempty" jsonschema:"optional exact collector app"`
+	Env          string `json:"env,omitempty" jsonschema:"optional exact node environment, such as PRD or DEV"`
+	Frozen       bool   `json:"frozen,omitempty" jsonschema:"optional; true lists only the frozen nodes"`
+	FrozenBefore string `json:"frozen_before,omitempty" jsonschema:"optional; lists only the nodes frozen at or before this date, in collector local time: YYYY-MM-DD, YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS"`
+	Limit        int    `json:"limit,omitempty" jsonschema:"optional page size between 1 and 200; defaults to 50"`
+	Cursor       string `json:"cursor,omitempty" jsonschema:"optional next_cursor returned by a previous call with the same filters"`
 }
 
 type ListNodesOutput = core.NodeList
@@ -30,15 +32,17 @@ func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 		&mcp.Tool{
 			Name:  "list_nodes",
 			Title: "List collector nodes",
-			Description: "List the nodes the OpenSVC collector knows, sorted by name: node ID, cluster ID, app, environment, operating system, agent version, last contact with the collector and freeze flag. " +
-				"Filter by text in the name, exact cluster ID, app or environment; use the cursor to continue a page. " +
+			Description: "List the nodes the OpenSVC collector knows, sorted by name: node ID, cluster ID, app, environment, operating system, agent version, last contact with the collector, freeze flag and freeze date. " +
+				"Filter by text in the name, exact cluster ID, app or environment, by frozen state, or by freeze date with frozen_before to list the nodes frozen since a date; use the cursor to continue a page. " +
+				"frozen_at is empty when the collector does not store the freeze date of the node. " +
 				"asset_status is an inventory property, not a live state: last_comm tells when the node daemon last reported. " +
 				"Collector dates are in its local time without a zone. Use get_node for the details of one node.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input ListNodesInput) (*mcp.CallToolResult, ListNodesOutput, error) {
 			nodes, err := service.ListNodes(ctx, core.ListNodesOptions{
-				Name: input.Name, ClusterID: input.ClusterID, App: input.App, Env: input.Env, Limit: input.Limit, Cursor: input.Cursor,
+				Name: input.Name, ClusterID: input.ClusterID, App: input.App, Env: input.Env, Frozen: input.Frozen, FrozenBefore: input.FrozenBefore,
+				Limit: input.Limit, Cursor: input.Cursor,
 			})
 			if err != nil {
 				return nil, ListNodesOutput{}, err

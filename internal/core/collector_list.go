@@ -19,7 +19,10 @@ const (
 	maxFilterValueBytes = 255
 )
 
-var collectorUUIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var (
+	collectorUUIDPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	collectorDatePattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}(:\d{2})?)?$`)
+)
 
 // collectorList is the response shape of the collector list endpoints.
 type collectorList[T any] struct {
@@ -120,6 +123,15 @@ func validateFilterValue(name string, value string) error {
 func validateCollectorUUID(name string, value string) error {
 	if value != "" && !collectorUUIDPattern.MatchString(value) {
 		return fmt.Errorf("%s must be a UUID", name)
+	}
+	return nil
+}
+
+// validateCollectorDate checks an optional date given by the caller in the
+// collector local time.
+func validateCollectorDate(name string, value string) error {
+	if value != "" && !collectorDatePattern.MatchString(value) {
+		return fmt.Errorf("%s must be a collector date: YYYY-MM-DD, YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS", name)
 	}
 	return nil
 }
