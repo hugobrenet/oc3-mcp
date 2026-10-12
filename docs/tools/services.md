@@ -3,6 +3,7 @@ domain: service
 tools:
   - get_service
   - get_service_status_history
+  - list_frozen_instances
   - list_service_resources
   - list_services
 stability: experimental
@@ -18,8 +19,9 @@ or degraded, and where a service runs, without a diagnostic verdict.
 Implementation:
 
 - business logic: `internal/core/service.go`,
-  `internal/core/service_status_history.go` and
-  `internal/core/service_resource.go`, with the shared list helpers of
+  `internal/core/service_status_history.go`,
+  `internal/core/service_resource.go` and
+  `internal/core/service_frozen_instance.go`, with the shared list helpers of
   `internal/core/collector_list.go` and the node lookup of
   `internal/core/node.go`;
 - MCP definitions: `internal/tools/service.go`.
@@ -211,3 +213,47 @@ GET /api/resources?props=…&orderby=nodes.nodename,rid,id&filter=svc_id:eq:<svc
 4 KiB; it may be empty. `description` and `log` are untrusted text. `changed`
 is when the status last changed and `updated` when the agent last reported the
 resource, both as the collector gives them.
+
+### `list_frozen_instances`
+
+Returns one page of the frozen service instances, one per service and node,
+the longest frozen first. Use it to tell which services are frozen and since
+when, on all the nodes, or on one node or service.
+
+The freeze date is known per instance only: the aggregated freeze state of a
+service (`frozen`, `mixed`, `unfrozen`) has no date, and may differ from the
+states of its instances. A service can be frozen on one node for weeks and on
+another since yesterday.
+
+#### Collector API
+
+With `service` or `node`, the MCP first resolves it, then reads:
+
+```text
+GET /api/services_instances?props=…&orderby=mon_frozen_at,svc_id,node_id&filter=mon_frozen:ne:0&filter=…&limit=…&offset=…
+```
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `frozen_before` | Optional; lists only the instances frozen at or before this date, in collector local time: `YYYY-MM-DD`, `YYYY-MM-DD HH:MM` or `YYYY-MM-DD HH:MM:SS` |
+| `service` | Optional exact service name or service ID |
+| `node` | Optional exact node name or node ID |
+| `limit` | Optional page size, 1 to 200, default 100 |
+| `cursor` | Optional `next_cursor` of a previous call with the same filters |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `service`, `node` | The service or node the filters resolved to |
+| `total` | Frozen instances matching the filters, as the collector counts them |
+| `count`, `truncated` | Instances in this page, and whether more remain |
+| `instances[]` | `svc_id`, `svcname`, `cluster_id`, `node_id`, `nodename`, `frozen_at`, `avail`, `overall`, `service_frozen` |
+| `next_cursor` | Opaque cursor of the next page, when `truncated` |
+
+`frozen_at` is in collector local time without a zone, while
+`provenance.observed_at` is in UTC: to ask for the instances frozen for more
+than a duration, compute the date in the collector local time.

@@ -13,7 +13,7 @@ const (
 )
 
 var nodeSummaryProps = []string{
-	"node_id", "nodename", "cluster_id", "app", "node_env", "status", "os_concat", "version", "last_comm", "node_frozen",
+	"node_id", "nodename", "cluster_id", "app", "node_env", "status", "os_concat", "version", "last_comm", "node_frozen", "node_frozen_at",
 }
 
 var nodeDetailProps = []string{
@@ -28,12 +28,14 @@ var nodeDetailProps = []string{
 }
 
 type ListNodesOptions struct {
-	Name      string
-	ClusterID string
-	App       string
-	Env       string
-	Limit     int
-	Cursor    string
+	Name         string
+	ClusterID    string
+	App          string
+	Env          string
+	Frozen       bool
+	FrozenBefore string
+	Limit        int
+	Cursor       string
 }
 
 type NodeList struct {
@@ -56,6 +58,7 @@ type NodeSummary struct {
 	AgentVersion string `json:"agent_version,omitempty" jsonschema:"the OpenSVC agent version the node last reported"`
 	LastComm     string `json:"last_comm,omitempty" jsonschema:"the last time the node daemon contacted the collector, in collector local time without a zone"`
 	Frozen       bool   `json:"frozen" jsonschema:"whether the node is frozen, as the collector last received it"`
+	FrozenAt     string `json:"frozen_at" jsonschema:"when the node was frozen, as the collector gives it; empty when the node is not frozen or when the collector does not store the date"`
 }
 
 type NodeDetails struct {
@@ -211,6 +214,9 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 	if err := validateCollectorUUID("cluster_id", options.ClusterID); err != nil {
 		return NodeList{}, err
 	}
+	if err := validateCollectorDate("frozen_before", options.FrozenBefore); err != nil {
+		return NodeList{}, err
+	}
 	limit, err := pageLimit(options.Limit, defaultListNodesLimit, maxListNodesLimit)
 	if err != nil {
 		return NodeList{}, err
@@ -227,6 +233,12 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 	}
 	if options.Env != "" {
 		filters = append(filters, filterEquals("node_env", options.Env))
+	}
+	if options.Frozen || options.FrozenBefore != "" {
+		filters = append(filters, filterEquals("node_frozen", "T"))
+	}
+	if options.FrozenBefore != "" {
+		filters = append(filters, "node_frozen_at:lte:"+options.FrozenBefore)
 	}
 	fingerprint := listFingerprint(url.Values{"filter": filters})
 	offset, err := decodeListCursor(options.Cursor, fingerprint)
@@ -246,7 +258,7 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 		result.Nodes = append(result.Nodes, NodeSummary{
 			NodeID: node.NodeID, Nodename: node.Nodename, ClusterID: node.ClusterID, App: node.App, Env: node.NodeEnv,
 			AssetStatus: node.Status, OS: node.OSConcat, AgentVersion: node.Version, LastComm: node.LastComm,
-			Frozen: collectorBool(node.NodeFrozen),
+			Frozen: collectorBool(node.NodeFrozen), FrozenAt: node.NodeFrozenAt,
 		})
 	}
 	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {

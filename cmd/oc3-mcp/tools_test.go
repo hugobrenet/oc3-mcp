@@ -290,3 +290,33 @@ func TestPackageToolsReadTheCollector(t *testing.T) {
 		t.Fatal("a single node was accepted")
 	}
 }
+
+func TestFrozenToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/nodes":
+			if strings.Join(r.URL.Query()["filter"], "|") != "node_frozen:eq:T|node_frozen_at:lte:2026-10-01" {
+				t.Errorf("node filters = %q", r.URL.Query()["filter"])
+			}
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","nodename":"n1","node_frozen":"T","node_frozen_at":"2026-09-30 10:00:00"}],"meta":{"total":1}}`))
+		case "/services_instances":
+			if strings.Join(r.URL.Query()["filter"], "|") != "mon_frozen:ne:0" {
+				t.Errorf("instance filters = %q", r.URL.Query()["filter"])
+			}
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s1","services.svcname":"web","node_id":"id-1","nodes.nodename":"n1","mon_frozen_at":"2026-09-12 00:22:06"}],"meta":{"total":1}}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, nodes := call("list_nodes", map[string]any{"frozen_before": "2026-10-01"})
+	items, _ := nodes["nodes"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["frozen_at"] != "2026-09-30 10:00:00" {
+		t.Fatalf("list_nodes = %+v", nodes)
+	}
+	result, instances := call("list_frozen_instances", map[string]any{})
+	items, _ = instances["instances"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["frozen_at"] != "2026-09-12 00:22:06" {
+		t.Fatalf("list_frozen_instances = %+v", instances)
+	}
+}

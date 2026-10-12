@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -18,10 +17,7 @@ const (
 	maxActionLogTotalBytes         = 256 << 10
 )
 
-var (
-	serviceActionStatuses = []string{"ok", "warn", "err"}
-	collectorDatePattern  = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}(:\d{2})?)?$`)
-)
+var serviceActionStatuses = []string{"ok", "warn", "err"}
 
 var serviceActionProps = []string{
 	"id", "sid", "svc_id", "services.svcname", "node_id", "nodes.nodename", "rid", "action", "origin", "status",
@@ -129,8 +125,8 @@ func (s *Service) ListServiceActions(ctx context.Context, options ListServiceAct
 	if options.Status != "" && !contains(serviceActionStatuses, options.Status) {
 		return ServiceActionList{}, fmt.Errorf("status must be one of %s", strings.Join(serviceActionStatuses, ", "))
 	}
-	if options.Since != "" && !collectorDatePattern.MatchString(options.Since) {
-		return ServiceActionList{}, fmt.Errorf("since must be a collector date: YYYY-MM-DD, YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS")
+	if err := validateCollectorDate("since", options.Since); err != nil {
+		return ServiceActionList{}, err
 	}
 	limit, err := pageLimit(options.Limit, defaultListServiceActionsLimit, maxListServiceActionsLimit)
 	if err != nil {

@@ -45,6 +45,16 @@ type ListServiceResourcesInput struct {
 
 type ListServiceResourcesOutput = core.ServiceResourceList
 
+type ListFrozenInstancesInput struct {
+	FrozenBefore string `json:"frozen_before,omitempty" jsonschema:"optional; lists only the instances frozen at or before this date, in collector local time: YYYY-MM-DD, YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS"`
+	Service      string `json:"service,omitempty" jsonschema:"optional exact service name or service ID"`
+	Node         string `json:"node,omitempty" jsonschema:"optional exact node name or node ID"`
+	Limit        int    `json:"limit,omitempty" jsonschema:"optional page size between 1 and 200; defaults to 100"`
+	Cursor       string `json:"cursor,omitempty" jsonschema:"optional next_cursor returned by a previous call with the same filters"`
+}
+
+type ListFrozenInstancesOutput = core.FrozenInstanceList
+
 func RegisterServiceTools(registrar *Registrar, service *core.Service) error {
 	if err := addTool(
 		registrar,
@@ -109,6 +119,28 @@ func RegisterServiceTools(registrar *Registrar, service *core.Service) error {
 				return nil, ListServiceResourcesOutput{}, err
 			}
 			return nil, resources, nil
+		},
+	); err != nil {
+		return err
+	}
+	if err := addTool(
+		registrar,
+		&mcp.Tool{
+			Name:  "list_frozen_instances",
+			Title: "List frozen instances",
+			Description: "List the frozen instances of the OpenSVC services, one per service and node, the longest frozen first: service, node, when the instance was frozen, its availability and overall status, and the aggregated freeze state of the service. " +
+				"Use it to tell which services are frozen and since when, on all nodes or on one node or service; frozen_before keeps the instances frozen at or before a date. " +
+				"The freeze date is known per instance only; the aggregated freeze state of a service has none and may differ from its instances. Collector dates are in its local time without a zone.",
+			Annotations: readOnlyClosedWorldAnnotations(),
+		},
+		func(ctx context.Context, _ *mcp.CallToolRequest, input ListFrozenInstancesInput) (*mcp.CallToolResult, ListFrozenInstancesOutput, error) {
+			instances, err := service.ListFrozenInstances(ctx, core.ListFrozenInstancesOptions{
+				FrozenBefore: input.FrozenBefore, Service: input.Service, Node: input.Node, Limit: input.Limit, Cursor: input.Cursor,
+			})
+			if err != nil {
+				return nil, ListFrozenInstancesOutput{}, err
+			}
+			return nil, instances, nil
 		},
 	); err != nil {
 		return err
