@@ -342,3 +342,24 @@ func TestSanToolsReadTheCollector(t *testing.T) {
 		t.Fatalf("get_node_san_topology = %+v", topology)
 	}
 }
+
+func TestDiskToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.EscapedPath() == "/nodes/n1":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","nodename":"n1"}]}`))
+		case r.URL.EscapedPath() == "/disks" && strings.HasPrefix(r.URL.Query().Get("filter"), "disk_id:in:"):
+			_, _ = w.Write([]byte(`{"data":[{"disk_id":"360014050afbff271f0a4e019f692be55","node_id":"id-2","nodename":"n2"}]}`))
+		case r.URL.EscapedPath() == "/disks":
+			_, _ = w.Write([]byte(`{"data":[{"disk_id":"360014050afbff271f0a4e019f692be55","disk_size":1024}],"meta":{"total":1}}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, disks := call("list_node_disks", map[string]any{"node": "n1"})
+	items, _ := disks["disks"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["shared_with"].([]any)[0] != "n2" {
+		t.Fatalf("list_node_disks = %+v", disks)
+	}
+}

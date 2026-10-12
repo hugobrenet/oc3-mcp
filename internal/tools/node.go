@@ -32,6 +32,15 @@ type GetNodeSanTopologyInput struct {
 
 type GetNodeSanTopologyOutput = core.NodeSanTopology
 
+type ListNodeDisksInput struct {
+	Node   string `json:"node" jsonschema:"one exact node name or collector node ID"`
+	DiskID string `json:"disk_id,omitempty" jsonschema:"optional text the disk ID contains, case-insensitive, such as the end of a world wide identifier"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"optional page size between 1 and 200; defaults to 100"`
+	Cursor string `json:"cursor,omitempty" jsonschema:"optional next_cursor returned by a previous call with the same filters"`
+}
+
+type ListNodeDisksOutput = core.NodeDiskList
+
 func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 	if err := addTool(
 		registrar,
@@ -74,6 +83,26 @@ func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 				return nil, GetNodeOutput{}, err
 			}
 			return nil, node, nil
+		},
+	); err != nil {
+		return err
+	}
+	if err := addTool(
+		registrar,
+		&mcp.Tool{
+			Name:  "list_node_disks",
+			Title: "List node disks",
+			Description: "List the disks one node sees, as the OpenSVC collector knows them from its agent and the storage arrays: disk ID, size and used size in MiB, vendor, model, storage array and its disk group, the disk group the node reports, the service using the disk when the collector knows it, " +
+				"and the other nodes seeing the same disk. Use it to tell which LUNs a node sees, on which array, and whether a disk is visible from the other nodes a service may fail over to. " +
+				"A disk used by several services is one row per service. Local disks carry their device name, such as vda, and are never shared. Collector dates are as it gives them.",
+			Annotations: readOnlyClosedWorldAnnotations(),
+		},
+		func(ctx context.Context, _ *mcp.CallToolRequest, input ListNodeDisksInput) (*mcp.CallToolResult, ListNodeDisksOutput, error) {
+			disks, err := service.ListNodeDisks(ctx, core.ListNodeDisksOptions{Node: input.Node, DiskID: input.DiskID, Limit: input.Limit, Cursor: input.Cursor})
+			if err != nil {
+				return nil, ListNodeDisksOutput{}, err
+			}
+			return nil, disks, nil
 		},
 	); err != nil {
 		return err
