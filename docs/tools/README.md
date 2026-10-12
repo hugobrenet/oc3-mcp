@@ -8,6 +8,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 
 | Domain | Tools | Documentation |
 |---|---|---|
+| Clusters | `list_clusters` | [Cluster tools](clusters.md) |
 | Nodes | `list_nodes`, `get_node` | [Node tools](nodes.md) |
 | Services | `list_services`, `get_service`, `get_service_status_history`, `list_service_resources` | [Service tools](services.md) |
 | Service actions | `list_service_actions`, `get_service_action_logs` | [Service action tools](service-actions.md) |
