@@ -196,3 +196,37 @@ func TestServiceActionToolsReadTheCollector(t *testing.T) {
 		t.Fatalf("get_service_action_logs = %+v", logs)
 	}
 }
+
+func TestCheckToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/nodes/n1":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","nodename":"n1"}]}`))
+		case "/services/web":
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s1","svcname":"web"}]}`))
+		case "/nodes/id-1/checks", "/services/s1/checks":
+			_, _ = w.Write([]byte(`{"data":[{"id":1,"node_id":"id-1","svc_id":"s1","chk_type":"fs_u","chk_instance":"/srv/web.free","chk_value":40,"chk_low":1500,"chk_high":null,"chk_err":1},
+				{"id":2,"node_id":"id-1","chk_type":"eth","chk_instance":"eth0.link","chk_value":1,"chk_low":1,"chk_high":1,"chk_err":0}],"meta":{"total":2}}`))
+		case "/nodes/id-1/services":
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s1","services.svcname":"web"}]}`))
+		case "/services/s1/nodes":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","nodes.nodename":"n1"}]}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, checks := call("list_node_checks", map[string]any{"node": "n1", "out_of_bounds_only": true})
+	items, _ := checks["checks"].([]any)
+	if result.IsError || checks["total"] != float64(2) || len(items) != 1 || items[0].(map[string]any)["svcname"] != "web" || items[0].(map[string]any)["high"] != nil {
+		t.Fatalf("list_node_checks = %+v", checks)
+	}
+	result, checks = call("list_service_checks", map[string]any{"service": "web"})
+	items, _ = checks["checks"].([]any)
+	if result.IsError || len(items) != 2 || items[0].(map[string]any)["nodename"] != "n1" {
+		t.Fatalf("list_service_checks = %+v", checks)
+	}
+	if result, _ := call("list_node_checks", map[string]any{}); !result.IsError {
+		t.Fatal("list_node_checks without node succeeded")
+	}
+}
