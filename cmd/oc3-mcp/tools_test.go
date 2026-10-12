@@ -167,3 +167,32 @@ func TestAlertToolsReadTheCollector(t *testing.T) {
 		t.Fatal("min_severity 9 was accepted")
 	}
 }
+
+func TestServiceActionToolsReadTheCollector(t *testing.T) {
+	const session = "4e54c743-29a2-46fa-b05f-9828136f008c"
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.EscapedPath() != "/services_actions" {
+			notFound(w, "missing")
+			return
+		}
+		if r.URL.Query().Get("filter") == "sid:eq:"+session {
+			_, _ = w.Write([]byte(`{"data":[{"id":1,"log_type":"status","action":"start","status":"err"},{"id":2,"log_type":"","status":"err","status_log":"virsh exit code 1"}],"meta":{"total":2}}`))
+			return
+		}
+		if strings.Join(r.URL.Query()["filter"], "|") != "log_type:eq:status|status:eq:err" {
+			t.Errorf("filters = %q", r.URL.Query()["filter"])
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":1,"sid":"` + session + `","action":"start","status":"err"}],"meta":{"total":1}}`))
+	})
+	result, actions := call("list_service_actions", map[string]any{"status": "err"})
+	items, _ := actions["actions"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["session_id"] != session {
+		t.Fatalf("list_service_actions = %+v", actions)
+	}
+	result, logs := call("get_service_action_logs", map[string]any{"session_id": session})
+	entries, _ := logs["logs"].([]any)
+	if result.IsError || len(entries) != 1 || entries[0].(map[string]any)["text"] != "virsh exit code 1" {
+		t.Fatalf("get_service_action_logs = %+v", logs)
+	}
+}
