@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,7 +59,7 @@ func TestHealth(t *testing.T) {
 	}
 }
 
-func TestMCPInitializeAndEmptyTools(t *testing.T) {
+func TestMCPInitializeAndListTools(t *testing.T) {
 	server := httptest.NewTLSServer(newTestHandler(t))
 	defer server.Close()
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -78,8 +79,15 @@ func TestMCPInitializeAndEmptyTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools.Tools) != 0 {
-		t.Fatalf("expected no tools, got %d", len(tools.Tools))
+	var names []string
+	for _, tool := range tools.Tools {
+		names = append(names, tool.Name)
+		if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
+			t.Fatalf("tool %s is not read-only", tool.Name)
+		}
+	}
+	if strings.Join(names, ",") != "get_node,list_nodes" {
+		t.Fatalf("tools = %v", names)
 	}
 }
 

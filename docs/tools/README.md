@@ -6,7 +6,9 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 
 ## Domains
 
-No tool is registered yet.
+| Domain | Tools | Documentation |
+|---|---|---|
+| Nodes | `list_nodes`, `get_node` | [Node tools](nodes.md) |
 
 ## Conventions
 
