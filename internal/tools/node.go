@@ -26,6 +26,12 @@ type GetNodeInput struct {
 
 type GetNodeOutput = core.NodeDetails
 
+type GetNodeSanTopologyInput struct {
+	Node string `json:"node" jsonschema:"one exact node name or collector node ID"`
+}
+
+type GetNodeSanTopologyOutput = core.NodeSanTopology
+
 func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 	if err := addTool(
 		registrar,
@@ -68,6 +74,28 @@ func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 				return nil, GetNodeOutput{}, err
 			}
 			return nil, node, nil
+		},
+	); err != nil {
+		return err
+	}
+	if err := addTool(
+		registrar,
+		&mcp.Tool{
+			Name:  "get_node_san_topology",
+			Title: "Get node SAN topology",
+			Description: "Read the fibre channel SAN wiring of one node, as the OpenSVC collector computes it from the node adapters, the SAN switch ports and the zoning: " +
+				"for each adapter port, the paths through the switches of each fabric to the storage array target ports, with the ports and the cable speeds of each hop; " +
+				"for each storage array, the fabrics, adapters, target ports and number of paths reaching it; and the devices and cables of the wiring. " +
+				"Use it to check the redundancy of the SAN paths of a node, such as an array reached through one fabric only, or a slower hop. " +
+				"wired is false for a node without a fibre channel wiring known to the collector, such as an iSCSI node.",
+			Annotations: readOnlyClosedWorldAnnotations(),
+		},
+		func(ctx context.Context, _ *mcp.CallToolRequest, input GetNodeSanTopologyInput) (*mcp.CallToolResult, GetNodeSanTopologyOutput, error) {
+			topology, err := service.GetNodeSanTopology(ctx, input.Node)
+			if err != nil {
+				return nil, GetNodeSanTopologyOutput{}, err
+			}
+			return nil, topology, nil
 		},
 	); err != nil {
 		return err

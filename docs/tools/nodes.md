@@ -2,6 +2,7 @@
 domain: node
 tools:
   - get_node
+  - get_node_san_topology
   - list_nodes
 stability: experimental
 ---
@@ -15,8 +16,8 @@ without a diagnostic verdict.
 
 Implementation:
 
-- business logic: `internal/core/node.go`, with the shared list helpers of
-  `internal/core/collector_list.go`;
+- business logic: `internal/core/node.go` and `internal/core/node_san.go`,
+  with the shared list helpers of `internal/core/collector_list.go`;
 - MCP definitions: `internal/tools/node.go`.
 
 The collector stores what the node daemons push, plus the properties set by
@@ -114,3 +115,56 @@ hold is refused, with their node and cluster IDs: pass one node ID.
 `mem_mb` is the memory size in MiB: the collector names it `mem_bytes` but
 stores MiB. Empty text fields are omitted. Power, chassis and blade fields are
 left out.
+
+### `get_node_san_topology`
+
+Returns the fibre channel SAN wiring of one node and the paths from its
+adapters to the storage arrays. Use it to check the redundancy of the SAN
+paths of a node: an array reached through one fabric only, an adapter
+reaching no array, or a slower hop.
+
+The collector computes the wiring from the adapters of the node, the ports of
+the SAN switches and the zoning: the node and its adapter ports, the switches
+these ports are plugged in, the inter-switch links followed from there, and
+the storage arrays owning the target ports zoned to the adapters. A switch
+reached through an inter-switch link is kept only when it leads to one of
+those target ports. A node without a fibre channel wiring known to the
+collector, such as an iSCSI node, has no cable.
+
+#### Collector API
+
+The MCP first resolves the node, as `get_node` does, then reads:
+
+```text
+GET /api/nodes/<node_id>/san
+```
+
+The collector returns the wiring as a graph of devices and cables. The MCP
+follows the cables from each adapter port to the array ports to build the
+paths, and sums them per array.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `node` | One exact node name or node ID. A name several nodes hold is refused with their node IDs |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `node` | The node whose wiring is described |
+| `wired` | Whether the collector knows a fibre channel wiring of the node |
+| `hbas[]` | Each adapter port `port_wwn` and its `paths[]`: `fabric`, `hops[]`, `array`, `array_port`, `min_speed_gbps` |
+| `arrays[]` | Each storage array reached: `array`, `fabrics`, `hbas`, `target_ports`, `paths` |
+| `devices[]` | The devices of the wiring: `id`, `kind` (`server`, `switch` or `array`), `name`, `fabric`, `ports` |
+| `links[]` | The cables of the wiring: `from`, `from_port`, `to`, `to_port`, `speeds_gbps` |
+| `truncated` | Whether paths were left out after 500 |
+
+A hop is one cable, from the adapter port to a switch, between switches, or
+from a switch to an array port: `from`, `from_port`, `to`, `to_port` and
+`speeds_gbps`. An aggregated inter-switch link holds several ports, such as
+`46,47`, and one speed per cable. The fabric of a path is the fabric of its
+first switch. An array reached through a single fabric, or by a single
+adapter, has one entry in `fabrics` or `hbas`.
