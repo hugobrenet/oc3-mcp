@@ -18,7 +18,7 @@ Implementation:
 The collector knows a cluster from the status its daemon sends. A `cluster_id`
 that a node or service carries but that this tool does not list is a cluster
 whose daemon status the collector never received: its nodes and services are
-known, its name is not. Visibility is that of the collector account of the MCP.
+known, its name is not. Visibility is that of the collector account of the caller.
 
 ## Tools
 

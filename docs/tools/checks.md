@@ -19,7 +19,7 @@ Implementation:
   lookups;
 - MCP definitions: `internal/tools/check.go`.
 
-Visibility is that of the collector account of the MCP.
+Visibility is that of the collector account of the caller.
 
 - A check measures one instance of a type: a mount point for `fs_u` and
   `fs_i`, a multipath WWID for `mpath`, an interface link for `eth`. A check

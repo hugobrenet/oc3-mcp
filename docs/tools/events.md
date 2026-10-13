@@ -34,7 +34,7 @@ The log holds two kinds of events:
 
 The dashboard sign-ins and sign-outs (`user.login`, `user.logout`) are always
 left out: they are a history of the presence of people, with no bearing on the
-nodes and services. Visibility is that of the collector account of the MCP.
+nodes and services. Visibility is that of the collector account of the caller.
 
 ## Tools
 

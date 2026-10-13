@@ -2,31 +2,51 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/opensvc/oc3-mcp/internal/client"
 	"github.com/opensvc/oc3-mcp/internal/config"
-	"github.com/opensvc/oc3-mcp/internal/core"
 	"github.com/opensvc/oc3-mcp/internal/testutil"
 )
 
-func newTestHandler(t *testing.T) http.Handler {
+// bearerTransport adds the caller's access token, as the AI agent does.
+type bearerTransport struct {
+	token string
+}
+
+func (t bearerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	clone := request.Clone(request.Context())
+	clone.Header.Set("Authorization", "Bearer "+t.token)
+	return http.DefaultTransport.RoundTrip(clone)
+}
+
+func bearerClient(token string) *http.Client {
+	return &http.Client{Transport: bearerTransport{token: token}}
+}
+
+func newTestServer(t *testing.T, collector *client.Client) *httptest.Server {
 	t.Helper()
-	handler, err := newHandler(core.New(nil))
+	handler, err := newHandler(collector)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return handler
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	return server
 }
 
 func TestHealth(t *testing.T) {
-	server := httptest.NewTLSServer(newTestHandler(t))
-	defer server.Close()
+	server := newTestServer(t, nil)
 	for _, method := range []string{http.MethodGet, http.MethodHead, http.MethodPost} {
 		t.Run(method, func(t *testing.T) {
 			request, err := http.NewRequestWithContext(t.Context(), method, server.URL+"/health", nil)
@@ -60,13 +80,12 @@ func TestHealth(t *testing.T) {
 }
 
 func TestMCPInitializeAndListTools(t *testing.T) {
-	server := httptest.NewTLSServer(newTestHandler(t))
-	defer server.Close()
+	server := newTestServer(t, nil)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.1.0"}, nil)
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
-		Endpoint: server.URL + "/mcp", HTTPClient: server.Client(),
+		Endpoint: server.URL + "/mcp", HTTPClient: bearerClient(testutil.Token),
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -91,24 +110,133 @@ func TestMCPInitializeAndListTools(t *testing.T) {
 	}
 }
 
-func TestNewCollectorClientReadsCredentialsWithoutContactingTheCollector(t *testing.T) {
+func TestMCPRequiresAnAccessToken(t *testing.T) {
+	server := newTestServer(t, nil)
+	expired := testutil.NewToken(testutil.TokenIssuer, testutil.TokenSubject, time.Now().Add(-time.Minute))
+	for name, httpClient := range map[string]*http.Client{
+		"no token":      server.Client(),
+		"expired token": bearerClient(expired),
+	} {
+		for _, path := range []string{"/mcp", "/mcp/auth/whoami"} {
+			method := http.MethodPost
+			if path == "/mcp/auth/whoami" {
+				method = http.MethodGet
+			}
+			request, err := http.NewRequestWithContext(t.Context(), method, server.URL+path, strings.NewReader(""))
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := httpClient.Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			if response.StatusCode != http.StatusUnauthorized || response.Header.Get("WWW-Authenticate") != "Bearer" {
+				t.Fatalf("%s %s: status=%d", name, path, response.StatusCode)
+			}
+		}
+	}
+}
+
+func TestWhoAmIProvesTheTokenWithTheCollector(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		status   int
+		identity string
+		want     int
+	}{
+		{"confirmed", http.StatusOK, `{"auth_source":"bearer","issuer":"` + testutil.TokenIssuer + `","subject":"` + testutil.TokenSubject + `","email":"user@example.com"}`, http.StatusOK},
+		{"session", http.StatusOK, `{"auth_source":"session","issuer":"` + testutil.TokenIssuer + `","subject":"` + testutil.TokenSubject + `"}`, http.StatusUnauthorized},
+		{"other subject", http.StatusOK, `{"auth_source":"bearer","issuer":"` + testutil.TokenIssuer + `","subject":"other"}`, http.StatusUnauthorized},
+		{"other issuer", http.StatusOK, `{"auth_source":"bearer","issuer":"https://other.example.com/","subject":"` + testutil.TokenSubject + `"}`, http.StatusUnauthorized},
+		{"forbidden", http.StatusForbidden, `{"text":"denied"}`, http.StatusForbidden},
+		{"collector failure", http.StatusInternalServerError, `{"text":"boom"}`, http.StatusBadGateway},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			collector := testutil.NewCollector(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/auth/whoami" {
+					t.Errorf("path = %s", r.URL.Path)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.identity))
+			}))
+			api, err := newCollectorClient(config.Config{CollectorURL: collector.URL, CollectorCAFile: collector.CAFile})
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := newTestServer(t, api)
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/mcp/auth/whoami", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := bearerClient(testutil.Token).Do(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			body, _ := io.ReadAll(response.Body)
+			if response.StatusCode != tc.want || strings.Contains(string(body), "boom") || strings.Contains(string(body), "denied") {
+				t.Fatalf("status=%d body=%s", response.StatusCode, body)
+			}
+			if tc.want != http.StatusOK {
+				return
+			}
+			var identity struct {
+				Issuer    string    `json:"issuer"`
+				Subject   string    `json:"subject"`
+				ExpiresAt time.Time `json:"expires_at"`
+			}
+			if err := json.Unmarshal(body, &identity); err != nil || identity.Issuer != testutil.TokenIssuer || identity.Subject != testutil.TokenSubject || identity.ExpiresAt.IsZero() {
+				t.Fatalf("identity = %s", body)
+			}
+		})
+	}
+}
+
+func TestNewCollectorClientDoesNotContactTheCollector(t *testing.T) {
 	collector := testutil.NewCollector(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("startup contacted the collector")
 	}))
-	cfg := config.Config{
-		CollectorURL:             collector.URL,
-		CollectorCAFile:          collector.CAFile,
-		CollectorCredentialsFile: testutil.WriteNetrc(t, "127.0.0.1", testutil.CollectorLogin, testutil.CollectorPassword, 0o600),
-	}
-	if _, err := newCollectorClient(cfg); err != nil {
+	if _, err := newCollectorClient(config.Config{CollectorURL: collector.URL, CollectorCAFile: collector.CAFile}); err != nil {
 		t.Fatal(err)
 	}
-	cfg.CollectorCredentialsFile = testutil.WriteNetrc(t, "127.0.0.1", testutil.CollectorLogin, testutil.CollectorPassword, 0o644)
-	if _, err := newCollectorClient(cfg); err == nil {
-		t.Fatal("a credentials file readable by others was accepted")
+	if _, err := newCollectorClient(config.Config{CollectorURL: collector.URL, CollectorCAFile: "/nonexistent/ca.pem"}); err == nil {
+		t.Fatal("a missing CA file was accepted")
 	}
-	cfg.CollectorCredentialsFile = testutil.WriteNetrc(t, "collector.example.com", testutil.CollectorLogin, testutil.CollectorPassword, 0o600)
-	if _, err := newCollectorClient(cfg); err == nil {
-		t.Fatal("credentials for another machine were accepted")
+}
+
+func TestListenDelegated(t *testing.T) {
+	// Unix socket paths are short: keep the directory under the system one.
+	dir, err := os.MkdirTemp("", "oc3-mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	path := filepath.Join(dir, "delegated.sock")
+	listener, err := listenDelegated(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0o660 {
+		t.Fatalf("socket mode = %v, %v", info.Mode(), err)
+	}
+	if _, err := listenDelegated(path); err == nil {
+		t.Fatal("a live socket was replaced")
+	}
+	// A stopped process leaves its socket file behind.
+	listener.(*net.UnixListener).SetUnlinkOnClose(false)
+	listener.Close()
+	listener, err = listenDelegated(path)
+	if err != nil {
+		t.Fatalf("stale socket: %v", err)
+	}
+	listener.Close()
+	file := filepath.Join(dir, "file")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := listenDelegated(file); err == nil {
+		t.Fatal("a regular file was replaced")
 	}
 }

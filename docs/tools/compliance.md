@@ -20,7 +20,7 @@ Implementation:
 
 The administration of the compliance, modulesets, rulesets, variables and
 their publications, is not exposed. Visibility is that of the collector account
-of the MCP.
+of the caller.
 
 ## Tools
 

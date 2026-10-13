@@ -24,7 +24,7 @@ Implementation:
 
 The collector keeps these reports in its service action history. It is not the
 queue of the commands the collector itself sends to the agents, which no tool
-reads. Visibility is that of the collector account of the MCP: the services of
+reads. Visibility is that of the collector account of the caller: the services of
 the apps its groups are responsible for, or every service for a manager.
 
 An agent session groups one run of an agent command. It holds one action row

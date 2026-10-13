@@ -13,6 +13,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/opensvc/oc3-mcp/internal/auth"
 )
 
 const (
@@ -44,14 +46,11 @@ func New(rawBaseURL string, httpClient *http.Client) (*Client, error) {
 
 // NewHTTPClient returns the HTTP client of the collector: TLS 1.2 or later,
 // system roots or the CA bundle at caFile, no proxy, no redirect, and the
-// Basic credentials sent to the collector origin only.
-func NewHTTPClient(rawBaseURL string, caFile string, credentials BasicCredentials) (*http.Client, error) {
+// access token of the caller sent to the collector origin only.
+func NewHTTPClient(rawBaseURL string, caFile string) (*http.Client, error) {
 	baseURL, err := url.Parse(rawBaseURL)
 	if err != nil || baseURL.Scheme != "https" || baseURL.Host == "" {
 		return nil, fmt.Errorf("OpenSVC collector URL must be an absolute HTTPS URL")
-	}
-	if credentials.Login == "" || credentials.Password == "" {
-		return nil, fmt.Errorf("OpenSVC collector credentials are incomplete")
 	}
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
 	if caFile != "" {
@@ -66,7 +65,7 @@ func NewHTTPClient(rawBaseURL string, caFile string, credentials BasicCredential
 		tlsConfig.RootCAs = roots
 	}
 	transport := &http.Transport{
-		// Proxy is intentionally nil: the credentials travel directly.
+		// Proxy is intentionally nil: the caller's token travels directly.
 		TLSClientConfig:     tlsConfig,
 		TLSHandshakeTimeout: 10 * time.Second,
 		IdleConnTimeout:     90 * time.Second,
@@ -74,24 +73,29 @@ func NewHTTPClient(rawBaseURL string, caFile string, credentials BasicCredential
 		MaxIdleConnsPerHost: 4,
 	}
 	return &http.Client{
-		Transport:     basicAuthTransport{base: transport, origin: baseURL.Scheme + "://" + baseURL.Host, credentials: credentials},
+		Transport:     bearerTransport{base: transport, origin: baseURL.Scheme + "://" + baseURL.Host},
 		Timeout:       requestTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}, nil
 }
 
-type basicAuthTransport struct {
-	base        http.RoundTripper
-	origin      string
-	credentials BasicCredentials
+// bearerTransport forwards the access token of the caller unchanged. The MCP
+// holds no collector account: a request without a caller is never sent.
+type bearerTransport struct {
+	base   http.RoundTripper
+	origin string
 }
 
-func (t basicAuthTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	if request.URL.Scheme+"://"+request.URL.Host != t.origin {
+func (t bearerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request.URL.User != nil || request.URL.Scheme+"://"+request.URL.Host != t.origin || request.Host != "" && request.Host != request.URL.Host {
 		return nil, fmt.Errorf("send OpenSVC collector request: destination differs from the configured collector origin")
 	}
+	_, token, ok := auth.DelegationFromContext(request.Context())
+	if !ok {
+		return nil, fmt.Errorf("send OpenSVC collector request: no valid access token of the caller")
+	}
 	clone := request.Clone(request.Context())
-	clone.SetBasicAuth(t.credentials.Login, t.credentials.Password)
+	clone.Header.Set("Authorization", "Bearer "+token)
 	return t.base.RoundTrip(clone)
 }
 

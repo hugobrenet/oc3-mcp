@@ -20,7 +20,7 @@ Implementation:
   `internal/core/collector_list.go` and the node and service lookups;
 - MCP definitions: `internal/tools/package.go`.
 
-Visibility is that of the collector account of the MCP: only the nodes and
+Visibility is that of the collector account of the caller: only the nodes and
 services of the apps its groups are responsible for are compared, unless it is
 a manager.
 
