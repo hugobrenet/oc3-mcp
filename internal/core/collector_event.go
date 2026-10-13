@@ -113,7 +113,7 @@ func (s *Service) ListCollectorEvents(ctx context.Context, options ListCollector
 		filters = append(filters, filterEquals("svc_id", service.SvcID))
 	}
 	if options.Action != "" {
-		filters = append(filters, collectorEventActionFilter(options.Action))
+		filters = append(filters, filterEqualsOrFamily("log_action", options.Action))
 	}
 	if options.Level != "" {
 		filters = append(filters, filterEquals("log_level", options.Level))
@@ -235,13 +235,4 @@ func renderCollectorEvent(template string, rawData string) (string, map[string]a
 		data = nil
 	}
 	return message, data
-}
-
-// collectorEventActionFilter matches one exact action, or with a trailing dot,
-// such as service., the whole family of actions starting with it.
-func collectorEventActionFilter(action string) string {
-	if strings.HasSuffix(action, ".") {
-		return "log_action:~^" + regexp.QuoteMeta(action)
-	}
-	return filterEquals("log_action", action)
 }

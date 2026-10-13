@@ -107,6 +107,15 @@ func filterEquals(prop string, value string) string {
 	return prop + ":eq:" + value
 }
 
+// filterEqualsOrFamily matches prop equal to value or, when value ends with a
+// dot, such as service., starting with it.
+func filterEqualsOrFamily(prop string, value string) string {
+	if strings.HasSuffix(value, ".") {
+		return prop + ":~^" + regexp.QuoteMeta(value)
+	}
+	return filterEquals(prop, value)
+}
+
 // validateFilterValue checks an optional filter or identifier given by the
 // caller.
 func validateFilterValue(name string, value string) error {

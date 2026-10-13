@@ -429,3 +429,24 @@ func TestCollectorEventToolsReadTheCollector(t *testing.T) {
 		t.Fatalf("list_collector_events = %+v", events)
 	}
 }
+
+func TestComplianceToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/compliance/status":
+			if filters := strings.Join(r.URL.Query()["filter"], "|"); filters != `run_module:~^sec\.|run_status:eq:1` {
+				t.Errorf("filters = %q", filters)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"id":1102,"run_module":"sec.ssh","node_id":"e1d22de4-07ea-47d1-ac46-8bf014d0cbec","nodes.nodename":"n1","svc_id":"","services.svcname":null,
+				"run_action":"check","run_status":1,"run_date":"2026-10-11 10:48:10","run_log":"PermitRootLogin is yes\nERR: PermitRootLogin should be no"}],"meta":{"total":1}}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, list := call("list_compliance_status", map[string]any{"module": "sec.", "status": "nok"})
+	statuses, _ := list["statuses"].([]any)
+	if result.IsError || len(statuses) != 1 || statuses[0].(map[string]any)["status"] != "nok" || statuses[0].(map[string]any)["nodename"] != "n1" {
+		t.Fatalf("list_compliance_status = %+v", list)
+	}
+}
