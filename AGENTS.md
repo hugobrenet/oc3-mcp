@@ -13,7 +13,9 @@ The collector is the only resource server. Tools are read-only. Add an action
 tool only at user direction.
 
 Module and binary: `github.com/opensvc/oc3-mcp` and `oc3-mcp`.
-Use Go, the standard library and `github.com/modelcontextprotocol/go-sdk`.
+Use Go, the standard library, `github.com/modelcontextprotocol/go-sdk` and
+`github.com/golang-jwt/jwt/v5`, which reads the claims of the delegated
+tokens as `om3-mcp` does.
 
 ## Before editing
 
@@ -28,12 +30,14 @@ Use Go, the standard library and `github.com/modelcontextprotocol/go-sdk`.
 
 ## Architecture
 
-- `cmd/oc3-mcp`: composition root, HTTPS listener and lifecycle. Keep
-  explicit tool registration in `main.go`.
+- `cmd/oc3-mcp`: composition root, Unix socket listener, identity bridge and
+  lifecycle. Keep explicit tool registration in `main.go`.
 - `internal/config`: process environment and startup validation.
-- `internal/client`: the collector client: base URL, TLS trust, credentials
-  bound to the collector origin, response bounds and normalized API errors.
-  Share one immutable client and its connection pool.
+- `internal/auth`: the caller's access token: shape check, request context
+  and Bearer middleware.
+- `internal/client`: the collector client: base URL, TLS trust, the caller's
+  token bound to the collector origin, response bounds and normalized API
+  errors. Share one immutable client and its connection pool.
 - `internal/core`: deterministic collector use cases, endpoint selection,
   domain validation, private collector response shapes and bounded typed
   results. It stays one package: organize it by file, never by sub-package.
@@ -41,23 +45,25 @@ Use Go, the standard library and `github.com/modelcontextprotocol/go-sdk`.
 - `internal/tools`: MCP declarations, schemas, annotations and registrar.
   Handlers stay thin: typed input, one core use case, typed output.
 
-The server exposes stateless Streamable HTTP at `/mcp` on one HTTPS listener.
-Configuration changes require a restart. Validate local TLS, configuration and
-credentials before binding; startup must not contact the collector.
+The server exposes stateless Streamable HTTP at `/mcp` on one Unix socket, for
+the AI agent only; an HTTPS listener for external clients is not in scope yet.
+Configuration changes require a restart. Validate the configuration before
+binding; startup must not contact the collector.
 
 ## Authentication and trust
 
-- The MCP does not authenticate its clients yet. It reads the collector with
-  one account, from a netrc file readable by its owner only, loaded at
-  startup. Every caller therefore sees what this account sees: the listener
-  only accepts loopback addresses. This mode is temporary, until the
-  collector accepts a token the MCP can forward for each caller.
-- Keep the account in `internal/client`: the Basic credentials are added by
-  the transport, for the collector origin only, with no proxy and no
-  redirect. Core and tools never see credentials; replacing the account by a
-  delegated caller token must not change them.
-- Never log, return or store the credentials, and never quote the netrc file
-  in errors.
+- The MCP accepts OpenID Connect access tokens only: never a password, Basic
+  credentials or an account of its own. Every request carries the token of
+  its user; the MCP checks its shape, never its signature, and forwards it
+  unchanged to the collector, which verifies it and applies the user's
+  account and claim rules.
+- The token lives in the request context until it expires. The transport of
+  `internal/client` adds it, for the collector origin only, with no proxy and
+  no redirect, and sends nothing without it. Core and tools never see it.
+- `GET /mcp/auth/whoami` proves a token by the collector `GET /auth/whoami`:
+  it requires a bearer authentication of the token's own issuer and subject.
+  It is an identity bridge, not a tool or a token issuer.
+- Never log, return or store tokens, and never quote them in errors.
 
 ## Tool contracts and data
 

@@ -1,11 +1,14 @@
 package testutil
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"math/big"
 	"net"
@@ -15,12 +18,41 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/opensvc/oc3-mcp/internal/auth"
 )
 
 const (
-	CollectorLogin    = "mcp@example.com"
-	CollectorPassword = "example-password"
+	TokenIssuer  = "https://sso.example.com/application/o/collector/"
+	TokenSubject = "user-subject"
 )
+
+// Token is an access token of the shape the MCP accepts, valid for a day. Its
+// signature is not genuine: the fake collector compares the whole token.
+var Token = NewToken(TokenIssuer, TokenSubject, time.Now().Add(24*time.Hour))
+
+// NewToken returns an access token with the given claims and a fake
+// signature.
+func NewToken(issuer string, subject string, expires time.Time) string {
+	segment := func(value any) string {
+		data, _ := json.Marshal(value)
+		return base64.RawURLEncoding.EncodeToString(data)
+	}
+	return segment(map[string]string{"alg": "RS256", "kid": "example-key", "typ": "JWT"}) + "." +
+		segment(map[string]any{"iss": issuer, "sub": subject, "aud": "collector", "exp": expires.Unix()}) + "." +
+		base64.RawURLEncoding.EncodeToString([]byte("not-a-signature"))
+}
+
+// CallerContext returns a context carrying Token as the caller's token.
+func CallerContext(t testing.TB) context.Context {
+	t.Helper()
+	ctx, cancel, err := auth.NewContext(t.Context(), Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cancel)
+	return ctx
+}
 
 type Collector struct {
 	Server *httptest.Server
@@ -30,7 +62,7 @@ type Collector struct {
 }
 
 // NewCollector serves handler over TLS under /api, trusted through a
-// temporary CA file. Requests without the test credentials get 401.
+// temporary CA file. Requests without Token get 401.
 func NewCollector(t testing.TB, handler http.Handler) Collector {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -57,8 +89,7 @@ func NewCollector(t testing.TB, handler http.Handler) Collector {
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/api/", http.StripPrefix("/api", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		login, password, ok := r.BasicAuth()
-		if !ok || login != CollectorLogin || password != CollectorPassword {
+		if r.Header.Get("Authorization") != "Bearer "+Token {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"text":"strategies/union: [invalid credentials]"}`))
@@ -75,17 +106,4 @@ func NewCollector(t testing.TB, handler http.Handler) Collector {
 		t.Fatal(err)
 	}
 	return Collector{Server: server, CAFile: path, URL: server.URL + "/api"}
-}
-
-// WriteNetrc writes a credentials file with mode for host.
-func WriteNetrc(t testing.TB, host string, login string, password string, mode os.FileMode) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "collector.netrc")
-	if err := os.WriteFile(path, []byte("machine "+host+" login "+login+" password "+password+"\n"), mode); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(path, mode); err != nil {
-		t.Fatal(err)
-	}
-	return path
 }

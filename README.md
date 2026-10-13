@@ -5,11 +5,12 @@ tools for the OpenSVC collector API.
 
 ## Status
 
-- **HTTPS `/mcp`**, stateless Streamable HTTP, on a loopback address only.
-- The MCP reads the collector with one account configured by the operator.
-  It does not authenticate its clients yet: every caller sees what this
-  account sees. This mode is temporary, until the collector accepts a token
-  the MCP can forward for each caller.
+- **Unix socket `/mcp`**, stateless Streamable HTTP, for OpenSVC components
+  such as the AI agent.
+- Every request carries the OpenID Connect access token of its user. The MCP
+  forwards it unchanged to the collector, which verifies it: every caller sees
+  what its own collector account sees. The MCP holds no account and never
+  receives a password.
 
 See the [configuration](docs/configuration.md) and the
 [tool documentation](docs/tools/README.md).
@@ -17,8 +18,8 @@ See the [configuration](docs/configuration.md) and the
 ## Requirements
 
 - Go 1.25.5 or later to build from source.
-- An OpenSVC collector reachable over HTTPS, and an account on it.
-- A TLS certificate and private key for the MCP listener.
+- An OpenSVC collector reachable over HTTPS, accepting the OpenID Connect
+  access tokens of its users and serving `GET /api/auth/whoami`.
 
 ## Build
 
@@ -29,15 +30,13 @@ go build -o bin/oc3-mcp ./cmd/oc3-mcp
 ## Run
 
 ```bash
-OPENSVC_MCP_TLS_CERT_FILE=/etc/opensvc-oc3-mcp/server.crt \
-OPENSVC_MCP_TLS_KEY_FILE=/etc/opensvc-oc3-mcp/server.key \
+OPENSVC_MCP_DELEGATED_SOCKET=/run/opensvc-oc3-mcp/delegated.sock \
 OPENSVC_MCP_COLLECTOR_URL=https://collector.example.com/api \
-OPENSVC_MCP_COLLECTOR_CREDENTIALS_FILE=/etc/opensvc-oc3-mcp/collector.netrc \
   ./bin/oc3-mcp
 ```
 
 Check liveness, which does not contact the collector:
 
 ```bash
-curl --cacert /etc/opensvc-oc3-mcp/ca.pem https://127.0.0.1:8444/health
+curl --unix-socket /run/opensvc-oc3-mcp/delegated.sock http://oc3-mcp/health
 ```

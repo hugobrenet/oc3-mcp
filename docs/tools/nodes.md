@@ -24,7 +24,7 @@ Implementation:
 - MCP definitions: `internal/tools/node.go`.
 
 The collector stores what the node daemons push, plus the properties set by
-its users. Visibility is that of the collector account of the MCP.
+its users. Visibility is that of the collector account of the caller.
 
 - `asset_status` is an inventory property of the node record, not a live
   state. `last_comm` tells when the node daemon last contacted the collector.

@@ -11,7 +11,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/opensvc/oc3-mcp/internal/config"
-	"github.com/opensvc/oc3-mcp/internal/core"
 	"github.com/opensvc/oc3-mcp/internal/testutil"
 )
 
@@ -22,24 +21,20 @@ type toolCaller func(name string, arguments map[string]any) (*mcp.CallToolResult
 func newToolCaller(t *testing.T, collectorHandler http.HandlerFunc) toolCaller {
 	t.Helper()
 	collector := testutil.NewCollector(t, collectorHandler)
-	api, err := newCollectorClient(config.Config{
-		CollectorURL:             collector.URL,
-		CollectorCAFile:          collector.CAFile,
-		CollectorCredentialsFile: testutil.WriteNetrc(t, "127.0.0.1", testutil.CollectorLogin, testutil.CollectorPassword, 0o600),
-	})
+	api, err := newCollectorClient(config.Config{CollectorURL: collector.URL, CollectorCAFile: collector.CAFile})
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := newHandler(core.New(api))
+	handler, err := newHandler(api)
 	if err != nil {
 		t.Fatal(err)
 	}
-	server := httptest.NewTLSServer(handler)
+	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	t.Cleanup(cancel)
 	session, err := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.1.0"}, nil).Connect(ctx, &mcp.StreamableClientTransport{
-		Endpoint: server.URL + "/mcp", HTTPClient: server.Client(),
+		Endpoint: server.URL + "/mcp", HTTPClient: bearerClient(testutil.Token),
 	}, nil)
 	if err != nil {
 		t.Fatal(err)

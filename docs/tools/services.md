@@ -29,7 +29,7 @@ Implementation:
 - MCP definitions: `internal/tools/service.go`.
 
 The collector stores the states the node daemons last pushed. Visibility is
-that of the collector account of the MCP.
+that of the collector account of the caller.
 
 - A service name is an OpenSVC object path, such as `ns1/svc/web`. Several
   clusters may hold the same name; the service ID is unique.

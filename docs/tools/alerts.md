@@ -18,7 +18,7 @@ Implementation:
   `internal/core/collector_list.go` and the node and service lookups;
 - MCP definitions: `internal/tools/alert.go`.
 
-Visibility is that of the collector account of the MCP.
+Visibility is that of the collector account of the caller.
 
 ## Tools
 

@@ -41,8 +41,8 @@ func newAPIError(method string, path string, response *http.Response) *APIError 
 	apiError := &APIError{Method: method, Path: path, StatusCode: response.StatusCode, Status: response.Status}
 	if response.StatusCode == http.StatusUnauthorized {
 		// The collector lists its authentication strategies here: the only
-		// useful fact is that it refused the account of the MCP.
-		apiError.Text = "the collector refused the credentials of the MCP"
+		// useful fact is that it refused the caller's access token.
+		apiError.Text = "the collector refused the access token of the caller"
 		return apiError
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxErrorResponseBodySize+1))
