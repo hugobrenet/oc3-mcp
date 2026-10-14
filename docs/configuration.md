@@ -47,6 +47,14 @@ sign in at the identity provider with the public OAuth client of the MCP.
   (RFC 9728): the resource URL and its authorization server.
 - `/health` answers without authentication.
 
+On both listeners, HTTP headers are bounded to 64 KiB and request bodies to
+1 MiB; the read of the headers is bounded to 5 seconds and the read of a whole
+request, its body included, to 10 seconds, so that a client sending it slowly
+is cut off. The processing and the response of a request are bounded to 2
+minutes, above the longest tool (a token exchange, then collector requests of
+up to 30 seconds each), so that a client reading its response slowly is cut
+off too.
+
 The token of an external client is never sent to the collector: it is
 intended for the MCP. Each tool call exchanges it for a token intended for the
 collector.
