@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/opensvc/oc3-mcp/internal/auth"
+	"github.com/opensvc/osvc-auth-mcp/mcpauth"
 )
 
 const (
@@ -97,7 +98,13 @@ func (t bearerTransport) RoundTrip(request *http.Request) (*http.Response, error
 	}
 	clone := request.Clone(request.Context())
 	clone.Header.Set("Authorization", "Bearer "+token)
-	return t.base.RoundTrip(clone)
+	response, err := t.base.RoundTrip(clone)
+	if err == nil && (response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden) {
+		// A refused exchanged token is not reused: the next tool call
+		// exchanges again. Without exchange, this does nothing.
+		mcpauth.ForgetExchanged(request.Context())
+	}
+	return response, err
 }
 
 // GetJSON reads a bounded JSON response. path is relative to the base URL,

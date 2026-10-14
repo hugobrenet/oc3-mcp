@@ -34,6 +34,7 @@ type httpsTest struct {
 	exchanged string
 	exchanges atomic.Int32
 	collector atomic.Int32
+	refuse    atomic.Bool
 }
 
 func newHTTPSTest(t *testing.T, exchange bool) *httpsTest {
@@ -64,6 +65,10 @@ func newHTTPSTest(t *testing.T, exchange bool) *httpsTest {
 	}
 	collector := testutil.NewCollectorWithToken(t, h.exchanged, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.collector.Add(1)
+		if h.refuse.Load() {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"data":[],"meta":{"total":0}}`))
 	}))
@@ -195,5 +200,25 @@ func TestHTTPSBlocksToolCallsWithoutTokenExchange(t *testing.T) {
 	text, _ := result.Content[0].(*mcp.TextContent)
 	if !result.IsError || text == nil || !strings.Contains(text.Text, "token exchange configuration") || h.collector.Load() != 0 || h.exchanges.Load() != 0 {
 		t.Fatalf("result=%+v", result)
+	}
+}
+
+func TestHTTPSReusesTheExchangeUntilTheCollectorRefusesIt(t *testing.T) {
+	h := newHTTPSTest(t, true)
+	for range 2 {
+		if result := h.call(t, h.incoming, "list_clusters"); result.IsError {
+			t.Fatalf("list_clusters failed: %+v", result.Content[0])
+		}
+	}
+	if h.exchanges.Load() != 1 {
+		t.Fatalf("%d exchanges for two calls of the same token", h.exchanges.Load())
+	}
+	h.refuse.Store(true)
+	if result := h.call(t, h.incoming, "list_clusters"); !result.IsError {
+		t.Fatal("refused token accepted")
+	}
+	h.refuse.Store(false)
+	if result := h.call(t, h.incoming, "list_clusters"); result.IsError || h.exchanges.Load() != 2 {
+		t.Fatalf("refused exchange reused: %d exchanges, %+v", h.exchanges.Load(), result.Content[0])
 	}
 }

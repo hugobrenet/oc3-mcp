@@ -54,7 +54,15 @@ the token endpoint of the exchange profile issuer, with the audience
 `OPENSVC_MCP_COLLECTOR_AUDIENCE`, and sends the token it receives to the
 collector, which verifies it and applies the account and the claim rules of
 the user. The exchanged token must be a JWT for that audience, and must not
-be usable as an MCP token. It is kept for the tool call only.
+be usable as an MCP token.
+
+An exchanged token is kept in the memory of the MCP process, never on disk,
+and reused by the next tool calls of the same MCP token for the same target:
+for at most one minute, and never within 30 seconds of its expiry. The cache
+key is a hash of the MCP token and the target, never the MCP token itself.
+Concurrent calls share one exchange; failures are not cached. When the target
+refuses the token (HTTP 401 or 403), it is forgotten and the next call
+exchanges again. A claim change in the SSO therefore applies within a minute.
 
 `OPENSVC_MCP_AUTH_CONFIG_FILE` holds the exchange profiles, owned by the MCP
 runtime account; the client secret stays in its own file, mode `0600` or
