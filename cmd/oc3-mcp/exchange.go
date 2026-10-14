@@ -4,19 +4,19 @@ import (
 	"context"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/opensvc/oc3-mcp/internal/auth"
+	"github.com/opensvc/osvc-auth-mcp/mcpauth"
 )
 
 // exchangeToolCalls exchanges, for each tool call on the HTTPS listener, the
 // MCP access token of the external client for a token intended for the
 // collector. The profile and the audience come from the configuration.
-func exchangeToolCalls(profiles *auth.ExchangeProfiles, profile, audience string) mcp.Middleware {
+func exchangeToolCalls(profiles *mcpauth.ExchangeProfiles, profile, audience string) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
 			if method != "tools/call" {
 				return next(ctx, method, request)
 			}
-			exchanged, cancel, err := profiles.Prepare(ctx, profile, audience)
+			exchanged, cancel, err := profiles.Prepare(ctx, profile, audience, "")
 			if err != nil {
 				return toolError(err.Error()), nil
 			}

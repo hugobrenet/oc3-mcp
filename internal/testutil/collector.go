@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/opensvc/osvc-auth-mcp/mcpauthtest"
 )
 
 const (
@@ -58,6 +60,6 @@ func NewCollectorWithToken(t testing.TB, token string, handler http.Handler) Col
 		}
 		handler.ServeHTTP(w, r)
 	})))
-	server := NewTLSServer(t, mux)
+	server := mcpauthtest.NewTLSServer(t, mux)
 	return Collector{Server: server.Server, CAFile: server.CAFile, URL: server.Server.URL + "/api"}
 }
