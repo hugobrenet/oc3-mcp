@@ -13,9 +13,10 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/opensvc/oc3-mcp/internal/auth"
 	"github.com/opensvc/oc3-mcp/internal/config"
 	"github.com/opensvc/oc3-mcp/internal/testutil"
+	"github.com/opensvc/osvc-auth-mcp/mcpauth"
+	"github.com/opensvc/osvc-auth-mcp/mcpauthtest"
 )
 
 const (
@@ -27,7 +28,7 @@ const (
 // answers the token exchange, and a fake collector accepting the exchanged
 // token only.
 type httpsTest struct {
-	provider  *testutil.OAuthProvider
+	provider  *mcpauthtest.OAuthProvider
 	server    *httptest.Server
 	incoming  string
 	exchanged string
@@ -37,7 +38,7 @@ type httpsTest struct {
 
 func newHTTPSTest(t *testing.T, exchange bool) *httpsTest {
 	t.Helper()
-	h := &httpsTest{provider: testutil.NewOAuthProvider(t)}
+	h := &httpsTest{provider: mcpauthtest.NewOAuthProvider(t)}
 	h.provider.Metadata["token_endpoint"] = h.provider.Server.URL + "/token"
 	h.incoming = h.provider.Token(t, testResourceURL, "alice", func(claims jwt.MapClaims) {
 		claims["azp"] = "external-client"
@@ -67,11 +68,11 @@ func newHTTPSTest(t *testing.T, exchange bool) *httpsTest {
 		_, _ = w.Write([]byte(`{"data":[],"meta":{"total":0}}`))
 	}))
 	cfg := config.Config{
-		OAuth:        auth.OAuthConfig{ResourceURL: testResourceURL, Issuer: h.provider.Issuer, CAFile: h.provider.CAFile},
+		OAuth:        mcpauth.OAuthConfig{ResourceURL: testResourceURL, Issuer: h.provider.Issuer, CAFile: h.provider.CAFile},
 		CollectorURL: collector.URL, CollectorCAFile: collector.CAFile,
 	}
 	if exchange {
-		profiles, err := auth.LoadExchangeProfiles(testutil.WriteExchangeProfiles(t, h.provider, "client_secret_basic"))
+		profiles, err := mcpauth.LoadExchangeProfiles(mcpauthtest.WriteExchangeProfiles(t, h.provider, "client_secret_basic"))
 		if err != nil {
 			t.Fatal(err)
 		}

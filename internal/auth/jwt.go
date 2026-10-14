@@ -10,14 +10,12 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/opensvc/osvc-auth-mcp/mcpauth"
 )
 
 const (
-	maxTokenBytes   = 32 << 10
 	maxMCPBodyBytes = 1 << 20
 )
 
@@ -34,7 +32,7 @@ type Delegation struct {
 
 // Check predicts the collector identity of an OpenID Connect access token.
 func Check(raw string) (Delegation, error) {
-	if raw == "" || len(raw) > maxTokenBytes {
+	if raw == "" || len(raw) > mcpauth.MaxTokenBytes {
 		return Delegation{}, errUnauthorized
 	}
 	var parsed jwt.RegisteredClaims
@@ -46,35 +44,22 @@ func Check(raw string) (Delegation, error) {
 	if err := jwt.NewValidator(jwt.WithExpirationRequired()).Validate(&parsed); err != nil {
 		return Delegation{}, errUnauthorized
 	}
-	if !validClaimText(parsed.Subject) || !validClaimText(parsed.Issuer) || parsed.ExpiresAt == nil {
+	if !mcpauth.ValidClaimText(parsed.Subject) || !mcpauth.ValidClaimText(parsed.Issuer) || parsed.ExpiresAt == nil {
 		return Delegation{}, errUnauthorized
 	}
-	if len(parsed.Audience) == 0 || !openIDSigningMethod(token.Method.Alg()) {
+	if len(parsed.Audience) == 0 || !mcpauth.OpenIDSigningMethod(token.Method.Alg()) {
 		return Delegation{}, errUnauthorized
 	}
 	kid, ok := token.Header["kid"].(string)
-	if !ok || !validClaimText(kid) {
+	if !ok || !mcpauth.ValidClaimText(kid) {
 		return Delegation{}, errUnauthorized
 	}
 	for _, audience := range parsed.Audience {
-		if !validClaimText(audience) {
+		if !mcpauth.ValidClaimText(audience) {
 			return Delegation{}, errUnauthorized
 		}
 	}
 	return Delegation{Issuer: parsed.Issuer, Subject: parsed.Subject, ExpiresAt: parsed.ExpiresAt.Time}, nil
-}
-
-func openIDSigningMethod(algorithm string) bool {
-	switch algorithm {
-	case "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512":
-		return true
-	default:
-		return false
-	}
-}
-
-func validClaimText(s string) bool {
-	return len(s) > 0 && len(s) <= 256 && strings.TrimSpace(s) == s && utf8.ValidString(s) && !strings.ContainsFunc(s, func(r rune) bool { return unicode.IsControl(r) || unicode.In(r, unicode.Cf) })
 }
 
 type delegationContextKey struct{}
@@ -156,7 +141,7 @@ func WriteProblem(w http.ResponseWriter, status int, detail string) {
 // delegated token forwarded unchanged on the Unix socket. The MCP access token
 // of an external client is never returned.
 func CollectorToken(ctx context.Context) (string, bool) {
-	if token, ok := ExchangedFromContext(ctx); ok {
+	if _, token, ok := mcpauth.ExchangedFromContext(ctx); ok {
 		return token, true
 	}
 	_, token, ok := DelegationFromContext(ctx)

@@ -14,8 +14,9 @@ tool only at user direction.
 
 Module and binary: `github.com/opensvc/oc3-mcp` and `oc3-mcp`.
 Use Go, the standard library, `github.com/modelcontextprotocol/go-sdk`,
-`github.com/golang-jwt/jwt/v5`, which reads and verifies the tokens as
-`om3-mcp` does, and `go.yaml.in/yaml/v2`, which reads the exchange profiles.
+`github.com/golang-jwt/jwt/v5`, which reads the delegated tokens, and
+`github.com/opensvc/osvc-auth-mcp`, the OAuth and token exchange library
+shared with `om3-mcp`.
 
 ## Before editing
 
@@ -35,8 +36,10 @@ Use Go, the standard library, `github.com/modelcontextprotocol/go-sdk`,
   registration in `main.go`.
 - `internal/config`: process environment and startup validation.
 - `internal/auth`: the delegated token of the socket (shape check, request
-  context, Bearer middleware), the OAuth verification of the HTTPS tokens and
-  the token exchange. It mirrors `om3-mcp`, with one target: the collector.
+  context, Bearer middleware) and the token the collector receives. The OAuth
+  verification of the HTTPS tokens and the token exchange come from
+  `osvc-auth-mcp` (`mcpauth`); change them there, for both MCP servers, never
+  by copying the code back here.
 - `internal/client`: the collector client: base URL, TLS trust, the caller's
   token bound to the collector origin, response bounds and normalized API
   errors. Share one immutable client and its connection pool.
@@ -73,8 +76,9 @@ binding; startup must not contact the collector.
   It is an identity bridge, not a tool or a token issuer.
 - Every tool call emits one `mcp tool call` audit line (`cmd/oc3-mcp/audit.go`):
   tool, the token issuer and subject, client ID, exchange outcome, collector
-  subject, outcome, duration and the error already returned to the client. It mirrors the om3-mcp audit line. Every
-  `GET /mcp/auth/whoami` emits one `mcp whoami` line with its outcome.
+  subject, outcome, duration and the error already returned to the client. It
+  mirrors the om3-mcp audit line. Every `GET /mcp/auth/whoami` emits one
+  `mcp whoami` line with its outcome.
 - Never log, return or store tokens, and never quote them in errors.
 
 ## Tool contracts and data

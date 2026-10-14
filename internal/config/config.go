@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/opensvc/oc3-mcp/internal/auth"
+	"github.com/opensvc/osvc-auth-mcp/mcpauth"
 )
 
 const (
@@ -26,10 +26,10 @@ type Config struct {
 	ListenAddress string
 	TLSCertFile   string
 	TLSKeyFile    string
-	OAuth         auth.OAuthConfig
+	OAuth         mcpauth.OAuthConfig
 	// Exchange, ExchangeProfile and CollectorAudience configure the token
 	// exchange of the HTTPS listener. Without them, its tool calls are blocked.
-	Exchange          *auth.ExchangeProfiles
+	Exchange          *mcpauth.ExchangeProfiles
 	ExchangeProfile   string
 	CollectorAudience string
 	// DelegatedSocket enables the Unix socket listener. Its callers forward
@@ -54,7 +54,7 @@ func Load() (Config, error) {
 		CollectorCAFile: strings.TrimSpace(os.Getenv("OPENSVC_MCP_COLLECTOR_CA_FILE")),
 	}
 	listenAddress := strings.TrimSpace(os.Getenv("OPENSVC_MCP_LISTEN_ADDR"))
-	oauth := auth.OAuthConfig{
+	oauth := mcpauth.OAuthConfig{
 		ResourceURL:  strings.TrimSpace(os.Getenv("OPENSVC_MCP_OAUTH_RESOURCE_URL")),
 		ResourceName: strings.TrimSpace(os.Getenv("OPENSVC_MCP_OAUTH_RESOURCE_NAME")),
 		Issuer:       strings.TrimSpace(os.Getenv("OPENSVC_MCP_OAUTH_ISSUER")),
@@ -77,14 +77,14 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("OPENSVC_MCP_OAUTH configuration: %w", err)
 		}
 		cfg.ListenAddress, cfg.OAuth = listenAddress, oauth
-	} else if listenAddress != "" || oauth != (auth.OAuthConfig{}) || exchangeFile != "" || profile != "" || audience != "" {
+	} else if listenAddress != "" || oauth != (mcpauth.OAuthConfig{}) || exchangeFile != "" || profile != "" || audience != "" {
 		return Config{}, fmt.Errorf("OPENSVC_MCP_LISTEN_ADDR, OPENSVC_MCP_OAUTH_*, OPENSVC_MCP_AUTH_CONFIG_FILE and OPENSVC_MCP_COLLECTOR_AUTH_PROFILE/AUDIENCE require the HTTPS listener (OPENSVC_MCP_TLS_CERT_FILE and OPENSVC_MCP_TLS_KEY_FILE)")
 	}
 	if exchangeFile != "" || profile != "" || audience != "" {
 		if exchangeFile == "" || profile == "" || audience == "" {
 			return Config{}, fmt.Errorf("the token exchange needs OPENSVC_MCP_AUTH_CONFIG_FILE, OPENSVC_MCP_COLLECTOR_AUTH_PROFILE and OPENSVC_MCP_COLLECTOR_AUDIENCE together")
 		}
-		exchange, err := auth.LoadExchangeProfiles(exchangeFile)
+		exchange, err := mcpauth.LoadExchangeProfiles(exchangeFile)
 		if err != nil {
 			return Config{}, fmt.Errorf("OPENSVC_MCP_AUTH_CONFIG_FILE: %w", err)
 		}

@@ -17,11 +17,13 @@ import (
 	"github.com/opensvc/oc3-mcp/internal/config"
 	"github.com/opensvc/oc3-mcp/internal/core"
 	"github.com/opensvc/oc3-mcp/internal/tools"
+	"github.com/opensvc/osvc-auth-mcp/mcpauth"
 )
 
 const (
 	serverName         = "oc3-mcp"
 	serverVersion      = "v0.1.0"
+	resourceName       = "OpenSVC Collector MCP"
 	maxHTTPHeaderBytes = 64 << 10
 	maxMCPBodyBytes    = 1 << 20
 	shutdownTimeout    = 30 * time.Second
@@ -126,7 +128,10 @@ func newCollectorClient(cfg config.Config) (*client.Client, error) {
 // client locally; each tool call then exchanges its token for one intended
 // for the collector. Without exchange configuration, tool calls are blocked.
 func newMCPHandler(cfg config.Config, collector *client.Client) (http.Handler, error) {
-	verifier, err := auth.NewOAuthVerifier(cfg.OAuth)
+	if cfg.OAuth.ResourceName == "" {
+		cfg.OAuth.ResourceName = resourceName
+	}
+	verifier, err := mcpauth.NewOAuthVerifier(cfg.OAuth)
 	if err != nil {
 		return nil, fmt.Errorf("configure MCP OAuth: %w", err)
 	}

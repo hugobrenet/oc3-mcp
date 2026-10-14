@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/opensvc/osvc-auth-mcp/mcpauth"
 )
 
 func token(header map[string]any, claims map[string]any) string {
@@ -79,7 +81,7 @@ func TestCheckRejectsInvalidTokens(t *testing.T) {
 		"expired":         with("exp", now.Add(-time.Second).Unix()),
 		"string expiry":   with("exp", "soon"),
 		"not yet valid":   with("nbf", now.Add(time.Hour).Unix()),
-		"oversized":       strings.Repeat("a", maxTokenBytes+1),
+		"oversized":       strings.Repeat("a", mcpauth.MaxTokenBytes+1),
 	} {
 		if _, err := Check(raw); err == nil {
 			t.Fatalf("%s token accepted", name)
