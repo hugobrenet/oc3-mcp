@@ -32,6 +32,10 @@ type Config struct {
 	Exchange          *mcpauth.ExchangeProfiles
 	ExchangeProfile   string
 	CollectorAudience string
+	// MaxConcurrentCalls and MaxCallsPerMinute bound the tool calls of each
+	// identity on the HTTPS listener; 0 disables a limit.
+	MaxConcurrentCalls int
+	MaxCallsPerMinute  int
 	// DelegatedSocket enables the Unix socket listener. Its callers forward
 	// the OpenID Connect access token of their user.
 	DelegatedSocket string
@@ -63,6 +67,8 @@ func Load() (Config, error) {
 	exchangeFile := strings.TrimSpace(os.Getenv("OPENSVC_MCP_AUTH_CONFIG_FILE"))
 	profile := strings.TrimSpace(os.Getenv("OPENSVC_MCP_COLLECTOR_AUTH_PROFILE"))
 	audience := strings.TrimSpace(os.Getenv("OPENSVC_MCP_COLLECTOR_AUDIENCE"))
+	maxConcurrent := strings.TrimSpace(os.Getenv("OPENSVC_MCP_MAX_CONCURRENT_CALLS"))
+	maxPerMinute := strings.TrimSpace(os.Getenv("OPENSVC_MCP_MAX_CALLS_PER_MINUTE"))
 	if cfg.TLSCertFile != "" || cfg.TLSKeyFile != "" {
 		if !filepath.IsAbs(cfg.TLSCertFile) || !filepath.IsAbs(cfg.TLSKeyFile) {
 			return Config{}, fmt.Errorf("OPENSVC_MCP_TLS_CERT_FILE and OPENSVC_MCP_TLS_KEY_FILE must be absolute file paths")
@@ -77,8 +83,15 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("OPENSVC_MCP_OAUTH configuration: %w", err)
 		}
 		cfg.ListenAddress, cfg.OAuth = listenAddress, oauth
-	} else if listenAddress != "" || oauth != (mcpauth.OAuthConfig{}) || exchangeFile != "" || profile != "" || audience != "" {
-		return Config{}, fmt.Errorf("OPENSVC_MCP_LISTEN_ADDR, OPENSVC_MCP_OAUTH_*, OPENSVC_MCP_AUTH_CONFIG_FILE and OPENSVC_MCP_COLLECTOR_AUTH_PROFILE/AUDIENCE require the HTTPS listener (OPENSVC_MCP_TLS_CERT_FILE and OPENSVC_MCP_TLS_KEY_FILE)")
+		var err error
+		if cfg.MaxConcurrentCalls, err = callLimit("OPENSVC_MCP_MAX_CONCURRENT_CALLS", maxConcurrent, mcpauth.DefaultMaxConcurrentCalls, 1000); err != nil {
+			return Config{}, err
+		}
+		if cfg.MaxCallsPerMinute, err = callLimit("OPENSVC_MCP_MAX_CALLS_PER_MINUTE", maxPerMinute, mcpauth.DefaultMaxCallsPerMinute, 100000); err != nil {
+			return Config{}, err
+		}
+	} else if listenAddress != "" || oauth != (mcpauth.OAuthConfig{}) || exchangeFile != "" || profile != "" || audience != "" || maxConcurrent != "" || maxPerMinute != "" {
+		return Config{}, fmt.Errorf("OPENSVC_MCP_LISTEN_ADDR, OPENSVC_MCP_OAUTH_*, OPENSVC_MCP_AUTH_CONFIG_FILE, OPENSVC_MCP_COLLECTOR_AUTH_PROFILE/AUDIENCE and OPENSVC_MCP_MAX_* require the HTTPS listener (OPENSVC_MCP_TLS_CERT_FILE and OPENSVC_MCP_TLS_KEY_FILE)")
 	}
 	if exchangeFile != "" || profile != "" || audience != "" {
 		if exchangeFile == "" || profile == "" || audience == "" {
@@ -147,4 +160,17 @@ func validateCollectorURL(raw string) error {
 		return fmt.Errorf("must not contain credentials, a query or a fragment")
 	}
 	return nil
+}
+
+// callLimit reads a limit of the tool calls of an identity: def when value is
+// empty, 0 to disable the limit, at most max.
+func callLimit(name, value string, def, max int) (int, error) {
+	if value == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 0 || n > max {
+		return 0, fmt.Errorf("%s must be an integer from 0 (no limit) to %d", name, max)
+	}
+	return n, nil
 }

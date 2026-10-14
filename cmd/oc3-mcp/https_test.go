@@ -37,7 +37,7 @@ type httpsTest struct {
 	refuse    atomic.Bool
 }
 
-func newHTTPSTest(t *testing.T, exchange bool) *httpsTest {
+func newHTTPSTest(t *testing.T, exchange bool, configure ...func(*config.Config)) *httpsTest {
 	t.Helper()
 	h := &httpsTest{provider: mcpauthtest.NewOAuthProvider(t)}
 	h.provider.Metadata["token_endpoint"] = h.provider.Server.URL + "/token"
@@ -82,6 +82,9 @@ func newHTTPSTest(t *testing.T, exchange bool) *httpsTest {
 			t.Fatal(err)
 		}
 		cfg.Exchange, cfg.ExchangeProfile, cfg.CollectorAudience = profiles, "test-sso", testCollectorAudience
+	}
+	for _, change := range configure {
+		change(&cfg)
 	}
 	api, err := newCollectorClient(cfg)
 	if err != nil {
@@ -220,5 +223,26 @@ func TestHTTPSReusesTheExchangeUntilTheCollectorRefusesIt(t *testing.T) {
 	h.refuse.Store(false)
 	if result := h.call(t, h.incoming, "list_clusters"); result.IsError || h.exchanges.Load() != 2 {
 		t.Fatalf("refused exchange reused: %d exchanges, %+v", h.exchanges.Load(), result.Content[0])
+	}
+}
+
+func TestHTTPSLimitsTheToolCallsOfAnIdentity(t *testing.T) {
+	var audit syncBuffer
+	defer func(logger *slog.Logger) { auditLogger = logger }(auditLogger)
+	auditLogger = slog.New(slog.NewTextHandler(&audit, nil))
+	h := newHTTPSTest(t, true, func(cfg *config.Config) { cfg.MaxCallsPerMinute = 1 })
+	if result := h.call(t, h.incoming, "list_clusters"); result.IsError {
+		t.Fatalf("first call refused: %+v", result.Content[0])
+	}
+	result := h.call(t, h.incoming, "list_clusters")
+	text, _ := result.Content[0].(*mcp.TextContent)
+	if !result.IsError || text == nil || !strings.Contains(text.Text, "tool call limited") || !strings.Contains(text.Text, "retry in") {
+		t.Fatalf("call beyond the rate admitted: %+v", result.Content[0])
+	}
+	if h.exchanges.Load() != 1 || h.collector.Load() != 1 {
+		t.Fatalf("a limited call reached the SSO or the collector: %d exchanges, %d collector requests", h.exchanges.Load(), h.collector.Load())
+	}
+	if !strings.Contains(audit.String(), `outcome=tool_error`) || !strings.Contains(audit.String(), `exchange=none`) {
+		t.Fatalf("limited call not audited:\n%s", audit.String())
 	}
 }
