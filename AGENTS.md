@@ -63,6 +63,10 @@ binding; startup must not contact the collector.
 - `GET /mcp/auth/whoami` proves a token by the collector `GET /auth/whoami`:
   it requires a bearer authentication of the token's own issuer and subject.
   It is an identity bridge, not a tool or a token issuer.
+- Every tool call emits one `mcp tool call` audit line (`cmd/oc3-mcp/audit.go`):
+  tool, the token issuer and subject, outcome, duration and the error already
+  returned to the client. It mirrors the om3-mcp audit line. Every
+  `GET /mcp/auth/whoami` emits one `mcp whoami` line with its outcome.
 - Never log, return or store tokens, and never quote them in errors.
 
 ## Tool contracts and data

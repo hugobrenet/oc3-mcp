@@ -102,6 +102,7 @@ func newHandler(collector *client.Client) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	server.AddReceivingMiddleware(auditToolCalls)
 	for _, register := range []func(*tools.Registrar, *core.Service) error{
 		tools.RegisterClusterTools, tools.RegisterNodeTools, tools.RegisterServiceTools, tools.RegisterServiceActionTools, tools.RegisterAlertTools, tools.RegisterCheckTools, tools.RegisterPackageTools, tools.RegisterCollectorEventTools, tools.RegisterComplianceTools,
 	} {

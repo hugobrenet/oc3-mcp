@@ -74,6 +74,40 @@ Routes:
 - `GET /mcp/auth/whoami`: the identity bridge above;
 - `GET /health`: local liveness, without token or collector call.
 
+## Audit trail
+
+Every `tools/call` emits one `INFO` line `mcp tool call` through the process
+logger (standard error), for example:
+
+```text
+INFO mcp tool call tool=get_node issuer=https://sso.example.com/application/o/collector/ subject=<sub> outcome=ok duration=212ms
+```
+
+| Field | Meaning |
+|---|---|
+| `tool` | Requested tool, bounded to 256 bytes |
+| `issuer`, `subject` | Claims of the caller's access token. The collector verifies the token on each call: a refused call may log unverified claims |
+| `outcome`, `detail` | `ok`, `tool_error` (collector refusal such as HTTP 401 or 404, or validation error) or `error` (protocol error); `detail` is the bounded error text already returned to the client |
+| `duration` | Total call duration, including the collector requests |
+
+Every `GET /mcp/auth/whoami` emits one `INFO` line `mcp whoami`:
+
+```text
+INFO mcp whoami issuer=https://sso.example.com/application/o/collector/ subject=<sub> outcome=collector_refused status=401 duration=35ms collector_status=401
+```
+
+| Field | Meaning |
+|---|---|
+| `issuer`, `subject` | Claims of the caller's access token |
+| `outcome` | `ok`; `collector_refused` (the collector answered 401 or 403); `collector_failed` (any other collector failure, answered 502); `identity_mismatch` (the collector authenticated another source or identity than this token); `expired`; `bad_request` |
+| `status` | The HTTP status the bridge answered |
+| `duration` | Total check duration, including the collector request |
+| `collector_status`, `detail`, `auth_source` | When relevant: the collector HTTP status, the bounded error of a collector failure, the authentication source the collector reported |
+
+Tokens, raw arguments and tool results are never logged. Values are quoted by
+the structured logger. Retention and shipping of these logs belong to the
+deployment.
+
 ## Collector connection
 
 Requests use TLS 1.2 or later, no proxy and no redirect, with a 30-second
