@@ -40,3 +40,15 @@ Check liveness, which does not contact the collector:
 ```bash
 curl --unix-socket /run/opensvc-oc3-mcp/delegated.sock http://oc3-mcp/health
 ```
+
+## Development
+
+```bash
+go fmt ./...
+go test ./...
+go vet ./...
+go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
+```
+
+The CI runs the same checks, plus module verification and a race-enabled test
+run.
