@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -9,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/opensvc/osvc-auth-mcp/mcpauth"
+	"github.com/opensvc/osvc-auth-mcp/mcpauthtest"
 )
 
 func token(header map[string]any, claims map[string]any) string {
@@ -94,7 +97,7 @@ func TestMiddlewareCarriesTheCallerUntilTheTokenExpires(t *testing.T) {
 	raw := token(validHeader(), validClaims(now))
 	var seen Delegation
 	var forwarded, header string
-	handler := Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := acceptingDelegator(t).Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var ok bool
 		seen, forwarded, ok = DelegationFromContext(r.Context())
 		if !ok {
@@ -116,7 +119,7 @@ func TestMiddlewareCarriesTheCallerUntilTheTokenExpires(t *testing.T) {
 
 func TestMiddlewareRefusesRequestsWithoutOneValidBearerToken(t *testing.T) {
 	raw := token(validHeader(), validClaims(time.Now()))
-	handler := Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := acceptingDelegator(t).Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("an unauthenticated request reached the MCP")
 	}))
 	for name, set := range map[string]func(*http.Request){
@@ -146,4 +149,86 @@ func TestDelegationFromContextIgnoresOtherContexts(t *testing.T) {
 	if _, _, ok := DelegationFromContext(t.Context()); ok {
 		t.Fatal("a caller was found in a context without one")
 	}
+}
+
+type acceptingVerifier struct{}
+
+func (acceptingVerifier) Verify(_ context.Context, _, issuer, _ string) (mcpauth.VerifiedClaims, error) {
+	return mcpauth.VerifiedClaims{Issuer: issuer}, nil
+}
+
+// acceptingDelegator accepts the tokens of validClaims, whose signature is not
+// genuine, to test the request handling apart from the verification.
+func acceptingDelegator(t *testing.T) *Delegator {
+	t.Helper()
+	d, err := NewDelegator(validClaims(time.Now())["iss"].(string), "collector", acceptingVerifier{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+// TestDelegatorVerifiesBeforeTheCollector: a token the OpenID provider of the
+// collector did not sign for the collector never reaches the handler, which
+// relays to the collector.
+func TestDelegatorVerifiesBeforeTheCollector(t *testing.T) {
+	p := mcpauthtest.NewOAuthProvider(t)
+	verifier, err := mcpauth.NewJWTVerifier(p.CAFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := NewDelegator(p.Issuer, "collector", verifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serve := func(raw string) (int, bool) {
+		called := false
+		handler := d.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		request := httptest.NewRequest(http.MethodGet, "/mcp/auth/whoami", nil)
+		request.Header.Set("Authorization", "Bearer "+raw)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response.Code, called
+	}
+	if code, called := serve(p.Token(t, "collector", "alice", nil)); code != http.StatusNoContent || !called {
+		t.Fatalf("valid token refused: %d", code)
+	}
+	other := mcpauthtest.NewOAuthProvider(t)
+	for name, raw := range map[string]string{
+		"signed by another key": other.Token(t, "collector", "alice", func(c jwt.MapClaims) { c["iss"] = p.Issuer }),
+		"another issuer":        other.Token(t, "collector", "alice", nil),
+		"another audience":      p.Token(t, "another-client", "alice", nil),
+		"audience of the MCP":   p.Token(t, "https://mcp.example.test/mcp", "alice", nil),
+		"expired":               p.Token(t, "collector", "alice", func(c jwt.MapClaims) { c["exp"] = time.Now().Add(-time.Second).Unix() }),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if code, called := serve(raw); code != http.StatusUnauthorized || called {
+				t.Fatalf("refused token reached the collector: %d %v", code, called)
+			}
+		})
+	}
+	if other.KeyCalls.Load() != 0 {
+		t.Fatal("the keys of an untrusted issuer were fetched")
+	}
+	if _, err := NewDelegator("", "collector", verifier); err == nil {
+		t.Fatal("delegator without issuer")
+	}
+	t.Run("provider keys unavailable", func(t *testing.T) {
+		p := mcpauthtest.NewOAuthProvider(t)
+		verifier, err := mcpauth.NewJWTVerifier(p.CAFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err = NewDelegator(p.Issuer, "collector", verifier)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p.Status = http.StatusServiceUnavailable
+		if code, called := serve(p.Token(t, "collector", "alice", nil)); code != http.StatusServiceUnavailable || called {
+			t.Fatalf("unverifiable token admitted: %d", code)
+		}
+	})
 }

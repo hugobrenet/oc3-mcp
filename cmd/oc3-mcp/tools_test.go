@@ -25,7 +25,7 @@ func newToolCaller(t *testing.T, collectorHandler http.HandlerFunc) toolCaller {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := newHandler(api)
+	handler, err := newHandler(api, testDelegator(t))
 	if err != nil {
 		t.Fatal(err)
 	}

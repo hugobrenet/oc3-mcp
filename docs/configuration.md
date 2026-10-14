@@ -13,12 +13,14 @@ OAuth.
 | OPENSVC_MCP_COLLECTOR_URL | required | Base URL of the collector API, HTTPS, for example `https://collector.example.com/api` |
 | OPENSVC_MCP_COLLECTOR_CA_FILE | empty | Optional absolute PEM trust bundle for the collector; replaces system roots |
 | OPENSVC_MCP_DELEGATED_SOCKET | empty | Absolute path of the Unix socket, for example `/run/opensvc-oc3-mcp/delegated.sock`; enables the socket listener |
+| OPENSVC_MCP_DELEGATED_ISSUER | required with the socket | Issuer of the OpenID provider of the collector, as its `/api/auth/info` shows: the tokens of the socket are verified for it |
+| OPENSVC_MCP_DELEGATED_AUDIENCE | OPENSVC_MCP_COLLECTOR_AUDIENCE | Client ID of the collector, the audience of the tokens of the socket |
 | OPENSVC_MCP_TLS_CERT_FILE, OPENSVC_MCP_TLS_KEY_FILE | empty | Absolute PEM certificate and private key; enable the HTTPS listener |
 | OPENSVC_MCP_LISTEN_ADDR | 127.0.0.1:8444 | HTTPS bind address, explicit IP:port |
 | OPENSVC_MCP_OAUTH_RESOURCE_URL | required with HTTPS | Public URL of the MCP, ending in `/mcp`: the audience of the incoming tokens |
 | OPENSVC_MCP_OAUTH_ISSUER | required with HTTPS | Issuer of the incoming tokens, the public OAuth client of the MCP |
 | OPENSVC_MCP_OAUTH_RESOURCE_NAME | OpenSVC Collector MCP | Name published in the resource metadata |
-| OPENSVC_MCP_OAUTH_CA_FILE | empty | Optional absolute PEM trust bundle for the issuer |
+| OPENSVC_MCP_OAUTH_CA_FILE | empty | Optional absolute PEM trust bundle for the issuer, also for the OpenID provider of the collector on the Unix socket |
 | OPENSVC_MCP_AUTH_CONFIG_FILE | empty | Exchange profiles, see [token exchange](#token-exchange) |
 | OPENSVC_MCP_COLLECTOR_AUTH_PROFILE | empty | The profile of OPENSVC_MCP_AUTH_CONFIG_FILE that exchanges the tokens |
 | OPENSVC_MCP_COLLECTOR_AUDIENCE | empty | The audience requested for the collector: the client ID the collector trusts |
@@ -130,16 +132,25 @@ issued by the identity provider the collector trusts:
 Authorization: Bearer <OpenID Connect access token>
 ```
 
-The MCP checks the token shape before any collector call, without verifying
-its signature: a JWT signed with an asymmetric algorithm, with a `kid`, and
-`iss`, `sub`, `aud` and an unexpired `exp` claims. A missing, malformed or
-expired token, a second `Authorization` header or a token in the query string
-returns 401 without contacting the collector. The request ends when the token
-expires.
+The MCP verifies the token before any collector request, as the collector
+does: a JWT signed with an asymmetric algorithm, with a `kid`, by a key of the
+OpenID provider of the collector, `OPENSVC_MCP_DELEGATED_ISSUER` as `iss`,
+`OPENSVC_MCP_DELEGATED_AUDIENCE` in `aud`, a `sub` and an unexpired `exp`. A missing, malformed, expired or
+unverified token, a second `Authorization` header or a token in the query
+string returns 401 without reaching the collector. The request ends when the
+token expires.
 
-The MCP forwards the token unchanged to the collector, which verifies its
-signature, issuer, audience and expiry, resolves the account linked to its
-issuer and subject, and applies its claim rules. Every caller therefore sees
+Both values follow the OpenID configuration of the collector, which its
+public `GET /api/auth/info` shows in its `oidc` object (`issuer`,
+`client_id`): when the collector changes them, update the MCP, which refuses
+the tokens meanwhile. The keys of the issuer are discovered and cached 5
+minutes, with the system roots or `OPENSVC_MCP_OAUTH_CA_FILE`; an unknown key
+ID reloads them at most every 30 seconds. When the keys cannot be loaded, the
+socket returns 503 with `Retry-After`.
+
+The MCP then forwards the token unchanged to the collector, which verifies it
+too, resolves the account linked to its issuer and subject, and applies its
+claim rules. Every caller therefore sees
 what its own collector account sees. The token is sent to the collector
 origin only, and never logged or returned.
 
