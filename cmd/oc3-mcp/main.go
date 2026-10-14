@@ -62,7 +62,11 @@ func run() error {
 		log.Printf("%s %s listening on https://%s/mcp", serverName, serverVersion, listener.Addr())
 	}
 	if cfg.DelegatedSocket != "" {
-		handler, err := newHandler(collector)
+		delegator, err := newDelegator(cfg)
+		if err != nil {
+			return err
+		}
+		handler, err := newHandler(collector, delegator)
 		if err != nil {
 			return err
 		}
@@ -153,17 +157,29 @@ func newMCPHandler(cfg config.Config, collector *client.Client) (http.Handler, e
 	return http.MaxBytesHandler(mux, maxMCPBodyBytes), nil
 }
 
+// newDelegator verifies the tokens of the Unix socket with the OpenID provider
+// of the collector, configured, its keys trusted with the system roots or the
+// OAuth trust bundle of the HTTPS listener.
+func newDelegator(cfg config.Config) (*auth.Delegator, error) {
+	verifier, err := mcpauth.NewJWTVerifier(cfg.OAuth.CAFile)
+	if err != nil {
+		return nil, fmt.Errorf("configure delegated token verification: %w", err)
+	}
+	return auth.NewDelegator(cfg.DelegatedIssuer, cfg.DelegatedAudience, verifier)
+}
+
 // newHandler serves the Unix socket. Every route but /health requires the
-// OpenID Connect access token of the caller, which the collector verifies.
-func newHandler(collector *client.Client) (http.Handler, error) {
+// OpenID Connect access token of the caller, verified by delegator before it
+// reaches the collector, which decides the access.
+func newHandler(collector *client.Client, delegator *auth.Delegator) (http.Handler, error) {
 	handler, err := newToolsHandler(collector)
 	if err != nil {
 		return nil, err
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", getHealth)
-	mux.Handle("/mcp", auth.Middleware(handler))
-	mux.Handle("GET /mcp/auth/whoami", auth.Middleware(serveWhoAmI(collector)))
+	mux.Handle("/mcp", delegator.Middleware(handler))
+	mux.Handle("GET /mcp/auth/whoami", delegator.Middleware(serveWhoAmI(collector)))
 	return withRequestID(http.MaxBytesHandler(mux, maxMCPBodyBytes)), nil
 }
 

@@ -39,6 +39,11 @@ type Config struct {
 	// DelegatedSocket enables the Unix socket listener. Its callers forward
 	// the OpenID Connect access token of their user.
 	DelegatedSocket string
+	// DelegatedIssuer and DelegatedAudience are the OpenID provider of the
+	// collector: the issuer and the client ID of the tokens of the socket,
+	// verified before they reach the collector. Required with the socket.
+	DelegatedIssuer   string
+	DelegatedAudience string
 	// CollectorURL is the base URL of the collector API, such as
 	// https://collector.example.com/api.
 	CollectorURL    string
@@ -116,6 +121,24 @@ func Load() (Config, error) {
 		}
 		cfg.DelegatedSocket = path
 	}
+	delegatedIssuer := strings.TrimSpace(os.Getenv("OPENSVC_MCP_DELEGATED_ISSUER"))
+	delegatedAudience := strings.TrimSpace(os.Getenv("OPENSVC_MCP_DELEGATED_AUDIENCE"))
+	if cfg.DelegatedSocket != "" {
+		if !validIssuer(delegatedIssuer) {
+			return Config{}, fmt.Errorf("OPENSVC_MCP_DELEGATED_SOCKET requires OPENSVC_MCP_DELEGATED_ISSUER, the issuer of the OpenID provider of the collector, an absolute HTTPS URL without credentials, query or fragment")
+		}
+		if delegatedAudience == "" {
+			// The client ID the collector trusts is also the audience of the
+			// exchanged tokens.
+			delegatedAudience = audience
+		}
+		if !validAudience(delegatedAudience) {
+			return Config{}, fmt.Errorf("OPENSVC_MCP_DELEGATED_SOCKET requires OPENSVC_MCP_DELEGATED_AUDIENCE, or OPENSVC_MCP_COLLECTOR_AUDIENCE, the client ID of the collector: 1 to 256 bytes of text without whitespace or control characters")
+		}
+		cfg.DelegatedIssuer, cfg.DelegatedAudience = delegatedIssuer, delegatedAudience
+	} else if delegatedIssuer != "" || delegatedAudience != "" {
+		return Config{}, fmt.Errorf("OPENSVC_MCP_DELEGATED_ISSUER and OPENSVC_MCP_DELEGATED_AUDIENCE require OPENSVC_MCP_DELEGATED_SOCKET")
+	}
 	if !cfg.HTTPSEnabled() && cfg.DelegatedSocket == "" {
 		return Config{}, fmt.Errorf("configure the HTTPS listener (OPENSVC_MCP_TLS_CERT_FILE and OPENSVC_MCP_TLS_KEY_FILE), OPENSVC_MCP_DELEGATED_SOCKET, or both")
 	}
@@ -173,4 +196,11 @@ func callLimit(name, value string, def, max int) (int, error) {
 		return 0, fmt.Errorf("%s must be an integer from 0 (no limit) to %d", name, max)
 	}
 	return n, nil
+}
+
+// validIssuer accepts the exact issuer of an OpenID provider: an absolute
+// HTTPS URL without credentials, query or fragment.
+func validIssuer(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && raw == strings.TrimSpace(raw) && u.Scheme == "https" && u.Host != "" && u.User == nil && u.RawQuery == "" && !u.ForceQuery && u.Fragment == "" && !strings.Contains(raw, "#")
 }

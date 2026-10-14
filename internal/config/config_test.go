@@ -9,6 +9,8 @@ import (
 func setValidEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("OPENSVC_MCP_DELEGATED_SOCKET", "/run/opensvc-oc3-mcp/delegated.sock")
+	t.Setenv("OPENSVC_MCP_DELEGATED_ISSUER", "https://sso.example.com/application/o/oc3/")
+	t.Setenv("OPENSVC_MCP_DELEGATED_AUDIENCE", "collector-client-id")
 	t.Setenv("OPENSVC_MCP_COLLECTOR_URL", "https://collector.example.com/api")
 	t.Setenv("OPENSVC_MCP_COLLECTOR_CA_FILE", "")
 	for _, name := range []string{"OPENSVC_MCP_TLS_CERT_FILE", "OPENSVC_MCP_TLS_KEY_FILE", "OPENSVC_MCP_LISTEN_ADDR", "OPENSVC_MCP_OAUTH_RESOURCE_URL",
@@ -77,6 +79,8 @@ func setHTTPSEnv(t *testing.T) {
 	t.Helper()
 	setValidEnv(t)
 	t.Setenv("OPENSVC_MCP_DELEGATED_SOCKET", "")
+	t.Setenv("OPENSVC_MCP_DELEGATED_ISSUER", "")
+	t.Setenv("OPENSVC_MCP_DELEGATED_AUDIENCE", "")
 	t.Setenv("OPENSVC_MCP_TLS_CERT_FILE", "/etc/opensvc-oc3-mcp/server.crt")
 	t.Setenv("OPENSVC_MCP_TLS_KEY_FILE", "/etc/opensvc-oc3-mcp/server.key")
 	t.Setenv("OPENSVC_MCP_LISTEN_ADDR", "")
@@ -182,6 +186,50 @@ func TestLoadCallLimits(t *testing.T) {
 		t.Setenv("OPENSVC_MCP_MAX_CALLS_PER_MINUTE", "60")
 		if _, err := Load(); err == nil {
 			t.Fatal("limit accepted without the HTTPS listener")
+		}
+	})
+}
+
+func TestLoadDelegatedProvider(t *testing.T) {
+	setValidEnv(t)
+	cfg, err := Load()
+	if err != nil || cfg.DelegatedIssuer != "https://sso.example.com/application/o/oc3/" || cfg.DelegatedAudience != "collector-client-id" {
+		t.Fatalf("issuer=%q audience=%q err=%v", cfg.DelegatedIssuer, cfg.DelegatedAudience, err)
+	}
+	// The audience defaults to the client ID of the token exchange.
+	setHTTPSEnv(t)
+	t.Setenv("OPENSVC_MCP_DELEGATED_SOCKET", "/run/opensvc-oc3-mcp/delegated.sock")
+	t.Setenv("OPENSVC_MCP_DELEGATED_ISSUER", "https://sso.example.com/application/o/oc3/")
+	if cfg, err := Load(); err != nil || cfg.DelegatedAudience != "collector-client-id" {
+		t.Fatalf("audience=%q err=%v", cfg.DelegatedAudience, err)
+	}
+	for _, tc := range []struct{ name, value string }{
+		{"OPENSVC_MCP_DELEGATED_ISSUER", ""},
+		{"OPENSVC_MCP_DELEGATED_ISSUER", "http://sso.example.com/application/o/oc3/"},
+		{"OPENSVC_MCP_DELEGATED_ISSUER", "https://sso.example.com/o/oc3/?x=1"},
+		{"OPENSVC_MCP_DELEGATED_ISSUER", "sso.example.com"},
+		{"OPENSVC_MCP_DELEGATED_AUDIENCE", "two words"},
+	} {
+		t.Run(tc.name+"="+tc.value, func(t *testing.T) {
+			setValidEnv(t)
+			t.Setenv(tc.name, tc.value)
+			if _, err := Load(); err == nil {
+				t.Fatal("invalid delegated provider accepted")
+			}
+		})
+	}
+	t.Run("no audience", func(t *testing.T) {
+		setValidEnv(t)
+		t.Setenv("OPENSVC_MCP_DELEGATED_AUDIENCE", "")
+		if _, err := Load(); err == nil {
+			t.Fatal("socket accepted without audience")
+		}
+	})
+	t.Run("without the socket", func(t *testing.T) {
+		setHTTPSEnv(t)
+		t.Setenv("OPENSVC_MCP_DELEGATED_ISSUER", "https://sso.example.com/application/o/oc3/")
+		if _, err := Load(); err == nil {
+			t.Fatal("delegated provider accepted without the socket")
 		}
 	})
 }

@@ -21,9 +21,15 @@ const (
 
 var errUnauthorized = errors.New("invalid OpenID Connect access token")
 
-// Delegation describes UNVERIFIED claims of a delegated access token. They
-// only predict the identity that the collector must confirm; they never
-// establish an identity by themselves.
+// TokenVerifier verifies an access token for an issuer and an audience, as
+// mcpauth.JWTVerifier does.
+type TokenVerifier interface {
+	Verify(ctx context.Context, raw, issuer, audience string) (mcpauth.VerifiedClaims, error)
+}
+
+// Delegation describes the claims of a delegated access token. On the socket,
+// the middleware of a Delegator verified its signature, issuer, audience and
+// lifetime; the collector still decides the access of that identity.
 type Delegation struct {
 	Issuer    string
 	Subject   string
@@ -80,8 +86,8 @@ func NewContext(ctx context.Context, raw string) (context.Context, context.Cance
 }
 
 // DelegationFromContext never returns credentials for an expired request.
-// Only NewContext populates this request-scoped context. The claims remain
-// unverified: the collector alone authenticates the bearer.
+// Only NewContext populates this request-scoped context: on the socket, after
+// the Delegator verified the token.
 func DelegationFromContext(ctx context.Context) (Delegation, string, bool) {
 	c, ok := ctx.Value(delegationContextKey{}).(delegatedCredential)
 	if !ok || ctx.Err() != nil || !time.Now().Before(c.delegation.ExpiresAt) {
@@ -90,9 +96,25 @@ func DelegationFromContext(ctx context.Context) (Delegation, string, bool) {
 	return c.delegation, c.token, true
 }
 
-// Middleware requires one Bearer token. It is mounted on the local Unix
-// socket, the only listener of the MCP.
-func Middleware(next http.Handler) http.Handler {
+// Delegator verifies the tokens of the socket with the OpenID provider of the
+// collector, configured, before they reach the collector.
+type Delegator struct {
+	issuer, audience string
+	verifier         TokenVerifier
+}
+
+// NewDelegator verifies the tokens for issuer and audience, the issuer and
+// the client ID of the OpenID provider the collector trusts.
+func NewDelegator(issuer, audience string, verifier TokenVerifier) (*Delegator, error) {
+	if issuer == "" || audience == "" || verifier == nil {
+		return nil, errors.New("token delegation requires the OpenID provider of the collector")
+	}
+	return &Delegator{issuer: issuer, audience: audience, verifier: verifier}, nil
+}
+
+// Middleware requires one Bearer token, verified with the provider of the
+// collector. It is mounted on the local Unix socket only.
+func (d *Delegator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		values := r.Header.Values("Authorization")
 		var raw string
@@ -104,6 +126,17 @@ func Middleware(next http.Handler) http.Handler {
 		}
 		ctx, cancel, err := NewContext(r.Context(), raw)
 		// Tokens in query strings are never an alternative authentication path.
+		if err == nil && len(values) == 1 && !r.URL.Query().Has("access_token") {
+			err = d.verify(ctx, raw)
+		}
+		if errors.Is(err, mcpauth.ErrVerificationUnavailable) {
+			if cancel != nil {
+				cancel()
+			}
+			w.Header().Set("Retry-After", "30")
+			WriteProblem(w, http.StatusServiceUnavailable, "The keys of the OpenID provider of the collector could not be loaded; retry later.")
+			return
+		}
 		if err != nil || len(values) != 1 || r.URL.Query().Has("access_token") {
 			if cancel != nil {
 				cancel()
@@ -146,4 +179,16 @@ func CollectorToken(ctx context.Context) (string, bool) {
 	}
 	_, token, ok := DelegationFromContext(ctx)
 	return token, ok
+}
+
+// verify proves the token with the OpenID provider of the collector:
+// signature by a key of its JWKS, issuer, audience (its client ID) and
+// lifetime. A refused token never reaches the collector.
+func (d *Delegator) verify(ctx context.Context, raw string) error {
+	// A token of another issuer is refused without loading any key.
+	if delegation, _, _ := DelegationFromContext(ctx); delegation.Issuer != d.issuer {
+		return errUnauthorized
+	}
+	_, err := d.verifier.Verify(ctx, raw, d.issuer, d.audience)
+	return err
 }

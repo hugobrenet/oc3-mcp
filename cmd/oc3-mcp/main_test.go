@@ -16,9 +16,11 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/opensvc/oc3-mcp/internal/auth"
 	"github.com/opensvc/oc3-mcp/internal/client"
 	"github.com/opensvc/oc3-mcp/internal/config"
 	"github.com/opensvc/oc3-mcp/internal/testutil"
+	"github.com/opensvc/osvc-auth-mcp/mcpauth"
 )
 
 // bearerTransport adds the caller's access token, as the AI agent does.
@@ -40,9 +42,27 @@ func bearerClient(token string) *http.Client {
 	return &http.Client{Transport: bearerTransport{token: token}}
 }
 
+// acceptingVerifier stands for the OpenID provider of the collector in the
+// tests of the tools, whose tokens have no genuine signature: the
+// verification of the socket has its own tests.
+type acceptingVerifier struct{}
+
+func (acceptingVerifier) Verify(_ context.Context, _, issuer, _ string) (mcpauth.VerifiedClaims, error) {
+	return mcpauth.VerifiedClaims{Issuer: issuer}, nil
+}
+
+func testDelegator(t *testing.T) *auth.Delegator {
+	t.Helper()
+	d, err := auth.NewDelegator(testutil.TokenIssuer, "collector", acceptingVerifier{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
 func newTestServer(t *testing.T, collector *client.Client) *httptest.Server {
 	t.Helper()
-	handler, err := newHandler(collector)
+	handler, err := newHandler(collector, testDelegator(t))
 	if err != nil {
 		t.Fatal(err)
 	}

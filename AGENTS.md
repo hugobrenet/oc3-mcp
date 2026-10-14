@@ -35,8 +35,11 @@ shared with `om3-mcp`.
   exchange of the tool calls, identity bridge and lifecycle. Keep explicit tool
   registration in `main.go`.
 - `internal/config`: process environment and startup validation.
-- `internal/auth`: the delegated token of the socket (shape check, request
-  context, Bearer middleware) and the token the collector receives. The OAuth
+- `internal/auth`: the delegated token of the socket (shape check, signature
+  verification by the `Delegator`, request context, Bearer middleware) and
+  the token the collector receives. The provider is configured
+  (`OPENSVC_MCP_DELEGATED_ISSUER`, `_AUDIENCE`): a single target needs no
+  discovery, unlike the clusters of om3-mcp. The OAuth
   verification of the HTTPS tokens and the token exchange come from
   `osvc-auth-mcp` (`mcpauth`); change them there, for both MCP servers, never
   by copying the code back here.
@@ -59,9 +62,11 @@ binding; startup must not contact the collector.
 
 - The MCP accepts OpenID Connect access tokens only: never a password, Basic
   credentials or an account of its own. On the socket, every request carries
-  the token of its user; the MCP checks its shape, never its signature, and
-  forwards it unchanged to the collector, which verifies it and applies the
-  user's account and claim rules.
+  the token of its user; the MCP verifies it with the configured OpenID
+  provider of the collector (`mcpauth.JWTVerifier`) before any collector request,
+  then forwards it unchanged to the collector, which verifies it too and
+  applies the user's account and claim rules. A refused token never reaches
+  the collector.
 - On HTTPS, the MCP verifies the token locally (OAuth resource server, JWKS of
   the issuer, audience = the MCP resource URL) and never sends it to the
   collector. Each `tools/call` uses a token exchanged for it (RFC 8693), whose
