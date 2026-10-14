@@ -30,7 +30,7 @@ func serveWhoAmI(api *client.Client) http.HandlerFunc {
 		// refuse answers a problem and records one audit line for it.
 		refuse := func(status int, outcome string, extra ...slog.Attr) {
 			auth.WriteProblem(w, status, "")
-			auditWhoAmI(delegation, outcome, status, started, extra...)
+			auditWhoAmI(r.Context(), delegation, outcome, status, started, extra...)
 		}
 		if !ok {
 			refuse(http.StatusUnauthorized, "expired")
@@ -75,6 +75,6 @@ func serveWhoAmI(api *client.Client) http.HandlerFunc {
 			Subject   string    `json:"subject"`
 			ExpiresAt time.Time `json:"expires_at"`
 		}{delegation.Issuer, delegation.Subject, delegation.ExpiresAt.UTC()})
-		auditWhoAmI(delegation, "ok", http.StatusOK, started)
+		auditWhoAmI(r.Context(), delegation, "ok", http.StatusOK, started)
 	}
 }

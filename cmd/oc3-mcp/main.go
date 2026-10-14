@@ -117,5 +117,5 @@ func newHandler(collector *client.Client) (http.Handler, error) {
 		CrossOriginProtection: &http.CrossOriginProtection{},
 	})))
 	mux.Handle("GET /mcp/auth/whoami", auth.Middleware(serveWhoAmI(collector)))
-	return http.MaxBytesHandler(mux, 1<<20), nil
+	return withRequestID(http.MaxBytesHandler(mux, 1<<20)), nil
 }

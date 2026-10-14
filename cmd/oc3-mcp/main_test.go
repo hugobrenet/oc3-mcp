@@ -23,12 +23,16 @@ import (
 
 // bearerTransport adds the caller's access token, as the AI agent does.
 type bearerTransport struct {
-	token string
+	token     string
+	requestID string
 }
 
 func (t bearerTransport) RoundTrip(request *http.Request) (*http.Response, error) {
 	clone := request.Clone(request.Context())
 	clone.Header.Set("Authorization", "Bearer "+t.token)
+	if t.requestID != "" {
+		clone.Header.Set(requestIDHeader, t.requestID)
+	}
 	return http.DefaultTransport.RoundTrip(clone)
 }
 
@@ -186,6 +190,9 @@ func TestWhoAmIProvesTheTokenWithTheCollector(t *testing.T) {
 				t.Fatalf("status=%d body=%s", response.StatusCode, body)
 			}
 			line := strings.TrimSpace(audit.String())
+			if !strings.HasSuffix(line, `request_id=""`) {
+				t.Fatalf("whoami without a request ID logged one:\n%s", line)
+			}
 			if strings.Count(line, "\n") != 0 || !strings.Contains(line, `msg="mcp whoami" issuer=`+testutil.TokenIssuer+` subject=`+testutil.TokenSubject+` `+tc.audit) || strings.Contains(line, testutil.Token) {
 				t.Fatalf("unexpected whoami audit line:\n%s", line)
 			}
