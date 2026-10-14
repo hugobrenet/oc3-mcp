@@ -64,9 +64,10 @@ binding; startup must not contact the collector.
   user's account and claim rules.
 - On HTTPS, the MCP verifies the token locally (OAuth resource server, JWKS of
   the issuer, audience = the MCP resource URL) and never sends it to the
-  collector. Each `tools/call` exchanges it (RFC 8693) for a token whose
-  audience is the collector and not the MCP; without exchange configuration,
-  tool calls are refused.
+  collector. Each `tools/call` uses a token exchanged for it (RFC 8693), whose
+  audience is the collector and not the MCP, reused from the in-memory cache
+  of `mcpauth` for at most one minute and forgotten on HTTP 401 or 403;
+  without exchange configuration, tool calls are refused.
 - The token, delegated or exchanged, lives in the request context until it
   expires. The transport of
   `internal/client` adds it, for the collector origin only, with no proxy and
@@ -79,7 +80,8 @@ binding; startup must not contact the collector.
   subject, outcome, duration and the error already returned to the client. It
   mirrors the om3-mcp audit line. Every `GET /mcp/auth/whoami` emits one
   `mcp whoami` line with its outcome.
-- Never log, return or store tokens, and never quote them in errors.
+- Never log, return or store tokens, and never quote them in errors. The only
+  exception is the in-memory exchange cache of `mcpauth`.
 
 ## Tool contracts and data
 
