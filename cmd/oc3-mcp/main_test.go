@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -144,15 +146,19 @@ func TestWhoAmIProvesTheTokenWithTheCollector(t *testing.T) {
 		status   int
 		identity string
 		want     int
+		audit    string
 	}{
-		{"confirmed", http.StatusOK, `{"auth_source":"bearer","issuer":"` + testutil.TokenIssuer + `","subject":"` + testutil.TokenSubject + `","email":"user@example.com"}`, http.StatusOK},
-		{"session", http.StatusOK, `{"auth_source":"session","issuer":"` + testutil.TokenIssuer + `","subject":"` + testutil.TokenSubject + `"}`, http.StatusUnauthorized},
-		{"other subject", http.StatusOK, `{"auth_source":"bearer","issuer":"` + testutil.TokenIssuer + `","subject":"other"}`, http.StatusUnauthorized},
-		{"other issuer", http.StatusOK, `{"auth_source":"bearer","issuer":"https://other.example.com/","subject":"` + testutil.TokenSubject + `"}`, http.StatusUnauthorized},
-		{"forbidden", http.StatusForbidden, `{"text":"denied"}`, http.StatusForbidden},
-		{"collector failure", http.StatusInternalServerError, `{"text":"boom"}`, http.StatusBadGateway},
+		{"confirmed", http.StatusOK, `{"auth_source":"bearer","issuer":"` + testutil.TokenIssuer + `","subject":"` + testutil.TokenSubject + `","email":"user@example.com"}`, http.StatusOK, "outcome=ok status=200"},
+		{"session", http.StatusOK, `{"auth_source":"session","issuer":"` + testutil.TokenIssuer + `","subject":"` + testutil.TokenSubject + `"}`, http.StatusUnauthorized, "outcome=identity_mismatch status=401"},
+		{"other subject", http.StatusOK, `{"auth_source":"bearer","issuer":"` + testutil.TokenIssuer + `","subject":"other"}`, http.StatusUnauthorized, "outcome=identity_mismatch status=401"},
+		{"other issuer", http.StatusOK, `{"auth_source":"bearer","issuer":"https://other.example.com/","subject":"` + testutil.TokenSubject + `"}`, http.StatusUnauthorized, "outcome=identity_mismatch status=401"},
+		{"forbidden", http.StatusForbidden, `{"text":"denied"}`, http.StatusForbidden, "outcome=collector_refused status=403"},
+		{"collector failure", http.StatusInternalServerError, `{"text":"boom"}`, http.StatusBadGateway, "outcome=collector_failed status=502"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			var audit syncBuffer
+			defer func(logger *slog.Logger) { auditLogger = logger }(auditLogger)
+			auditLogger = slog.New(slog.NewTextHandler(&audit, nil))
 			collector := testutil.NewCollector(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/auth/whoami" {
 					t.Errorf("path = %s", r.URL.Path)
@@ -178,6 +184,13 @@ func TestWhoAmIProvesTheTokenWithTheCollector(t *testing.T) {
 			body, _ := io.ReadAll(response.Body)
 			if response.StatusCode != tc.want || strings.Contains(string(body), "boom") || strings.Contains(string(body), "denied") {
 				t.Fatalf("status=%d body=%s", response.StatusCode, body)
+			}
+			line := strings.TrimSpace(audit.String())
+			if strings.Count(line, "\n") != 0 || !strings.Contains(line, `msg="mcp whoami" issuer=`+testutil.TokenIssuer+` subject=`+testutil.TokenSubject+` `+tc.audit) || strings.Contains(line, testutil.Token) {
+				t.Fatalf("unexpected whoami audit line:\n%s", line)
+			}
+			if tc.status != http.StatusOK && !strings.Contains(line, "collector_status="+strconv.Itoa(tc.status)) {
+				t.Fatalf("whoami audit line misses the collector status:\n%s", line)
 			}
 			if tc.want != http.StatusOK {
 				return
