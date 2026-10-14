@@ -25,8 +25,14 @@ const (
 	serverVersion      = "v0.1.0"
 	resourceName       = "OpenSVC Collector MCP"
 	maxHTTPHeaderBytes = 64 << 10
-	maxMCPBodyBytes    = 1 << 20
-	shutdownTimeout    = 30 * time.Second
+	// readTimeout bounds the reading of a whole request, its body included:
+	// a client sending it slowly (slowloris) is cut off.
+	readTimeout = 10 * time.Second
+	// writeTimeout bounds the processing and the response of a request, so
+	// that a client reading it slowly is cut off; it stays above the longest tool: a token exchange of up to 10 s, then collector requests of up to 30 s each.
+	writeTimeout    = 2 * time.Minute
+	maxMCPBodyBytes = 1 << 20
+	shutdownTimeout = 30 * time.Second
 )
 
 func main() {
@@ -113,6 +119,8 @@ func newHTTPServer(handler http.Handler) *http.Server {
 	return &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
 		IdleTimeout:       2 * time.Minute,
 		MaxHeaderBytes:    maxHTTPHeaderBytes,
 	}
