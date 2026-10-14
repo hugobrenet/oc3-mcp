@@ -58,6 +58,11 @@ func TestToolCallsAreAuditedWithoutCredentials(t *testing.T) {
 	if !strings.Contains(lines[1], `tool=get_node `+identity+` outcome=tool_error`) || !strings.Contains(lines[1], "detail=") || !strings.Contains(lines[1], "404") {
 		t.Fatalf("unexpected audit line for a failed call:\n%s", lines[1])
 	}
+	for _, line := range lines {
+		if !strings.HasSuffix(line, "request_id="+testRequestID) {
+			t.Fatalf("audit line misses the request ID of the agent:\n%s", line)
+		}
+	}
 	if strings.Contains(audit.String(), testutil.Token) || strings.Contains(audit.String(), `"missing"`) {
 		t.Fatalf("audit logged the token or the arguments:\n%s", audit.String())
 	}

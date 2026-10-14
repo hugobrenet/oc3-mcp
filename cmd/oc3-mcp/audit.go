@@ -50,6 +50,7 @@ func auditToolCalls(next mcp.MethodHandler) mcp.MethodHandler {
 		if detail != "" {
 			attrs = append(attrs, slog.String("detail", auditValue(detail)))
 		}
+		attrs = append(attrs, slog.String("request_id", requestIDFromContext(ctx)))
 		auditLogger.LogAttrs(context.Background(), slog.LevelInfo, "mcp tool call", attrs...)
 		return result, err
 	}
@@ -57,7 +58,7 @@ func auditToolCalls(next mcp.MethodHandler) mcp.MethodHandler {
 
 // auditWhoAmI records one identity check of the whoami bridge: the claims of
 // the token, which the collector verifies, what the bridge answered and why.
-func auditWhoAmI(delegation auth.Delegation, outcome string, status int, started time.Time, extra ...slog.Attr) {
+func auditWhoAmI(ctx context.Context, delegation auth.Delegation, outcome string, status int, started time.Time, extra ...slog.Attr) {
 	attrs := []slog.Attr{
 		slog.String("issuer", delegation.Issuer),
 		slog.String("subject", delegation.Subject),
@@ -65,7 +66,9 @@ func auditWhoAmI(delegation auth.Delegation, outcome string, status int, started
 		slog.Int("status", status),
 		slog.Duration("duration", time.Since(started).Round(time.Millisecond)),
 	}
-	auditLogger.LogAttrs(context.Background(), slog.LevelInfo, "mcp whoami", append(attrs, extra...)...)
+	attrs = append(attrs, extra...)
+	attrs = append(attrs, slog.String("request_id", requestIDFromContext(ctx)))
+	auditLogger.LogAttrs(context.Background(), slog.LevelInfo, "mcp whoami", attrs...)
 }
 
 func auditValue(s string) string {

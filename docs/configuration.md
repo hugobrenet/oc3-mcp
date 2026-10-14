@@ -80,7 +80,7 @@ Every `tools/call` emits one `INFO` line `mcp tool call` through the process
 logger (standard error), for example:
 
 ```text
-INFO mcp tool call tool=get_node issuer=https://sso.example.com/application/o/collector/ subject=<sub> outcome=ok duration=212ms
+INFO mcp tool call tool=get_node issuer=https://sso.example.com/application/o/collector/ subject=<sub> outcome=ok duration=212ms request_id=<agent request ID>
 ```
 
 | Field | Meaning |
@@ -89,6 +89,7 @@ INFO mcp tool call tool=get_node issuer=https://sso.example.com/application/o/co
 | `issuer`, `subject` | Claims of the caller's access token. The collector verifies the token on each call: a refused call may log unverified claims |
 | `outcome`, `detail` | `ok`, `tool_error` (collector refusal such as HTTP 401 or 404, or validation error) or `error` (protocol error); `detail` is the bounded error text already returned to the client |
 | `duration` | Total call duration, including the collector requests |
+| `request_id` | The `X-Request-ID` the AI agent sends, which its own audit lines carry; empty when absent or not 32 lowercase hexadecimal characters |
 
 Every `GET /mcp/auth/whoami` emits one `INFO` line `mcp whoami`:
 
@@ -103,6 +104,7 @@ INFO mcp whoami issuer=https://sso.example.com/application/o/collector/ subject=
 | `status` | The HTTP status the bridge answered |
 | `duration` | Total check duration, including the collector request |
 | `collector_status`, `detail`, `auth_source` | When relevant: the collector HTTP status, the bounded error of a collector failure, the authentication source the collector reported |
+| `request_id` | As for `mcp tool call` |
 
 Tokens, raw arguments and tool results are never logged. Values are quoted by
 the structured logger. Retention and shipping of these logs belong to the

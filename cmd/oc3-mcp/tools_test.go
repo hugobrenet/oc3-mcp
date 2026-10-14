@@ -34,7 +34,7 @@ func newToolCaller(t *testing.T, collectorHandler http.HandlerFunc) toolCaller {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	t.Cleanup(cancel)
 	session, err := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.1.0"}, nil).Connect(ctx, &mcp.StreamableClientTransport{
-		Endpoint: server.URL + "/mcp", HTTPClient: bearerClient(testutil.Token),
+		Endpoint: server.URL + "/mcp", HTTPClient: &http.Client{Transport: bearerTransport{token: testutil.Token, requestID: testRequestID}},
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
