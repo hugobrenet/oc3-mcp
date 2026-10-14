@@ -150,3 +150,15 @@ func WriteProblem(w http.ResponseWriter, status int, detail string) {
 		Detail string `json:"detail,omitempty"`
 	}{"about:blank", http.StatusText(status), status, detail})
 }
+
+// CollectorToken returns the token the collector receives for the request:
+// the token exchanged for the collector audience on the HTTPS listener, or the
+// delegated token forwarded unchanged on the Unix socket. The MCP access token
+// of an external client is never returned.
+func CollectorToken(ctx context.Context) (string, bool) {
+	if token, ok := ExchangedFromContext(ctx); ok {
+		return token, true
+	}
+	_, token, ok := DelegationFromContext(ctx)
+	return token, ok
+}

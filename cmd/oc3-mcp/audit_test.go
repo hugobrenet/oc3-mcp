@@ -52,10 +52,11 @@ func TestToolCallsAreAuditedWithoutCredentials(t *testing.T) {
 		t.Fatalf("want one audit line per tool call, got:\n%s", audit.String())
 	}
 	identity := `issuer=` + testutil.TokenIssuer + ` subject=` + testutil.TokenSubject
-	if !strings.Contains(lines[0], `msg="mcp tool call" tool=list_clusters `+identity+` outcome=ok duration=`) {
+	socket := ` client_id="" exchange=delegated collector_subject=` + testutil.TokenSubject
+	if !strings.Contains(lines[0], `msg="mcp tool call" tool=list_clusters `+identity+socket+` outcome=ok duration=`) {
 		t.Fatalf("unexpected audit line for a successful call:\n%s", lines[0])
 	}
-	if !strings.Contains(lines[1], `tool=get_node `+identity+` outcome=tool_error`) || !strings.Contains(lines[1], "detail=") || !strings.Contains(lines[1], "404") {
+	if !strings.Contains(lines[1], `tool=get_node `+identity+socket+` outcome=tool_error`) || !strings.Contains(lines[1], "detail=") || !strings.Contains(lines[1], "404") {
 		t.Fatalf("unexpected audit line for a failed call:\n%s", lines[1])
 	}
 	for _, line := range lines {

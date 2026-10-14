@@ -4,20 +4,95 @@
 
 ## Environment variables
 
+The MCP has two listeners, at least one of which is configured: the Unix
+socket of the AI agent, and HTTPS for external clients authenticated with
+OAuth.
+
 | Variable | Default | Description |
 |---|---|---|
-| OPENSVC_MCP_DELEGATED_SOCKET | required | Absolute path of the Unix socket the MCP listens on, for example `/run/opensvc-oc3-mcp/delegated.sock` |
 | OPENSVC_MCP_COLLECTOR_URL | required | Base URL of the collector API, HTTPS, for example `https://collector.example.com/api` |
 | OPENSVC_MCP_COLLECTOR_CA_FILE | empty | Optional absolute PEM trust bundle for the collector; replaces system roots |
+| OPENSVC_MCP_DELEGATED_SOCKET | empty | Absolute path of the Unix socket, for example `/run/opensvc-oc3-mcp/delegated.sock`; enables the socket listener |
+| OPENSVC_MCP_TLS_CERT_FILE, OPENSVC_MCP_TLS_KEY_FILE | empty | Absolute PEM certificate and private key; enable the HTTPS listener |
+| OPENSVC_MCP_LISTEN_ADDR | 127.0.0.1:8444 | HTTPS bind address, explicit IP:port |
+| OPENSVC_MCP_OAUTH_RESOURCE_URL | required with HTTPS | Public URL of the MCP, ending in `/mcp`: the audience of the incoming tokens |
+| OPENSVC_MCP_OAUTH_ISSUER | required with HTTPS | Issuer of the incoming tokens, the public OAuth client of the MCP |
+| OPENSVC_MCP_OAUTH_RESOURCE_NAME | OpenSVC Collector MCP | Name published in the resource metadata |
+| OPENSVC_MCP_OAUTH_CA_FILE | empty | Optional absolute PEM trust bundle for the issuer |
+| OPENSVC_MCP_AUTH_CONFIG_FILE | empty | Exchange profiles, see [token exchange](#token-exchange) |
+| OPENSVC_MCP_COLLECTOR_AUTH_PROFILE | empty | The profile of OPENSVC_MCP_AUTH_CONFIG_FILE that exchanges the tokens |
+| OPENSVC_MCP_COLLECTOR_AUDIENCE | empty | The audience requested for the collector: the client ID the collector trusts |
 
-The configuration is read at startup; restart after a change. Startup does not
-contact the collector.
+The three token exchange settings go together. Without them, the HTTPS
+listener serves the tool list but refuses the tool calls. The configuration is
+read at startup; restart after a change. Startup contacts neither the
+collector nor the identity provider.
 
-## Authentication
+## HTTPS for external clients
+
+The HTTPS listener serves external MCP clients, such as coding agents, which
+sign in at the identity provider with the public OAuth client of the MCP.
+
+- `/mcp` requires `Authorization: Bearer <access token>`. The MCP verifies the
+  token itself: its signature with the keys the issuer publishes, the issuer,
+  the audience, which must contain `OPENSVC_MCP_OAUTH_RESOURCE_URL`, and its
+  dates. A missing or invalid token gets 401, with a `WWW-Authenticate`
+  challenge naming the resource metadata; an unreachable issuer gets 503.
+- `/.well-known/oauth-protected-resource` and
+  `/.well-known/oauth-protected-resource/mcp` publish the resource metadata
+  (RFC 9728): the resource URL and its authorization server.
+- `/health` answers without authentication.
+
+The token of an external client is never sent to the collector: it is
+intended for the MCP. Each tool call exchanges it for a token intended for the
+collector.
+
+### Token exchange
+
+On each `tools/call`, the MCP exchanges the token of the client (RFC 8693) at
+the token endpoint of the exchange profile issuer, with the audience
+`OPENSVC_MCP_COLLECTOR_AUDIENCE`, and sends the token it receives to the
+collector, which verifies it and applies the account and the claim rules of
+the user. The exchanged token must be a JWT for that audience, and must not
+be usable as an MCP token. It is kept for the tool call only.
+
+`OPENSVC_MCP_AUTH_CONFIG_FILE` holds the exchange profiles, owned by the MCP
+runtime account; the client secret stays in its own file, mode `0600` or
+`0400`:
+
+```yaml
+version: 1
+profiles:
+  collector-sso:
+    issuer: https://sso.example.com/application/o/oc3-mcp-exchange/
+    client_id: oc3-mcp-exchange
+    client_secret_file: /etc/opensvc-oc3-mcp/secrets/oc3-mcp-exchange
+    token_endpoint_auth_method: client_secret_basic
+    scopes: [openid, email, profile, collector]
+    request_timeout: 10s
+```
+
+The scopes are those of the collector provider, so that the exchanged token
+carries the claims the collector rules test: here `collector`, the scope of
+the claims mapping, for example `collector_access`. The collector refuses a
+token no claim rule allows with 401, without detail.
+
+The identity provider needs three clients:
+
+| Client | Role |
+|---|---|
+| Public client of the MCP, for example `oc3-mcp` | Sign-in of the external clients with PKCE; its access tokens carry the MCP resource URL as audience |
+| Confidential exchange client, for example `oc3-mcp-exchange` | Exchanges the tokens issued for the public client |
+| The collector application | Issues the exchanged tokens for its audience; they must carry the claims the collector rules require to allow access |
+
+Error messages of a refused exchange name the provider error code only, never
+its description.
+
+## Unix socket authentication
 
 The MCP holds no collector account and never receives a password. Every
-request carries the OpenID Connect access token of its user, issued by the
-identity provider the collector trusts:
+request on the socket carries the OpenID Connect access token of its user,
+issued by the identity provider the collector trusts:
 
 ```http
 Authorization: Bearer <OpenID Connect access token>
@@ -56,8 +131,7 @@ failure returns 502. Collector details are never returned.
 
 ## Socket access
 
-The socket is the only listener. Access is controlled by the filesystem: the
-MCP creates the socket with mode `0660`, owned by its runtime account and
+Access to the socket is controlled by the filesystem: the MCP creates the socket with mode `0660`, owned by its runtime account and
 group. Restrict the parent directory to the MCP account and a group shared
 with the agent account, for example:
 
@@ -80,16 +154,19 @@ Every `tools/call` emits one `INFO` line `mcp tool call` through the process
 logger (standard error), for example:
 
 ```text
-INFO mcp tool call tool=get_node issuer=https://sso.example.com/application/o/collector/ subject=<sub> outcome=ok duration=212ms request_id=<agent request ID>
+INFO mcp tool call tool=get_node issuer=https://sso.example.com/application/o/collector/ subject=<sub> client_id="" exchange=delegated collector_subject=<sub> outcome=ok duration=212ms request_id=<agent request ID>
 ```
 
 | Field | Meaning |
 |---|---|
 | `tool` | Requested tool, bounded to 256 bytes |
-| `issuer`, `subject` | Claims of the caller's access token. The collector verifies the token on each call: a refused call may log unverified claims |
+| `issuer`, `subject` | On HTTPS, the verified identity of the MCP token. On the socket, the claims of the caller's token, which the collector verifies on each call: a refused call may log unverified claims |
+| `client_id` | On HTTPS, the client application from the `client_id` or `azp` claim; empty on the socket |
+| `exchange` | `delegated` on the socket; on HTTPS, `ok`, the error message of a refused exchange, or `none` when no exchange was attempted |
+| `collector_subject` | The subject of the token the collector received, to correlate with its logs |
 | `outcome`, `detail` | `ok`, `tool_error` (collector refusal such as HTTP 401 or 404, or validation error) or `error` (protocol error); `detail` is the bounded error text already returned to the client |
 | `duration` | Total call duration, including the collector requests |
-| `request_id` | The `X-Request-ID` the AI agent sends, which its own audit lines carry; empty when absent or not 32 lowercase hexadecimal characters |
+| `request_id` | On the socket, the `X-Request-ID` the AI agent sends, which its own audit lines carry; empty on HTTPS, or when absent or not 32 lowercase hexadecimal characters |
 
 Every `GET /mcp/auth/whoami` emits one `INFO` line `mcp whoami`:
 
