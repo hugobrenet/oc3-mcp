@@ -79,8 +79,9 @@ func NewHTTPClient(rawBaseURL string, caFile string) (*http.Client, error) {
 	}, nil
 }
 
-// bearerTransport forwards the access token of the caller unchanged. The MCP
-// holds no collector account: a request without a caller is never sent.
+// bearerTransport sends the collector token of the caller: its delegated token
+// unchanged, or the token exchanged for it. The MCP holds no collector
+// account: a request without a caller is never sent.
 type bearerTransport struct {
 	base   http.RoundTripper
 	origin string
@@ -90,7 +91,7 @@ func (t bearerTransport) RoundTrip(request *http.Request) (*http.Response, error
 	if request.URL.User != nil || request.URL.Scheme+"://"+request.URL.Host != t.origin || request.Host != "" && request.Host != request.URL.Host {
 		return nil, fmt.Errorf("send OpenSVC collector request: destination differs from the configured collector origin")
 	}
-	_, token, ok := auth.DelegationFromContext(request.Context())
+	token, ok := auth.CollectorToken(request.Context())
 	if !ok {
 		return nil, fmt.Errorf("send OpenSVC collector request: no valid access token of the caller")
 	}

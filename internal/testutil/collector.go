@@ -1,25 +1,12 @@
 package testutil
 
 import (
-	"context"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
-	"math/big"
-	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
-
-	"github.com/opensvc/oc3-mcp/internal/auth"
 )
 
 const (
@@ -43,17 +30,6 @@ func NewToken(issuer string, subject string, expires time.Time) string {
 		base64.RawURLEncoding.EncodeToString([]byte("not-a-signature"))
 }
 
-// CallerContext returns a context carrying Token as the caller's token.
-func CallerContext(t testing.TB) context.Context {
-	t.Helper()
-	ctx, cancel, err := auth.NewContext(t.Context(), Token)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(cancel)
-	return ctx
-}
-
 type Collector struct {
 	Server *httptest.Server
 	CAFile string
@@ -65,31 +41,16 @@ type Collector struct {
 // temporary CA file. Requests without Token get 401.
 func NewCollector(t testing.TB, handler http.Handler) Collector {
 	t.Helper()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ca := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Example CA"}, IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour)}
-	caDER, err := x509.CreateCertificate(rand.Reader, ca, ca, &key.PublicKey, key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ca, err = x509.ParseCertificate(caDER)
-	if err != nil {
-		t.Fatal(err)
-	}
-	leafKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
-	leaf := &x509.Certificate{SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "Example collector"}, BasicConstraintsValid: true, IPAddresses: []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, KeyUsage: x509.KeyUsageDigitalSignature, NotBefore: ca.NotBefore, NotAfter: ca.NotAfter}
-	der, err := x509.CreateCertificate(rand.Reader, leaf, ca, &leafKey.PublicKey, key)
-	if err != nil {
-		t.Fatal(err)
-	}
+	return NewCollectorWithToken(t, Token, handler)
+}
+
+// NewCollectorWithToken serves handler like NewCollector, for requests
+// carrying token, such as the token exchanged for the collector.
+func NewCollectorWithToken(t testing.TB, token string, handler http.Handler) Collector {
+	t.Helper()
 	mux := http.NewServeMux()
 	mux.Handle("/api/", http.StripPrefix("/api", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer "+Token {
+		if r.Header.Get("Authorization") != "Bearer "+token {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"text":"strategies/union: [invalid credentials]"}`))
@@ -97,13 +58,6 @@ func NewCollector(t testing.TB, handler http.Handler) Collector {
 		}
 		handler.ServeHTTP(w, r)
 	})))
-	server := httptest.NewUnstartedServer(mux)
-	server.TLS = &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: leafKey}}}
-	server.StartTLS()
-	t.Cleanup(server.Close)
-	path := filepath.Join(t.TempDir(), "example-ca.pem")
-	if err := os.WriteFile(path, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER}), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return Collector{Server: server, CAFile: path, URL: server.URL + "/api"}
+	server := NewTLSServer(t, mux)
+	return Collector{Server: server.Server, CAFile: server.CAFile, URL: server.Server.URL + "/api"}
 }

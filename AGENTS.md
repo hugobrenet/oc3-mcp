@@ -13,9 +13,9 @@ The collector is the only resource server. Tools are read-only. Add an action
 tool only at user direction.
 
 Module and binary: `github.com/opensvc/oc3-mcp` and `oc3-mcp`.
-Use Go, the standard library, `github.com/modelcontextprotocol/go-sdk` and
-`github.com/golang-jwt/jwt/v5`, which reads the claims of the delegated
-tokens as `om3-mcp` does.
+Use Go, the standard library, `github.com/modelcontextprotocol/go-sdk`,
+`github.com/golang-jwt/jwt/v5`, which reads and verifies the tokens as
+`om3-mcp` does, and `go.yaml.in/yaml/v2`, which reads the exchange profiles.
 
 ## Before editing
 
@@ -30,11 +30,13 @@ tokens as `om3-mcp` does.
 
 ## Architecture
 
-- `cmd/oc3-mcp`: composition root, Unix socket listener, identity bridge and
-  lifecycle. Keep explicit tool registration in `main.go`.
+- `cmd/oc3-mcp`: composition root, HTTPS and Unix socket listeners, token
+  exchange of the tool calls, identity bridge and lifecycle. Keep explicit tool
+  registration in `main.go`.
 - `internal/config`: process environment and startup validation.
-- `internal/auth`: the caller's access token: shape check, request context
-  and Bearer middleware.
+- `internal/auth`: the delegated token of the socket (shape check, request
+  context, Bearer middleware), the OAuth verification of the HTTPS tokens and
+  the token exchange. It mirrors `om3-mcp`, with one target: the collector.
 - `internal/client`: the collector client: base URL, TLS trust, the caller's
   token bound to the collector origin, response bounds and normalized API
   errors. Share one immutable client and its connection pool.
@@ -45,27 +47,33 @@ tokens as `om3-mcp` does.
 - `internal/tools`: MCP declarations, schemas, annotations and registrar.
   Handlers stay thin: typed input, one core use case, typed output.
 
-The server exposes stateless Streamable HTTP at `/mcp` on one Unix socket, for
-the AI agent only; an HTTPS listener for external clients is not in scope yet.
+The server exposes stateless Streamable HTTP at `/mcp` on a Unix socket for the
+AI agent, and on HTTPS for external clients authenticated with OAuth.
 Configuration changes require a restart. Validate the configuration before
 binding; startup must not contact the collector.
 
 ## Authentication and trust
 
 - The MCP accepts OpenID Connect access tokens only: never a password, Basic
-  credentials or an account of its own. Every request carries the token of
-  its user; the MCP checks its shape, never its signature, and forwards it
-  unchanged to the collector, which verifies it and applies the user's
-  account and claim rules.
-- The token lives in the request context until it expires. The transport of
+  credentials or an account of its own. On the socket, every request carries
+  the token of its user; the MCP checks its shape, never its signature, and
+  forwards it unchanged to the collector, which verifies it and applies the
+  user's account and claim rules.
+- On HTTPS, the MCP verifies the token locally (OAuth resource server, JWKS of
+  the issuer, audience = the MCP resource URL) and never sends it to the
+  collector. Each `tools/call` exchanges it (RFC 8693) for a token whose
+  audience is the collector and not the MCP; without exchange configuration,
+  tool calls are refused.
+- The token, delegated or exchanged, lives in the request context until it
+  expires. The transport of
   `internal/client` adds it, for the collector origin only, with no proxy and
   no redirect, and sends nothing without it. Core and tools never see it.
 - `GET /mcp/auth/whoami` proves a token by the collector `GET /auth/whoami`:
   it requires a bearer authentication of the token's own issuer and subject.
   It is an identity bridge, not a tool or a token issuer.
 - Every tool call emits one `mcp tool call` audit line (`cmd/oc3-mcp/audit.go`):
-  tool, the token issuer and subject, outcome, duration and the error already
-  returned to the client. It mirrors the om3-mcp audit line. Every
+  tool, the token issuer and subject, client ID, exchange outcome, collector
+  subject, outcome, duration and the error already returned to the client. It mirrors the om3-mcp audit line. Every
   `GET /mcp/auth/whoami` emits one `mcp whoami` line with its outcome.
 - Never log, return or store tokens, and never quote them in errors.
 

@@ -6,11 +6,14 @@ tools for the OpenSVC collector API.
 ## Status
 
 - **Unix socket `/mcp`**, stateless Streamable HTTP, for OpenSVC components
-  such as the AI agent.
-- Every request carries the OpenID Connect access token of its user. The MCP
-  forwards it unchanged to the collector, which verifies it: every caller sees
-  what its own collector account sees. The MCP holds no account and never
-  receives a password.
+  such as the AI agent. Every request carries the OpenID Connect access token
+  of its user, which the MCP forwards unchanged to the collector.
+- **HTTPS `/mcp`** for external clients: OAuth discovery and local JWT
+  verification. Each tool call exchanges the token of the client (RFC 8693)
+  for a token intended for the collector.
+- The collector verifies every token: every caller sees what its own
+  collector account sees. The MCP holds no account and never receives a
+  password.
 
 See the [configuration](docs/configuration.md) and the
 [tool documentation](docs/tools/README.md).

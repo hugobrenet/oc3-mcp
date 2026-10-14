@@ -14,20 +14,32 @@ const maxAuditValueBytes = 256
 // auditLogger receives one credential-free line per tool call. Tests replace it.
 var auditLogger = slog.Default()
 
-// auditToolCalls traces who called which tool and the call outcome. It never
-// logs tokens, raw arguments or tool results.
+// auditToolCalls traces who called which tool, through which listener and
+// client application, and the exchange and call outcomes. It never logs
+// tokens, raw arguments or tool results.
 func auditToolCalls(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
 		call, ok := request.(*mcp.CallToolRequest)
 		if method != "tools/call" || !ok || call.Params == nil {
 			return next(ctx, method, request)
 		}
-		// The claims are those of the caller's token, which the collector
-		// verifies on each call: a refused call may log unverified claims.
-		delegation, _, _ := auth.DelegationFromContext(ctx)
+		identity, _, _ := auth.OAuthFromContext(ctx)
+		ctx, trace := auth.WithCallTrace(ctx)
 		start := time.Now()
 		result, err := next(ctx, method, request)
 
+		issuer, subject, clientID := identity.Issuer, identity.Subject, identity.ClientID
+		exchange, collectorSubject := trace.Exchange, trace.CollectorSubject
+		if exchange == "" {
+			exchange = "none"
+		}
+		// On the Unix socket, the collector receives the caller's token
+		// unchanged and verifies it on each call: a refused call may log
+		// unverified claims.
+		if delegation, _, ok := auth.DelegationFromContext(ctx); ok {
+			issuer, subject = delegation.Issuer, delegation.Subject
+			exchange, collectorSubject = "delegated", delegation.Subject
+		}
 		outcome, detail := "ok", ""
 		if err != nil {
 			outcome, detail = "error", err.Error()
@@ -42,8 +54,11 @@ func auditToolCalls(next mcp.MethodHandler) mcp.MethodHandler {
 		}
 		attrs := []slog.Attr{
 			slog.String("tool", auditValue(call.Params.Name)),
-			slog.String("issuer", delegation.Issuer),
-			slog.String("subject", delegation.Subject),
+			slog.String("issuer", issuer),
+			slog.String("subject", subject),
+			slog.String("client_id", clientID),
+			slog.String("exchange", auditValue(exchange)),
+			slog.String("collector_subject", collectorSubject),
 			slog.String("outcome", outcome),
 			slog.Duration("duration", time.Since(start).Round(time.Millisecond)),
 		}

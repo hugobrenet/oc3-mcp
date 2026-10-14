@@ -5,6 +5,7 @@ go 1.25.5
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/modelcontextprotocol/go-sdk v1.6.1
+	go.yaml.in/yaml/v2 v2.4.3
 )
 
 require (
