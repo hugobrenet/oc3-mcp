@@ -125,8 +125,9 @@ func newCollectorClient(cfg config.Config) (*client.Client, error) {
 }
 
 // newMCPHandler serves the HTTPS listener. OAuth authenticates the external
-// client locally; each tool call then exchanges its token for one intended
-// for the collector. Without exchange configuration, tool calls are blocked.
+// client locally; each tool call, within the limits of its identity, then
+// uses a token exchanged for the collector. Without exchange configuration,
+// tool calls are blocked.
 func newMCPHandler(cfg config.Config, collector *client.Client) (http.Handler, error) {
 	if cfg.OAuth.ResourceName == "" {
 		cfg.OAuth.ResourceName = resourceName
@@ -139,7 +140,8 @@ func newMCPHandler(cfg config.Config, collector *client.Client) (http.Handler, e
 	if cfg.ExchangeEnabled() {
 		route = exchangeToolCalls(cfg.Exchange, cfg.ExchangeProfile, cfg.CollectorAudience)
 	}
-	handler, err := newToolsHandler(collector, route)
+	limiter := mcpauth.NewCallLimiter(cfg.MaxConcurrentCalls, cfg.MaxCallsPerMinute)
+	handler, err := newToolsHandler(collector, limitToolCalls(limiter), route)
 	if err != nil {
 		return nil, err
 	}

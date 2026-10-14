@@ -22,6 +22,8 @@ OAuth.
 | OPENSVC_MCP_AUTH_CONFIG_FILE | empty | Exchange profiles, see [token exchange](#token-exchange) |
 | OPENSVC_MCP_COLLECTOR_AUTH_PROFILE | empty | The profile of OPENSVC_MCP_AUTH_CONFIG_FILE that exchanges the tokens |
 | OPENSVC_MCP_COLLECTOR_AUDIENCE | empty | The audience requested for the collector: the client ID the collector trusts |
+| OPENSVC_MCP_MAX_CONCURRENT_CALLS | 10 | Tool calls in progress of one identity on HTTPS; 0 disables the limit. See [call limits](#call-limits) |
+| OPENSVC_MCP_MAX_CALLS_PER_MINUTE | 120 | Tool calls per minute of one identity on HTTPS, with a burst of 30; 0 disables the limit |
 
 The three token exchange settings go together. Without them, the HTTPS
 listener serves the tool list but refuses the tool calls. The configuration is
@@ -47,6 +49,27 @@ The token of an external client is never sent to the collector: it is
 intended for the MCP. Each tool call exchanges it for a token intended for the
 collector.
 
+### Call limits
+
+The tool calls of each identity on HTTPS (token issuer and subject) are
+limited: `OPENSVC_MCP_MAX_CONCURRENT_CALLS` calls in progress and
+`OPENSVC_MCP_MAX_CALLS_PER_MINUTE` calls per minute, with a burst of 30 calls
+for an idle identity. A call beyond a limit fails at once, before any token
+exchange or collector request, with a tool error that tells the client when to retry;
+the audit line records it as `outcome=tool_error`. The limits protect the SSO
+and the collector from an authenticated client that loops, such as an agent repeating
+a call. They are not a network protection: limits per address, before
+authentication or for all clients belong to the reverse proxy, gateway or
+firewall in front of the MCP, where every request otherwise carries the address
+of the proxy. The Unix socket is not limited.
+
+The limits are per identity: more users do not share them, but an identity
+shared by several people or an automation does. Questions over a large fleet
+should use the list tools, which return many items per call, rather than one
+call per node or service; raise `OPENSVC_MCP_MAX_CALLS_PER_MINUTE` if a
+legitimate use still exceeds it. Size the SSO and the collector for the total
+load of all users, which the limits do not bound.
+
 ### Token exchange
 
 On each `tools/call`, the MCP exchanges the token of the client (RFC 8693) at
@@ -60,7 +83,8 @@ An exchanged token is kept in the memory of the MCP process, never on disk,
 and reused by the next tool calls of the same MCP token for the same target:
 for at most one minute, and never within 30 seconds of its expiry. The cache
 key is a hash of the MCP token and the target, never the MCP token itself.
-Concurrent calls share one exchange; failures are not cached. When the target
+Concurrent calls share one exchange. A failed exchange is returned again for
+five seconds without contacting the SSO. When the target
 refuses the token (HTTP 401 or 403), it is forgotten and the next call
 exchanges again. A claim change in the SSO therefore applies within a minute.
 

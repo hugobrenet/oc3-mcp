@@ -26,6 +26,24 @@ func exchangeToolCalls(profiles *mcpauth.ExchangeProfiles, profile, audience str
 	}
 }
 
+// limitToolCalls refuses the tool calls of an identity beyond its limits,
+// before any token exchange or collector request. The audit records them.
+func limitToolCalls(limiter *mcpauth.CallLimiter) mcp.Middleware {
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
+			if method != "tools/call" {
+				return next(ctx, method, request)
+			}
+			release, err := limiter.Acquire(ctx)
+			if err != nil {
+				return toolError(err.Error()), nil
+			}
+			defer release()
+			return next(ctx, method, request)
+		}
+	}
+}
+
 // blockToolCalls keeps the tools discoverable on HTTPS while no token exchange
 // is configured: no external token can reach the collector.
 func blockToolCalls(next mcp.MethodHandler) mcp.MethodHandler {

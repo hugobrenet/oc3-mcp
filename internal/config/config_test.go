@@ -13,7 +13,7 @@ func setValidEnv(t *testing.T) {
 	t.Setenv("OPENSVC_MCP_COLLECTOR_CA_FILE", "")
 	for _, name := range []string{"OPENSVC_MCP_TLS_CERT_FILE", "OPENSVC_MCP_TLS_KEY_FILE", "OPENSVC_MCP_LISTEN_ADDR", "OPENSVC_MCP_OAUTH_RESOURCE_URL",
 		"OPENSVC_MCP_OAUTH_ISSUER", "OPENSVC_MCP_OAUTH_RESOURCE_NAME", "OPENSVC_MCP_OAUTH_CA_FILE", "OPENSVC_MCP_AUTH_CONFIG_FILE",
-		"OPENSVC_MCP_COLLECTOR_AUTH_PROFILE", "OPENSVC_MCP_COLLECTOR_AUDIENCE"} {
+		"OPENSVC_MCP_COLLECTOR_AUTH_PROFILE", "OPENSVC_MCP_COLLECTOR_AUDIENCE", "OPENSVC_MCP_MAX_CONCURRENT_CALLS", "OPENSVC_MCP_MAX_CALLS_PER_MINUTE"} {
 		t.Setenv(name, "")
 	}
 }
@@ -87,6 +87,8 @@ func setHTTPSEnv(t *testing.T) {
 	t.Setenv("OPENSVC_MCP_AUTH_CONFIG_FILE", writeExchangeProfile(t))
 	t.Setenv("OPENSVC_MCP_COLLECTOR_AUTH_PROFILE", "test-sso")
 	t.Setenv("OPENSVC_MCP_COLLECTOR_AUDIENCE", "collector-client-id")
+	t.Setenv("OPENSVC_MCP_MAX_CONCURRENT_CALLS", "")
+	t.Setenv("OPENSVC_MCP_MAX_CALLS_PER_MINUTE", "")
 }
 
 func TestLoadHTTPSWithTokenExchange(t *testing.T) {
@@ -145,4 +147,41 @@ func TestLoadRejectsInvalidHTTPSConfig(t *testing.T) {
 	if _, err := Load(); err == nil {
 		t.Fatal("configuration without listener accepted")
 	}
+}
+
+func TestLoadCallLimits(t *testing.T) {
+	setHTTPSEnv(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxConcurrentCalls != 10 || cfg.MaxCallsPerMinute != 120 {
+		t.Fatalf("default limits: %d %d", cfg.MaxConcurrentCalls, cfg.MaxCallsPerMinute)
+	}
+	t.Setenv("OPENSVC_MCP_MAX_CONCURRENT_CALLS", "0")
+	t.Setenv("OPENSVC_MCP_MAX_CALLS_PER_MINUTE", "600")
+	if cfg, err = Load(); err != nil || cfg.MaxConcurrentCalls != 0 || cfg.MaxCallsPerMinute != 600 {
+		t.Fatalf("configured limits: %d %d %v", cfg.MaxConcurrentCalls, cfg.MaxCallsPerMinute, err)
+	}
+	for _, tc := range []struct{ name, value string }{
+		{"OPENSVC_MCP_MAX_CONCURRENT_CALLS", "-1"},
+		{"OPENSVC_MCP_MAX_CONCURRENT_CALLS", "1001"},
+		{"OPENSVC_MCP_MAX_CALLS_PER_MINUTE", "many"},
+		{"OPENSVC_MCP_MAX_CALLS_PER_MINUTE", "100001"},
+	} {
+		t.Run(tc.name+"="+tc.value, func(t *testing.T) {
+			setHTTPSEnv(t)
+			t.Setenv(tc.name, tc.value)
+			if _, err := Load(); err == nil {
+				t.Fatal("invalid limit accepted")
+			}
+		})
+	}
+	t.Run("without HTTPS", func(t *testing.T) {
+		setValidEnv(t)
+		t.Setenv("OPENSVC_MCP_MAX_CALLS_PER_MINUTE", "60")
+		if _, err := Load(); err == nil {
+			t.Fatal("limit accepted without the HTTPS listener")
+		}
+	})
 }
