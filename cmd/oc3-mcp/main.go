@@ -112,10 +112,11 @@ func newHandler(collector *client.Client) (http.Handler, error) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", getHealth)
-	mux.Handle("/mcp", auth.Middleware(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
+	// Cross-origin browser requests are refused with 403, as the MCP SDK
+	// recommends, by the protection of net/http around its handler.
+	mux.Handle("/mcp", auth.Middleware(http.NewCrossOriginProtection().Handler(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
 		Stateless: true, JSONResponse: true,
-		CrossOriginProtection: &http.CrossOriginProtection{},
-	})))
+	}))))
 	mux.Handle("GET /mcp/auth/whoami", auth.Middleware(serveWhoAmI(collector)))
 	return withRequestID(http.MaxBytesHandler(mux, 1<<20)), nil
 }

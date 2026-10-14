@@ -260,3 +260,35 @@ func TestListenDelegated(t *testing.T) {
 		t.Fatal("a regular file was replaced")
 	}
 }
+
+func TestMCPRefusesCrossOriginBrowserRequests(t *testing.T) {
+	server := newTestServer(t, nil)
+	post := func(client *http.Client, fetchSite string) int {
+		t.Helper()
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, server.URL+"/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Accept", "application/json, text/event-stream")
+		if fetchSite != "" {
+			request.Header.Set("Sec-Fetch-Site", fetchSite)
+		}
+		response, err := client.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		response.Body.Close()
+		return response.StatusCode
+	}
+	if status := post(bearerClient(testutil.Token), "cross-site"); status != http.StatusForbidden {
+		t.Fatalf("cross-site request status = %d, want 403", status)
+	}
+	if status := post(bearerClient(testutil.Token), "same-origin"); status != http.StatusOK {
+		t.Fatalf("same-origin request status = %d, want 200", status)
+	}
+	// The token is checked first: a cross-site request without one gets 401.
+	if status := post(server.Client(), "cross-site"); status != http.StatusUnauthorized {
+		t.Fatalf("cross-site request without token status = %d, want 401", status)
+	}
+}
