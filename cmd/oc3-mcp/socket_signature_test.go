@@ -10,7 +10,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/opensvc/oc3-mcp/internal/config"
-	"github.com/opensvc/osvc-auth-mcp/mcpauth"
 	"github.com/opensvc/osvc-auth-mcp/mcpauthtest"
 )
 
@@ -36,7 +35,9 @@ func TestSocketVerifiesTokensWithTheProviderOfTheCollector(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
-	cfg := config.Config{CollectorURL: collector.Server.URL + "/api", CollectorCAFile: collector.CAFile, OAuth: mcpauth.OAuthConfig{CAFile: provider.CAFile},
+	// A socket-only configuration: the provider is trusted with the delegated
+	// CA bundle, the OAuth one of the HTTPS listener being unavailable.
+	cfg := config.Config{CollectorURL: collector.Server.URL + "/api", CollectorCAFile: collector.CAFile, DelegatedCAFile: provider.CAFile,
 		DelegatedIssuer: provider.Issuer, DelegatedAudience: "collector"}
 	api, err := newCollectorClient(cfg)
 	if err != nil {

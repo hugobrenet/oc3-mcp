@@ -169,7 +169,11 @@ func newMCPHandler(cfg config.Config, collector *client.Client) (http.Handler, e
 // of the collector, configured, its keys trusted with the system roots or the
 // OAuth trust bundle of the HTTPS listener.
 func newDelegator(cfg config.Config) (*auth.Delegator, error) {
-	verifier, err := mcpauth.NewJWTVerifier(cfg.OAuth.CAFile)
+	caFile := cfg.DelegatedCAFile
+	if caFile == "" {
+		caFile = cfg.OAuth.CAFile
+	}
+	verifier, err := mcpauth.NewJWTVerifier(caFile)
 	if err != nil {
 		return nil, fmt.Errorf("configure delegated token verification: %w", err)
 	}

@@ -232,3 +232,29 @@ func TestDelegatorVerifiesBeforeTheCollector(t *testing.T) {
 		}
 	})
 }
+
+// TestDelegatorToleratesTheClockSkewOfTheProvider: a token issued by a
+// provider whose clock is a little ahead reaches the collector.
+func TestDelegatorToleratesTheClockSkewOfTheProvider(t *testing.T) {
+	p := mcpauthtest.NewOAuthProvider(t)
+	verifier, err := mcpauth.NewJWTVerifier(p.CAFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := NewDelegator(p.Issuer, "collector", verifier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ahead := func(c jwt.MapClaims) {
+		c["iat"] = time.Now().Add(20 * time.Second).Unix()
+		c["nbf"] = time.Now().Add(20 * time.Second).Unix()
+	}
+	called := false
+	handler := d.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true }))
+	request := httptest.NewRequest(http.MethodGet, "/mcp/auth/whoami", nil)
+	request.Header.Set("Authorization", "Bearer "+p.Token(t, "collector", "alice", ahead))
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+	if !called {
+		t.Fatal("token of a provider 20 s ahead refused")
+	}
+}

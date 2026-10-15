@@ -39,6 +39,10 @@ type Config struct {
 	// DelegatedSocket enables the Unix socket listener. Its callers forward
 	// the OpenID Connect access token of their user.
 	DelegatedSocket string
+	// DelegatedCAFile is the PEM trust bundle for the OpenID providers of the
+	// tokens of the socket, replacing the system roots; empty for the OAuth
+	// bundle of the HTTPS listener, if any, else the system roots.
+	DelegatedCAFile string
 	// DelegatedIssuer and DelegatedAudience are the OpenID provider of the
 	// collector: the issuer and the client ID of the tokens of the socket,
 	// verified before they reach the collector. Required with the socket.
@@ -120,6 +124,15 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("OPENSVC_MCP_DELEGATED_SOCKET must be an absolute socket path of at most %d bytes", maxUnixSocketPathBytes)
 		}
 		cfg.DelegatedSocket = path
+	}
+	if caFile := strings.TrimSpace(os.Getenv("OPENSVC_MCP_DELEGATED_CA_FILE")); caFile != "" {
+		if cfg.DelegatedSocket == "" {
+			return Config{}, fmt.Errorf("OPENSVC_MCP_DELEGATED_CA_FILE requires OPENSVC_MCP_DELEGATED_SOCKET")
+		}
+		if !filepath.IsAbs(caFile) {
+			return Config{}, fmt.Errorf("OPENSVC_MCP_DELEGATED_CA_FILE must be an absolute file path")
+		}
+		cfg.DelegatedCAFile = caFile
 	}
 	delegatedIssuer := strings.TrimSpace(os.Getenv("OPENSVC_MCP_DELEGATED_ISSUER"))
 	delegatedAudience := strings.TrimSpace(os.Getenv("OPENSVC_MCP_DELEGATED_AUDIENCE"))
