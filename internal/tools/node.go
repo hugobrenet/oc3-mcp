@@ -159,8 +159,7 @@ func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 		&mcp.Tool{
 			Name:  "list_node_disks",
 			Title: "List node disks",
-			Description: "List the disks one node sees, as the OpenSVC collector knows them from its agent and the storage arrays: disk ID, size and used size in MiB, vendor, model, storage array and its disk group, the disk group the node reports, the service using the disk when the collector knows it, " +
-				"and the other nodes seeing the same disk. Use it to tell which LUNs a node sees, on which array, and whether a disk is visible from the other nodes a service may fail over to. " +
+			Description: "List the disks one node sees, with their size, storage array and the other nodes seeing them. The OpenSVC collector knows them from its agent and the storage arrays: disk ID, size and used size in MiB, vendor, model, storage array and its disk group, the disk group the node reports, the service using the disk when the collector knows it, and the other nodes seeing the same disk. Use it to tell which LUNs a node sees, on which array, and whether a disk is visible from the other nodes a service may fail over to. " +
 				"A disk used by several services is one row per service. Local disks carry their device name, such as vda, and are never shared. Collector dates are as it gives them.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
@@ -179,9 +178,9 @@ func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 		&mcp.Tool{
 			Name:  "get_node_stats",
 			Title: "Get node statistics",
-			Description: "Sum up the performance statistics the OpenSVC collector keeps for one node over the last days, for one group: cpu (usr, sys, iowait, idle, steal… in %), mem (pct_memused, pct_commit, kb…), swap, proc (load averages, process counts), block (I/O), netdev and netdev_err per interface, or blockdev per disk. " +
+			Description: "Sum up the performance statistics of one node over the last days, for one group such as cpu, memory, load, disk I/O or network. The OpenSVC collector keeps them per group: cpu (usr, sys, iowait, idle, steal… in %), mem (pct_memused, pct_commit, kb…), swap, proc (load averages, process counts), block (I/O), netdev and netdev_err per interface, or blockdev per disk. " +
 				"Each series gives its last, lowest, mean and highest value with the time of the highest, and with samples the means of equal time slices to show the trend. " +
-				"Use it to tell whether a node is or was loaded, saturated or swapping, and when. Filter by metric, or by device for the device groups, which hold one series per device. " +
+				"Use it to tell whether a node is or was loaded, saturated or swapping, and when. The device groups hold one series per device. " +
 				"With at, each series also gives its value at that time, from the closest point. " +
 				"The resolution is a minute over half an hour, ten minutes over three days, an hour over ninety days, a day beyond: the older the time, the coarser the point. Times are UTC.",
 			Annotations: readOnlyClosedWorldAnnotations(),
@@ -203,9 +202,7 @@ func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 		&mcp.Tool{
 			Name:  "get_node_san_topology",
 			Title: "Get node SAN topology",
-			Description: "Read the fibre channel SAN wiring of one node, as the OpenSVC collector computes it from the node adapters, the SAN switch ports and the zoning: " +
-				"for each adapter port, the paths through the switches of each fabric to the storage array target ports, with the ports and the cable speeds of each hop; " +
-				"for each storage array, the fabrics, adapters, target ports and number of paths reaching it; and the devices and cables of the wiring. " +
+			Description: "Read the fibre channel SAN wiring of one node, from its adapters through the SAN switches to the storage arrays. The OpenSVC collector computes it from the node adapters, the SAN switch ports and the zoning: for each adapter port, the paths through the switches of each fabric to the storage array target ports, with the ports and the cable speeds of each hop; for each storage array, the fabrics, adapters, target ports and number of paths reaching it; and the devices and cables of the wiring. " +
 				"Use it to check the redundancy of the SAN paths of a node, such as an array reached through one fabric only, or a slower hop. " +
 				"wired is false for a node without a fibre channel wiring known to the collector, such as an iSCSI node.",
 			Annotations: readOnlyClosedWorldAnnotations(),

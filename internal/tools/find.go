@@ -21,7 +21,7 @@ func RegisterFindTools(registrar *Registrar, service *core.Service) error {
 		&mcp.Tool{
 			Name:  "find_objects",
 			Title: "Find collector objects",
-			Description: "Find the objects of the OpenSVC collector whose name contains a text, when the exact name or the kind of an object is unknown: nodes, services, instances, apps, node addresses, disks and tags, as the collector search does. " +
+			Description: "Find the collector objects whose name contains a text, when the exact name or the kind of an object is unknown. It searches the nodes, services, instances, apps, node addresses, disks and tags, as the collector search does. " +
 				"Use it for a partial or approximate name, such as lyn-prd or web, or when an exact lookup found nothing. " +
 				"Returns one group per kind: the objects whose name or ID contains the text first, marked matched_by name, then those whose context only contains it, marked matched_by context, such as the instances and addresses of a node named after the text. " +
 				"Each object carries its ID, name, context and the tool that details it, such as get_node, get_service or get_app; more tells that other objects of the kind match beyond limit. " +

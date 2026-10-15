@@ -22,8 +22,8 @@ func RegisterClusterTools(registrar *Registrar, service *core.Service) error {
 		&mcp.Tool{
 			Name:  "list_clusters",
 			Title: "List collector clusters",
-			Description: "List the OpenSVC clusters the collector knows, sorted by name: cluster ID, name, nodes, node and service counts, agent versions, quorum and freeze flags, and when the collector last received their status. " +
-				"Filter by text in the name or by exact cluster ID, to name the cluster_id the other tools return. " +
+			Description: "List the OpenSVC clusters the collector knows, sorted by name. Each cluster holds its ID, name, nodes, node and service counts, agent versions, quorum and freeze flags, and when the collector last received its status. " +
+				"Use it to name the cluster_id the other tools return. " +
 				"The collector knows a cluster from the status its daemon sends: a cluster_id absent from this list is one whose daemon status the collector never received. Collector dates are as it gives them.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},

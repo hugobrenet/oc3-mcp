@@ -124,12 +124,27 @@ func TestMCPInitializeAndListTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var names []string
+	var names, core []string
 	for _, tool := range tools.Tools {
 		names = append(names, tool.Name)
 		if tool.Annotations == nil || !tool.Annotations.ReadOnlyHint {
 			t.Fatalf("tool %s is not read-only", tool.Name)
 		}
+		// The tool search of the AI agent reads these keys.
+		if keywords, ok := tool.Meta["opensvc/keywords"].([]any); !ok || len(keywords) == 0 {
+			t.Fatalf("tool %s has no search keywords: %v", tool.Name, tool.Meta)
+		}
+		if tool.Meta["opensvc/core"] == true {
+			core = append(core, tool.Name)
+		}
+		// A core tool is always shown, its summary rarely: its description is
+		// kept as the replays measured it.
+		if first, _, _ := strings.Cut(tool.Description, ". "); len(first) > 240 && tool.Meta["opensvc/core"] != true {
+			t.Errorf("tool %s: the first sentence of its description, its summary in a search, exceeds 240 bytes", tool.Name)
+		}
+	}
+	if strings.Join(core, ",") != "count_nodes,count_services,get_node,get_service,list_alerts,list_nodes,list_services" {
+		t.Fatalf("core tools = %v", core)
 	}
 	if strings.Join(names, ",") != "count_instances,count_nodes,count_services,find_objects,get_app,get_node,get_node_san_topology,get_node_stats,get_service,get_service_action_logs,get_service_resource_history,get_service_status_history,list_alerts,list_clusters,list_collector_events,list_compliance_status,list_instances,list_ips,list_node_checks,list_node_disks,list_node_packages,list_nodes,list_package_differences,list_service_actions,list_service_checks,list_service_resources,list_services,list_tags" {
 		t.Fatalf("tools = %v", names)
