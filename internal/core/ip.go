@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"net/url"
@@ -13,15 +15,19 @@ import (
 const (
 	defaultListIPsLimit    = 50
 	maxListIPsLimit        = 200
-	maxServiceAddresses    = 200
 	maxNetworkNameMatches  = 10
-	ipResourceTypeFilter   = `res_type:~^ip(\.|$)`
 	specialAddressesFilter = `addr:!~^(0\.|127\.|169\.254\.|2(2[4-9]|3[0-9])\.|::1?$|fe[89ab][0-9a-f]:|ff[0-9a-f]{2}:)`
+	// addressResourceTypesFilter keeps the IP drivers whose description
+	// names the address they plumb, as "host 10.0.0.1/24 eth0" or "netns
+	// backend 10.0.0.1/24@eth1 in container#1". Other drivers name addresses
+	// they do not hold, such as the gateway of an ip.route, or none, such as
+	// ip.cni.
+	addressResourceTypesFilter = "res_type:in:ip.host,ip.netns"
 )
 
 var (
 	nodeAddressProps    = []string{"id", "node_id", "nodename", "intf", "mac", "type", "addr", "mask", "updated", "flag_deprecated", "net_id", "net_name"}
-	serviceAddressProps = []string{"id", "svc_id", "services.svcname", "node_id", "nodes.nodename", "rid", "res_type", "res_status", "res_desc", "updated"}
+	serviceAddressProps = []string{"id", "svc_id", "services.svcname", "node_id", "nodes.nodename", "vmname", "rid", "res_type", "res_status", "res_desc", "updated"}
 	networkProps        = []string{"id", "name", "network", "netmask"}
 )
 
@@ -35,18 +41,18 @@ type ListIPsOptions struct {
 }
 
 type IPList struct {
-	Provenance                Provenance        `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
-	IP                        string            `json:"ip,omitempty" jsonschema:"the searched address, in the canonical form the collector stores"`
-	Node                      *NodeReference    `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
-	Network                   *NetworkReference `json:"network,omitempty" jsonschema:"the declared network the network filter resolved to"`
-	SpecialExcluded           bool              `json:"special_addresses_excluded" jsonschema:"whether loopback, link-local, multicast and unspecified addresses were left out of node_addresses"`
-	Total                     int               `json:"total" jsonschema:"the number of node addresses matching the filters, as the collector counts them"`
-	Count                     int               `json:"count" jsonschema:"the number of node addresses returned in this page"`
-	NodeAddresses             []NodeAddress     `json:"node_addresses" jsonschema:"the addresses the node inventories list, sorted by address, node name and interface; an address may be listed on several nodes or interfaces"`
-	NextCursor                string            `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page of node_addresses"`
-	Truncated                 bool              `json:"truncated" jsonschema:"whether matching node addresses remain after this page"`
-	ServiceAddresses          []ServiceAddress  `json:"service_addresses,omitempty" jsonschema:"with ip, on the first page: the service IP resources whose description names the address, one per node, sorted by service, node and resource ID; absent when none names it"`
-	ServiceAddressesTruncated bool              `json:"service_addresses_truncated,omitempty" jsonschema:"whether service IP resources were left out after 200"`
+	Provenance       Provenance        `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
+	IP               string            `json:"ip,omitempty" jsonschema:"the searched address, in the canonical form the collector stores"`
+	Node             *NodeReference    `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
+	Network          *NetworkReference `json:"network,omitempty" jsonschema:"the declared network the network filter resolved to"`
+	SpecialExcluded  bool              `json:"special_addresses_excluded" jsonschema:"whether loopback, link-local, multicast and unspecified addresses were left out of node_addresses"`
+	Total            int               `json:"total" jsonschema:"the number of node addresses matching the filters, as the collector counts them"`
+	ServiceTotal     *int              `json:"service_total,omitempty" jsonschema:"with ip, the number of service IP resources naming the address, as the collector counts them, once this page reached them"`
+	Count            int               `json:"count" jsonschema:"the number of node and service addresses returned in this page"`
+	NodeAddresses    []NodeAddress     `json:"node_addresses" jsonschema:"the addresses the node inventories list, sorted by address, node name and interface; an address may be listed on several nodes or interfaces"`
+	ServiceAddresses []ServiceAddress  `json:"service_addresses,omitempty" jsonschema:"with ip, after the node addresses: the ip.host and ip.netns resources of the services whose description names the address, one per node and container, sorted by service, node, container and resource ID"`
+	NextCursor       string            `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
+	Truncated        bool              `json:"truncated" jsonschema:"whether matching node or service addresses remain after this page"`
 }
 
 type NetworkReference struct {
@@ -75,8 +81,9 @@ type ServiceAddress struct {
 	Svcname        string `json:"svcname" jsonschema:"the service whose resource holds the address"`
 	NodeID         string `json:"node_id" jsonschema:"the collector ID of the node of the instance"`
 	Nodename       string `json:"nodename" jsonschema:"the node of the instance"`
+	VMName         string `json:"vmname,omitempty" jsonschema:"the container or virtual machine the resource runs in, when encapsulated"`
 	RID            string `json:"rid" jsonschema:"the resource ID, such as ip#1"`
-	Type           string `json:"type,omitempty" jsonschema:"the resource driver, such as ip.host or ip.netns"`
+	Type           string `json:"type,omitempty" jsonschema:"the resource driver: ip.host or ip.netns"`
 	Status         string `json:"status,omitempty" jsonschema:"the resource status the agent last reported on this node, such as up or down: up where the address is plumbed"`
 	Description    string `json:"description,omitempty" jsonschema:"the description the agent reported, such as host 10.0.0.1/24 eth0; untrusted text"`
 	LastReportedAt string `json:"last_reported_at,omitempty" jsonschema:"when the agent last reported the resource, as the collector gives it"`
@@ -101,6 +108,7 @@ type collectorServiceAddress struct {
 	Svcname   string `json:"services.svcname"`
 	NodeID    string `json:"node_id"`
 	Nodename  string `json:"nodes.nodename"`
+	VMName    string `json:"vmname"`
 	RID       string `json:"rid"`
 	ResType   string `json:"res_type"`
 	ResStatus string `json:"res_status"`
@@ -115,10 +123,43 @@ type collectorNetwork struct {
 	Netmask int    `json:"netmask"`
 }
 
+// ipCursor is the position of a page in the node addresses, then in the
+// service addresses, bound to the filters of the listing.
+type ipCursor struct {
+	Nodes    int    `json:"o"`
+	Services int    `json:"s"`
+	Filters  string `json:"f"`
+}
+
+func encodeIPCursor(cursor ipCursor) string {
+	data, _ := json.Marshal(cursor)
+	return base64.RawURLEncoding.EncodeToString(data)
+}
+
+func decodeIPCursor(cursor string, fingerprint string) (ipCursor, error) {
+	if cursor == "" {
+		return ipCursor{Filters: fingerprint}, nil
+	}
+	invalid := fmt.Errorf("cursor is invalid: pass the next_cursor of a previous call with the same filters")
+	if len(cursor) > maxListCursorLength {
+		return ipCursor{}, invalid
+	}
+	data, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return ipCursor{}, invalid
+	}
+	var decoded ipCursor
+	if err := json.Unmarshal(data, &decoded); err != nil || decoded.Nodes < 0 || decoded.Services < 0 || decoded.Nodes+decoded.Services < 1 || decoded.Filters != fingerprint {
+		return ipCursor{}, invalid
+	}
+	return decoded, nil
+}
+
 // ListIPs reads one page of the addresses the node inventories list, by
-// address, node or declared network. With an address, the first page also
-// lists the service IP resources whose description names it: a service
-// address is listed on the node where it is plumbed, without the service.
+// address, node or declared network. With an address, the page goes on with
+// the service IP resources whose description names it: a service address
+// is listed on the node where it is plumbed, without the service. The page
+// size bounds the node and service addresses together.
 func (s *Service) ListIPs(ctx context.Context, options ListIPsOptions) (IPList, error) {
 	if options.IP == "" && options.Node == "" && options.Network == "" {
 		return IPList{}, fmt.Errorf("pass at least one of ip, node or network")
@@ -131,15 +172,20 @@ func (s *Service) ListIPs(ctx context.Context, options ListIPsOptions) (IPList, 
 		return IPList{}, err
 	}
 	var result IPList
+	var addr netip.Addr
 	if options.IP != "" {
-		if result.IP, err = canonicalIP(options.IP); err != nil {
+		if addr, err = canonicalIP(options.IP); err != nil {
 			return IPList{}, err
 		}
+		result.IP = addr.String()
 	}
 	var filters, serviceFilters []string
-	if result.IP != "" {
+	searchServices := result.IP != ""
+	if searchServices {
 		filters = append(filters, filterEquals("addr", result.IP))
-		serviceFilters = append(serviceFilters, ipResourceTypeFilter, `res_desc:~(^|[[:space:]])`+regexp.QuoteMeta(result.IP)+`(/|[[:space:]]|$)`)
+		// The address must be followed by its prefix length, as both drivers
+		// write it: an address followed by a space may be another one's.
+		serviceFilters = append(serviceFilters, addressResourceTypesFilter, `res_desc:~(^|[[:space:]])`+regexp.QuoteMeta(result.IP)+`/`)
 	} else if !options.IncludeSpecial {
 		// The node inventories list the multicast groups the nodes joined and
 		// their loopback and link-local addresses: most of the rows.
@@ -162,21 +208,26 @@ func (s *Service) ListIPs(ctx context.Context, options ListIPsOptions) (IPList, 
 		}
 		result.Network = &NetworkReference{ID: network.ID, Name: network.Name, Network: network.Network, Netmask: network.Netmask}
 		filters = append(filters, filterEquals("net_id", strconv.Itoa(network.ID)))
+		// A resource description names no network: its address is in the
+		// network, as the collector joins the node addresses, or not.
+		if searchServices && !networkContains(network, addr) {
+			searchServices = false
+		}
 	}
-	fingerprint := listFingerprint(url.Values{"filter": filters})
-	offset, err := decodeListCursor(options.Cursor, fingerprint)
+	fingerprint := listFingerprint(url.Values{"filter": filters, "service_filter": serviceFilters})
+	cursor, err := decodeIPCursor(options.Cursor, fingerprint)
 	if err != nil {
 		return IPList{}, err
 	}
 
 	var response collectorList[collectorNodeAddress]
-	if err := s.client.GetJSON(ctx, "/ips", pageQuery(nodeAddressProps, "addr,nodename,intf,id", filters, limit, offset), &response); err != nil {
+	if err := s.client.GetJSON(ctx, "/ips", pageQuery(nodeAddressProps, "addr,nodename,intf,id", filters, limit, cursor.Nodes), &response); err != nil {
 		return IPList{}, fmt.Errorf("list node addresses: %w", err)
 	}
 	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
 		return IPList{}, fmt.Errorf("list node addresses: unexpected collector response")
 	}
-	result.Total, result.Count = *response.Meta.Total, len(response.Data)
+	result.Total = *response.Meta.Total
 	result.NodeAddresses = make([]NodeAddress, 0, len(response.Data))
 	for _, row := range response.Data {
 		address := NodeAddress{
@@ -189,42 +240,76 @@ func (s *Service) ListIPs(ctx context.Context, options ListIPsOptions) (IPList, 
 		}
 		result.NodeAddresses = append(result.NodeAddresses, address)
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
-		result.NextCursor = encodeListCursor(next, fingerprint)
-		result.Truncated = true
-	}
+	next := ipCursor{Nodes: cursor.Nodes + len(response.Data), Services: cursor.Services, Filters: fingerprint}
+	nodesLeft := len(response.Data) > 0 && next.Nodes < result.Total
+	servicesLeft := false
 
-	if result.IP != "" && offset == 0 {
+	// The service addresses follow the node addresses, in the room the page
+	// has left.
+	if room := limit - len(response.Data); searchServices && !nodesLeft && room > 0 {
 		var resources collectorList[collectorServiceAddress]
-		query := pageQuery(serviceAddressProps, "services.svcname,nodes.nodename,rid,id", serviceFilters, maxServiceAddresses, 0)
+		query := pageQuery(serviceAddressProps, "services.svcname,nodes.nodename,vmname,rid,id", serviceFilters, room, cursor.Services)
 		if err := s.client.GetJSON(ctx, "/resources", query, &resources); err != nil {
 			return IPList{}, fmt.Errorf("list service addresses: %w", err)
 		}
-		if resources.Meta.Total == nil || *resources.Meta.Total < 0 || len(resources.Data) > maxServiceAddresses {
+		if resources.Meta.Total == nil || *resources.Meta.Total < 0 || len(resources.Data) > room {
 			return IPList{}, fmt.Errorf("list service addresses: unexpected collector response")
 		}
-		result.ServiceAddresses = make([]ServiceAddress, 0, len(resources.Data))
+		total := *resources.Meta.Total
+		result.ServiceTotal = &total
 		for _, row := range resources.Data {
 			result.ServiceAddresses = append(result.ServiceAddresses, ServiceAddress{
-				SvcID: row.SvcID, Svcname: row.Svcname, NodeID: row.NodeID, Nodename: row.Nodename, RID: row.RID,
+				SvcID: row.SvcID, Svcname: row.Svcname, NodeID: row.NodeID, Nodename: row.Nodename, VMName: row.VMName, RID: row.RID,
 				Type: row.ResType, Status: row.ResStatus, Description: row.ResDesc, LastReportedAt: row.Updated,
 			})
 		}
-		result.ServiceAddressesTruncated = *resources.Meta.Total > len(resources.Data)
+		next.Services += len(resources.Data)
+		servicesLeft = len(resources.Data) > 0 && next.Services < total
+	} else if searchServices && !nodesLeft {
+		// The node addresses fill the page: only count the service addresses
+		// a next page would read.
+		var resources collectorList[collectorServiceAddress]
+		if err := s.client.GetJSON(ctx, "/resources", pageQuery([]string{"id"}, "id", serviceFilters, 1, cursor.Services), &resources); err != nil {
+			return IPList{}, fmt.Errorf("count service addresses: %w", err)
+		}
+		if resources.Meta.Total == nil || *resources.Meta.Total < 0 {
+			return IPList{}, fmt.Errorf("count service addresses: unexpected collector response")
+		}
+		total := *resources.Meta.Total
+		result.ServiceTotal = &total
+		servicesLeft = cursor.Services < total
+	} else if searchServices {
+		// The node addresses go on: a next page reads the service addresses.
+		servicesLeft = true
+	}
+	result.Count = len(result.NodeAddresses) + len(result.ServiceAddresses)
+	if nodesLeft || servicesLeft {
+		result.NextCursor = encodeIPCursor(next)
+		result.Truncated = true
 	}
 	result.Provenance = s.newProvenance()
 	return result, nil
 }
 
-// canonicalIP checks an address given by the caller and returns the form
+// networkContains reports whether a declared network holds addr.
+func networkContains(network collectorNetwork, addr netip.Addr) bool {
+	base, err := netip.ParseAddr(network.Network)
+	if err != nil {
+		return false
+	}
+	prefix, err := base.Prefix(network.Netmask)
+	return err == nil && prefix.Contains(addr)
+}
+
+// canonicalIP checks an address given by the caller. Its String is the form
 // the collector stores: IPv6 compressed in lowercase, so that equivalent
 // spellings match.
-func canonicalIP(value string) (string, error) {
+func canonicalIP(value string) (netip.Addr, error) {
 	addr, err := netip.ParseAddr(value)
 	if err != nil || addr.Zone() != "" {
-		return "", fmt.Errorf("ip must be one IPv4 or IPv6 address, without prefix length or zone, such as 10.0.3.12 or 2001:db8::1")
+		return netip.Addr{}, fmt.Errorf("ip must be one IPv4 or IPv6 address, without prefix length or zone, such as 10.0.3.12 or 2001:db8::1")
 	}
-	return addr.String(), nil
+	return addr, nil
 }
 
 // lookupNetwork resolves a declared network by its ID or its exact name.
