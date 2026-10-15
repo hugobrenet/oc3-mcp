@@ -1,11 +1,12 @@
 ---
 domain: service
 tools:
+  - count_instances
   - count_services
   - get_service
   - get_service_resource_history
   - get_service_status_history
-  - list_frozen_instances
+  - list_instances
   - list_service_resources
   - list_services
 stability: experimental
@@ -25,7 +26,7 @@ Implementation:
   `internal/core/service_status_history.go`,
   `internal/core/service_resource.go`,
   `internal/core/service_resource_history.go` and
-  `internal/core/service_frozen_instance.go`, with the shared list and count
+  `internal/core/service_instance.go`, with the shared list and count
   helpers of `internal/core/collector_list.go` and
   `internal/core/collector_stats.go`, and the node lookup of
   `internal/core/node.go`;
@@ -261,32 +262,53 @@ GET /api/resources?props=…&orderby=nodes.nodename,rid,id&filter=svc_id:eq:<svc
 is when the status last changed and `updated` when the agent last reported the
 resource, both as the collector gives them.
 
-### `list_frozen_instances`
+### `list_instances`
 
-Returns one page of the frozen service instances, one per service and node,
-the longest frozen first. Use it to tell which services are frozen and since
-when, on all the nodes, or on one node or service.
+Returns one page of the service instances, one per service and node, and per
+container of an encapsulated service, as their agents last reported them,
+sorted by node then service. The collector holds one row per container of an
+encapsulated service on a node: on the test collector, 345 instances for 339
+service and node pairs. Use it to tell which
+instances are down on a node, where a service runs, or which services are
+frozen and since when.
+
+A failover service runs on one node at a time: its instances on the other
+nodes are `down`, or `stdby up` when standby resources run there, as expected
+while the service is up. Each instance therefore carries the topology and the
+aggregated availability of its service: to find the services really down,
+filter on `service_availability` `down` rather than on the availability of
+the instances. On the test collector, 22 of the 84 instances down on one node
+belonged to failover services up on another node.
 
 The freeze date is known per instance only: the aggregated freeze state of a
 service (`frozen`, `mixed`, `unfrozen`) has no date, and may differ from the
-states of its instances. A service can be frozen on one node for weeks and on
-another since yesterday.
+states of its instances. With `frozen` or `frozen_before`, the instances come
+the longest frozen first.
 
 #### Collector API
 
 With `service` or `node`, the MCP first resolves it, then reads:
 
 ```text
-GET /api/services_instances?props=…&orderby=mon_frozen_at,svc_id,node_id&filter=mon_frozen:ne:0&filter=…&limit=…&offset=…
+GET /api/services_instances?props=…,services.svcname,services.svc_topology,services.svc_availstatus,nodes.nodename&orderby=nodes.nodename,services.svcname,svc_id,node_id,mon_vmname&filter=…&limit=…&offset=…
 ```
+
+With `frozen` or `frozen_before`, it adds `filter=mon_frozen:ne:0` and sorts
+by `mon_frozen_at,svc_id,node_id,mon_vmname`.
 
 #### Input
 
 | Input | Meaning |
 |---|---|
-| `frozen_before` | Optional; lists only the instances frozen at or before this date, in collector local time: `YYYY-MM-DD`, `YYYY-MM-DD HH:MM` or `YYYY-MM-DD HH:MM:SS` |
-| `service` | Optional exact service name or service ID |
 | `node` | Optional exact node name or node ID |
+| `service` | Optional exact service name or service ID |
+| `app` | Optional exact collector app of the service |
+| `availability` | Optional exact availability status of the instance, such as `up`, `down`, `warn`, `stdby up`, `stdby down` or `n/a` |
+| `overall` | Optional exact overall status of the instance |
+| `service_availability` | Optional exact aggregated availability status of the service |
+| `topology` | Optional service topology: `failover` or `flex` |
+| `frozen` | Optional; keeps the frozen instances |
+| `frozen_before` | Optional; keeps the instances frozen at or before this date, in collector local time: `YYYY-MM-DD`, `YYYY-MM-DD HH:MM` or `YYYY-MM-DD HH:MM:SS` |
 | `limit` | Optional page size, 1 to 200, default 100 |
 | `cursor` | Optional `next_cursor` of a previous call with the same filters |
 
@@ -296,14 +318,52 @@ GET /api/services_instances?props=…&orderby=mon_frozen_at,svc_id,node_id&filte
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `service`, `node` | The service or node the filters resolved to |
-| `total` | Frozen instances matching the filters, as the collector counts them |
+| `total` | Instances matching the filters, as the collector counts them |
 | `count`, `truncated` | Instances in this page, and whether more remain |
-| `instances[]` | `svc_id`, `svcname`, `cluster_id`, `node_id`, `nodename`, `frozen_at`, `avail`, `overall`, `service_frozen` |
+| `instances[]` | `svc_id`, `svcname`, `cluster_id`, `topology`, `service_availability`, `service_frozen`, `node_id`, `nodename`, `availability`, `overall`, `frozen`, `frozen_at`, `monitor_status`, `vmname`, `vmtype`, `last_reported_at` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
 
-`frozen_at` is in collector local time without a zone, while
-`provenance.observed_at` is in UTC: to ask for the instances frozen for more
-than a duration, compute the date in the collector local time.
+`vmname` and `vmtype` name the container or virtual machine of an
+encapsulated instance. `frozen_at` and `last_reported_at` are in collector
+local time without a zone, while `provenance.observed_at` is in UTC: to ask
+for the instances frozen for more than a duration, compute the date in the
+collector local time.
+
+### `count_instances`
+
+Counts the service instances matching the filters of `list_instances`, as the
+collector counts them, optionally grouped by one property: such as the
+instances down per node.
+
+#### Collector API
+
+```text
+GET /api/services_instances?filter=…&props=<grouping prop>&stats=true&limit=…
+```
+
+Without `group_by`, the MCP reads one row and the collector `meta.total`.
+
+#### Input
+
+The filters of `list_instances`, and:
+
+| Input | Meaning |
+|---|---|
+| `group_by` | Optional grouping: `node`, `service`, `cluster_id`, `app`, `availability`, `overall`, `topology`, `service_availability` or `frozen` |
+| `limit` | Optional number of values returned with `group_by`, the most frequent first, 1 to 100, default 20 |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `service`, `node` | The service or node the filters resolved to |
+| `total` | Instances matching the filters |
+| `group_by`, `groups[]` | With `group_by`: each `value` and its `count`, the most frequent first |
+| `distinct`, `other`, `truncated` | The number of distinct values, the instances whose value was left out by `limit`, and whether some were |
+
+Grouped by `frozen`, the collector freeze flags are named `frozen` and
+`unfrozen`.
 
 ### `get_service_resource_history`
 

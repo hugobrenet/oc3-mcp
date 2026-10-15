@@ -398,14 +398,10 @@ func (s *Service) GetService(ctx context.Context, service string) (ServiceDetail
 		},
 	}
 	for _, instance := range instances.Data {
-		frozenAt := instance.MonFrozenAt
-		if strings.HasPrefix(frozenAt, "0000-00-00") {
-			frozenAt = ""
-		}
 		result.Instances.Items = append(result.Instances.Items, ServiceInstance{
 			NodeID: instance.NodeID, Nodename: instance.Nodename, Avail: instance.MonAvailStatus, Overall: instance.MonOverallStatus,
 			MonitorState: instance.MonSmonStatus, MonitorGlobalExpect: instance.MonSmonGlobalExpect,
-			Frozen: instance.MonFrozen != "" && instance.MonFrozen != "0", FrozenAt: frozenAt, Updated: instance.MonUpdated,
+			Frozen: instanceFrozen(instance.MonFrozen), FrozenAt: collectorDate(instance.MonFrozenAt), Updated: instance.MonUpdated,
 			Resources: ServiceResourceStatuses{
 				IP: instance.MonIPStatus, FS: instance.MonFSStatus, Disk: instance.MonDiskStatus, Container: instance.MonContainerStatus,
 				Share: instance.MonShareStatus, Sync: instance.MonSyncStatus, App: instance.MonAppStatus, HB: instance.MonHBStatus,

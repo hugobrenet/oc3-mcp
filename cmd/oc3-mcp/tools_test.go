@@ -299,7 +299,11 @@ func TestFrozenToolsReadTheCollector(t *testing.T) {
 			if strings.Join(r.URL.Query()["filter"], "|") != "mon_frozen:ne:0" {
 				t.Errorf("instance filters = %q", r.URL.Query()["filter"])
 			}
-			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s1","services.svcname":"web","node_id":"id-1","nodes.nodename":"n1","mon_frozen_at":"2026-09-12 00:22:06"}],"meta":{"total":1}}`))
+			if r.URL.Query().Get("stats") == "true" {
+				_, _ = w.Write([]byte(`{"data":{"nodes.nodename":{"n1":1}},"meta":{"total":1,"distinct":{"nodes.nodename":1},"other":{"nodes.nodename":0}}}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s1","services.svcname":"web","node_id":"id-1","nodes.nodename":"n1","mon_frozen":"1","mon_frozen_at":"2026-09-12 00:22:06"}],"meta":{"total":1}}`))
 		default:
 			notFound(w, "missing")
 		}
@@ -309,10 +313,15 @@ func TestFrozenToolsReadTheCollector(t *testing.T) {
 	if result.IsError || len(items) != 1 || items[0].(map[string]any)["frozen_at"] != "2026-09-30 10:00:00" {
 		t.Fatalf("list_nodes = %+v", nodes)
 	}
-	result, instances := call("list_frozen_instances", map[string]any{})
+	result, instances := call("list_instances", map[string]any{"frozen": true})
 	items, _ = instances["instances"].([]any)
-	if result.IsError || len(items) != 1 || items[0].(map[string]any)["frozen_at"] != "2026-09-12 00:22:06" {
-		t.Fatalf("list_frozen_instances = %+v", instances)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["frozen_at"] != "2026-09-12 00:22:06" || items[0].(map[string]any)["frozen"] != true {
+		t.Fatalf("list_instances = %+v", instances)
+	}
+	result, count := call("count_instances", map[string]any{"frozen": true, "group_by": "node"})
+	groups, _ := count["groups"].([]any)
+	if result.IsError || count["total"] != float64(1) || len(groups) != 1 || groups[0].(map[string]any)["value"] != "n1" {
+		t.Fatalf("count_instances = %+v", count)
 	}
 }
 
