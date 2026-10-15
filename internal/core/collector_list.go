@@ -149,3 +149,12 @@ func validateCollectorDate(name string, value string) error {
 func collectorBool(value string) bool {
 	return value == "T"
 }
+
+// collectorDate drops the zero date the collector gives for a date never
+// set, such as the freeze date of an instance never frozen.
+func collectorDate(value string) string {
+	if strings.HasPrefix(value, "0000-00-00") {
+		return ""
+	}
+	return value
+}

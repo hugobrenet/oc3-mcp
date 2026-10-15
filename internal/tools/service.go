@@ -9,6 +9,18 @@ import (
 
 // ServiceFiltersInput are the service filters shared by list_services and
 // count_services.
+// instancesPointer sends from the service tools, always shown to the
+// model, to the instance tools, found by a search: without it, the model
+// read the instances down on a node from the services down of list_services,
+// in 6 replays of 6, against none with it.
+const instancesPointer = "To list or count the instances themselves, one per service and node with their own status, such as the instances down on a node, use list_instances or count_instances."
+
+// instancesDescription tells how to read the status of an instance, for
+// list_instances and count_instances.
+const instancesDescription = "A failover service runs on one node at a time: its instances on the other nodes are down, or stdby up when standby resources run there, as expected while the service is up. " +
+	"To find the services really down, filter on service_availability down rather than on the availability of the instances. " +
+	"Filter by node, service, app, instance availability or overall status, service availability, topology or freeze state. "
+
 type ServiceFiltersInput struct {
 	Name        string `json:"name,omitempty" jsonschema:"optional text the service name contains, case-insensitive"`
 	ClusterID   string `json:"cluster_id,omitempty" jsonschema:"optional exact cluster ID"`
@@ -70,15 +82,40 @@ type ListServiceResourcesInput struct {
 
 type ListServiceResourcesOutput = core.ServiceResourceList
 
-type ListFrozenInstancesInput struct {
-	FrozenBefore string `json:"frozen_before,omitempty" jsonschema:"optional; lists only the instances frozen at or before this date, in collector local time: YYYY-MM-DD, YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS"`
-	Service      string `json:"service,omitempty" jsonschema:"optional exact service name or service ID"`
-	Node         string `json:"node,omitempty" jsonschema:"optional exact node name or node ID"`
-	Limit        int    `json:"limit,omitempty" jsonschema:"optional page size between 1 and 200; defaults to 100"`
-	Cursor       string `json:"cursor,omitempty" jsonschema:"optional next_cursor returned by a previous call with the same filters"`
+type InstanceFiltersInput struct {
+	Node                string `json:"node,omitempty" jsonschema:"optional exact node name or node ID"`
+	Service             string `json:"service,omitempty" jsonschema:"optional exact service name, such as ns/svc/name, or service ID"`
+	App                 string `json:"app,omitempty" jsonschema:"optional exact collector app of the service"`
+	Availability        string `json:"availability,omitempty" jsonschema:"optional exact availability status of the instance, such as up, down, warn, stdby up, stdby down or n/a"`
+	Overall             string `json:"overall,omitempty" jsonschema:"optional exact overall status of the instance, such as up, down or warn"`
+	ServiceAvailability string `json:"service_availability,omitempty" jsonschema:"optional exact aggregated availability status of the service, such as up or down: down keeps the instances of the services down on all their nodes"`
+	Topology            string `json:"topology,omitempty" jsonschema:"optional service topology: failover or flex"`
+	Frozen              bool   `json:"frozen,omitempty" jsonschema:"optional; true keeps the frozen instances, the longest frozen first"`
+	FrozenBefore        string `json:"frozen_before,omitempty" jsonschema:"optional; keeps the instances frozen at or before this date, in collector local time: YYYY-MM-DD, YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS"`
 }
 
-type ListFrozenInstancesOutput = core.FrozenInstanceList
+func (f InstanceFiltersInput) core() core.InstanceFilters {
+	return core.InstanceFilters{
+		Node: f.Node, Service: f.Service, App: f.App, Availability: f.Availability, Overall: f.Overall,
+		ServiceAvailability: f.ServiceAvailability, Topology: f.Topology, Frozen: f.Frozen, FrozenBefore: f.FrozenBefore,
+	}
+}
+
+type ListInstancesInput struct {
+	InstanceFiltersInput
+	Limit  int    `json:"limit,omitempty" jsonschema:"optional page size between 1 and 200; defaults to 100"`
+	Cursor string `json:"cursor,omitempty" jsonschema:"optional next_cursor returned by a previous call with the same filters"`
+}
+
+type ListInstancesOutput = core.InstanceList
+
+type CountInstancesInput struct {
+	InstanceFiltersInput
+	GroupBy string `json:"group_by,omitempty" jsonschema:"optional grouping: node, service, cluster_id, app, availability, overall, topology, service_availability or frozen"`
+	Limit   int    `json:"limit,omitempty" jsonschema:"optional number of values returned with group_by, the most frequent first, between 1 and 100; defaults to 20"`
+}
+
+type CountInstancesOutput = core.InstanceCount
 
 type GetServiceResourceHistoryInput struct {
 	Service string `json:"service" jsonschema:"one exact service name, such as ns/svc/name, or collector service ID"`
@@ -101,7 +138,8 @@ func RegisterServiceTools(registrar *Registrar, service *core.Service) error {
 				"A service is up or down by its status, the aggregated overall status its agents report, as the collector Services page shows it: filter by status for the services down. " +
 				"Filter by text in the name, exact cluster ID, app, environment, status, availability status, topology, freeze state or placement, and by node to list only the services with an instance on it; use the cursor to continue a page. " +
 				"To count services, or to break them down by a state, use count_services instead of reading every page. " +
-				"States are those the collector last received. Collector dates are as it gives them. Use get_service for the instances of one service.",
+				"States are those the collector last received. Collector dates are as it gives them. Use get_service for the instances of one service. " +
+				instancesPointer,
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input ListServicesInput) (*mcp.CallToolResult, ListServicesOutput, error) {
@@ -125,7 +163,8 @@ func RegisterServiceTools(registrar *Registrar, service *core.Service) error {
 				"Use it for any question of how many services, or of their distribution by state, instead of reading the pages of list_services. " +
 				"A service is up or down by its status, as the collector Services page shows it: count the services down with status down, or break them down with group_by status. " +
 				"When a filter value is unsure, group_by that property first to see the values the collector holds. " +
-				"States are those the collector last received.",
+				"States are those the collector last received. " +
+				instancesPointer,
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input CountServicesInput) (*mcp.CallToolResult, CountServicesOutput, error) {
@@ -185,21 +224,39 @@ func RegisterServiceTools(registrar *Registrar, service *core.Service) error {
 	if err := addTool(
 		registrar,
 		&mcp.Tool{
-			Name:  "list_frozen_instances",
-			Title: "List frozen instances",
-			Description: "List the frozen instances of the OpenSVC services, one per service and node, the longest frozen first: service, node, when the instance was frozen, its availability and overall status, and the aggregated freeze state of the service. " +
-				"Use it to tell which services are frozen and since when, on all nodes or on one node or service; frozen_before keeps the instances frozen at or before a date. " +
-				"The freeze date is known per instance only; the aggregated freeze state of a service has none and may differ from its instances. Collector dates are in its local time without a zone.",
+			Name:  "list_instances",
+			Title: "List service instances",
+			Description: "List the instances of the OpenSVC services, one per service and node, and per container of an encapsulated service, as their agents last reported them to the collector: service, topology and aggregated availability of the service, node, availability and overall status of the instance, freeze state and date, monitor state, container of an encapsulated instance, and when the agent last reported it. " +
+				instancesDescription +
+				"Sorted by node then service; with frozen or frozen_before, the longest frozen first, to tell which services are frozen and since when. Count them with count_instances. Collector dates are in its local time without a zone.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
-		func(ctx context.Context, _ *mcp.CallToolRequest, input ListFrozenInstancesInput) (*mcp.CallToolResult, ListFrozenInstancesOutput, error) {
-			instances, err := service.ListFrozenInstances(ctx, core.ListFrozenInstancesOptions{
-				FrozenBefore: input.FrozenBefore, Service: input.Service, Node: input.Node, Limit: input.Limit, Cursor: input.Cursor,
-			})
+		func(ctx context.Context, _ *mcp.CallToolRequest, input ListInstancesInput) (*mcp.CallToolResult, ListInstancesOutput, error) {
+			instances, err := service.ListInstances(ctx, core.ListInstancesOptions{InstanceFilters: input.core(), Limit: input.Limit, Cursor: input.Cursor})
 			if err != nil {
-				return nil, ListFrozenInstancesOutput{}, err
+				return nil, ListInstancesOutput{}, err
 			}
 			return nil, instances, nil
+		},
+	); err != nil {
+		return err
+	}
+	if err := addTool(
+		registrar,
+		&mcp.Tool{
+			Name:  "count_instances",
+			Title: "Count service instances",
+			Description: "Count the instances of the OpenSVC services, one per service and node, and per container of an encapsulated service, as the collector counts them, optionally grouped by node, service, cluster, app, instance availability or overall status, topology, aggregated availability of the service, or freeze state: such as the instances down per node. " +
+				instancesDescription +
+				"When a filter value is unsure, group_by that property first to see the values the collector holds. List them with list_instances.",
+			Annotations: readOnlyClosedWorldAnnotations(),
+		},
+		func(ctx context.Context, _ *mcp.CallToolRequest, input CountInstancesInput) (*mcp.CallToolResult, CountInstancesOutput, error) {
+			count, err := service.CountInstances(ctx, core.CountInstancesOptions{InstanceFilters: input.core(), GroupBy: input.GroupBy, Limit: input.Limit})
+			if err != nil {
+				return nil, CountInstancesOutput{}, err
+			}
+			return nil, count, nil
 		},
 	); err != nil {
 		return err
