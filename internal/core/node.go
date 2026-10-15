@@ -374,11 +374,11 @@ func (s *Service) lookupNode(ctx context.Context, node string, props []string) (
 	query.Set("meta", "false")
 	var response collectorList[collectorNode]
 	if err := s.client.GetJSON(ctx, "/nodes/"+url.PathEscape(node), query, &response); err != nil {
-		return collectorNode{}, fmt.Errorf("get node %s: %w", node, err)
+		return collectorNode{}, fmt.Errorf("get node %s: %w%s", node, err, notFoundHint(err))
 	}
 	switch len(response.Data) {
 	case 0:
-		return collectorNode{}, fmt.Errorf("get node %s: not found in the collector", node)
+		return collectorNode{}, fmt.Errorf("get node %s: not found in the collector%s", node, findObjectsHint)
 	case 1:
 		return response.Data[0], nil
 	default:

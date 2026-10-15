@@ -131,7 +131,7 @@ func TestMCPInitializeAndListTools(t *testing.T) {
 			t.Fatalf("tool %s is not read-only", tool.Name)
 		}
 	}
-	if strings.Join(names, ",") != "count_instances,count_nodes,count_services,get_app,get_node,get_node_san_topology,get_node_stats,get_service,get_service_action_logs,get_service_resource_history,get_service_status_history,list_alerts,list_clusters,list_collector_events,list_compliance_status,list_instances,list_ips,list_node_checks,list_node_disks,list_node_packages,list_nodes,list_package_differences,list_service_actions,list_service_checks,list_service_resources,list_services,list_tags" {
+	if strings.Join(names, ",") != "count_instances,count_nodes,count_services,find_objects,get_app,get_node,get_node_san_topology,get_node_stats,get_service,get_service_action_logs,get_service_resource_history,get_service_status_history,list_alerts,list_clusters,list_collector_events,list_compliance_status,list_instances,list_ips,list_node_checks,list_node_disks,list_node_packages,list_nodes,list_package_differences,list_service_actions,list_service_checks,list_service_resources,list_services,list_tags" {
 		t.Fatalf("tools = %v", names)
 	}
 	// The model learns that a service is up or down by its status, and that

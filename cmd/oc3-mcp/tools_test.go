@@ -509,3 +509,27 @@ func TestTagAndAppToolsReadTheCollector(t *testing.T) {
 		t.Fatalf("get_app = %+v", app)
 	}
 }
+
+func TestFindObjectsReadsTheCollectorSearch(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/search":
+			if r.URL.Query().Get("kinds") != "node,service,instance,app,network,disk,tag" {
+				t.Errorf("kinds = %q", r.URL.Query().Get("kinds"))
+			}
+			_, _ = w.Write([]byte(`{"data":[{"kind":"node","items":[{"node_id":"n-1","nodename":"lyn-prd-app01","app":"INFRA"}],"more":true}]}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, found := call("find_objects", map[string]any{"text": "lyn-prd"})
+	groups, _ := found["groups"].([]any)
+	if result.IsError || len(groups) != 1 {
+		t.Fatalf("find_objects = %+v", found)
+	}
+	item := groups[0].(map[string]any)["items"].([]any)[0].(map[string]any)
+	if item["matched_by"] != "name" || item["next_tool"] != "get_node" || groups[0].(map[string]any)["more"] != true {
+		t.Fatalf("find_objects item = %+v", item)
+	}
+}

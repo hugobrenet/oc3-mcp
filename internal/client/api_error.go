@@ -37,6 +37,12 @@ func (e *APIError) Error() string {
 	return message
 }
 
+// NotFound tells whether the collector found no such item, for the core to
+// suggest a search.
+func (e *APIError) NotFound() bool {
+	return e.StatusCode == http.StatusNotFound
+}
+
 func newAPIError(method string, path string, response *http.Response) *APIError {
 	apiError := &APIError{Method: method, Path: path, StatusCode: response.StatusCode, Status: response.Status}
 	if response.StatusCode == http.StatusUnauthorized {
