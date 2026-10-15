@@ -22,7 +22,6 @@ import (
 
 const (
 	serverName         = "oc3-mcp"
-	serverVersion      = "v0.1.0"
 	resourceName       = "OpenSVC Collector MCP"
 	maxHTTPHeaderBytes = 64 << 10
 	// readTimeout bounds the reading of a whole request, its body included:
