@@ -16,8 +16,9 @@ const (
 	TokenSubject = "user-subject"
 )
 
-// Token is an access token of the shape the MCP accepts, valid for a day. Its
-// signature is not genuine: the fake collector compares the whole token.
+// Token is an access token with well-formed claims, valid for a day. Its
+// signature is not genuine: the MCP accepts it only with an accepting
+// verifier in tool tests, and the fake collector compares the whole token.
 var Token = NewToken(TokenIssuer, TokenSubject, time.Now().Add(24*time.Hour))
 
 // NewToken returns an access token with the given claims and a fake

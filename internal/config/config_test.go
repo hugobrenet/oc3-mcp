@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -220,13 +221,6 @@ func TestLoadDelegatedProvider(t *testing.T) {
 			}
 		})
 	}
-	t.Run("no audience", func(t *testing.T) {
-		setValidEnv(t)
-		t.Setenv("OPENSVC_MCP_DELEGATED_AUDIENCE", "")
-		if _, err := Load(); err == nil {
-			t.Fatal("socket accepted without audience")
-		}
-	})
 	t.Run("without the socket", func(t *testing.T) {
 		setHTTPSEnv(t)
 		t.Setenv("OPENSVC_MCP_DELEGATED_ISSUER", "https://sso.example.com/application/o/oc3/")
@@ -234,6 +228,16 @@ func TestLoadDelegatedProvider(t *testing.T) {
 			t.Fatal("delegated provider accepted without the socket")
 		}
 	})
+}
+
+func TestLoadSocketOnlyRequiresDelegatedAudience(t *testing.T) {
+	// Without HTTPS, no token exchange audience provides the default.
+	setValidEnv(t)
+	t.Setenv("OPENSVC_MCP_DELEGATED_AUDIENCE", "")
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "OPENSVC_MCP_DELEGATED_AUDIENCE") {
+		t.Fatalf("socket accepted without audience or unclear error: %v", err)
+	}
 }
 
 func TestLoadDelegatedCAFile(t *testing.T) {

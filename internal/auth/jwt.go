@@ -1,6 +1,7 @@
 // Package auth takes the delegated access token of each MCP caller. On the
-// local Unix socket, OpenID Connect access tokens are checked for shape only
-// and verified by the collector, which receives them unchanged.
+// local Unix socket, OpenID Connect access tokens are verified locally by a
+// Delegator before any collector request, then sent to the collector, which
+// verifies them too and applies its account and claim rules.
 package auth
 
 import (
@@ -36,7 +37,8 @@ type Delegation struct {
 	ExpiresAt time.Time
 }
 
-// Check predicts the collector identity of an OpenID Connect access token.
+// Check reads the identity of an OpenID Connect access token and checks its
+// shape and lifetime, not its signature: the Delegator verifies the token.
 func Check(raw string) (Delegation, error) {
 	if raw == "" || len(raw) > mcpauth.MaxTokenBytes {
 		return Delegation{}, errUnauthorized
@@ -171,7 +173,7 @@ func WriteProblem(w http.ResponseWriter, status int, detail string) {
 
 // CollectorToken returns the token the collector receives for the request:
 // the token exchanged for the collector audience on the HTTPS listener, or the
-// delegated token forwarded unchanged on the Unix socket. The MCP access token
+// delegated token, verified, on the Unix socket. The MCP access token
 // of an external client is never returned.
 func CollectorToken(ctx context.Context) (string, bool) {
 	if _, token, ok := mcpauth.ExchangedFromContext(ctx); ok {

@@ -39,7 +39,7 @@ shared with `om3-mcp`.
   verification by the `Delegator`, request context, Bearer middleware) and
   the token the collector receives. The provider is configured
   (`OPENSVC_MCP_DELEGATED_ISSUER`, `_AUDIENCE`): a single target needs no
-  discovery, unlike the clusters of om3-mcp. The OAuth
+  provider discovery, unlike the clusters of om3-mcp. The OAuth
   verification of the HTTPS tokens and the token exchange come from
   `osvc-auth-mcp` (`mcpauth`); change them there, for both MCP servers, never
   by copying the code back here.
@@ -62,11 +62,14 @@ binding; startup must not contact the collector.
 
 - The MCP accepts OpenID Connect access tokens only: never a password, Basic
   credentials or an account of its own. On the socket, every request carries
-  the token of its user; the MCP verifies it with the configured OpenID
-  provider of the collector (`mcpauth.JWTVerifier`) before any collector request,
-  then forwards it unchanged to the collector, which verifies it too and
-  applies the user's account and claim rules. A refused token never reaches
-  the collector.
+  the token of its user; the MCP verifies it locally with the configured
+  OpenID provider of the collector (`auth.Delegator`, `mcpauth.JWTVerifier`:
+  signature, issuer, audience, lifetime with 30 s of clock skew on `iat` and
+  `nbf`) before any collector request, then sends it unchanged to the
+  collector, which verifies it too and applies the user's account and claim
+  rules. A refused token gets 401 and never reaches the collector. The keys
+  are trusted with `OPENSVC_MCP_DELEGATED_CA_FILE`, else the OAuth CA, else
+  the system roots.
 - On HTTPS, the MCP verifies the token locally (OAuth resource server, JWKS of
   the issuer, audience = the MCP resource URL) and never sends it to the
   collector. Each `tools/call` uses a token exchanged for it (RFC 8693), whose
@@ -80,8 +83,9 @@ binding; startup must not contact the collector.
   expires. The transport of
   `internal/client` adds it, for the collector origin only, with no proxy and
   no redirect, and sends nothing without it. Core and tools never see it.
-- `GET /mcp/auth/whoami` proves a token by the collector `GET /auth/whoami`:
-  it requires a bearer authentication of the token's own issuer and subject.
+- `GET /mcp/auth/whoami` relays a verified token of the socket to the
+  collector `GET /api/auth/whoami`: it requires a bearer authentication of
+  the token's own issuer and subject.
   It is an identity bridge, not a tool or a token issuer.
 - Every tool call emits one `mcp tool call` audit line (`cmd/oc3-mcp/audit.go`):
   tool, the token issuer and subject, client ID, exchange outcome, collector
