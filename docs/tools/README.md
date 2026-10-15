@@ -17,6 +17,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Packages | `list_node_packages`, `list_package_differences` | [Package tools](packages.md) |
 | Events | `list_collector_events` | [Collector event tools](events.md) |
 | Compliance | `list_compliance_status` | [Compliance tools](compliance.md) |
+| IP addresses | `list_ips` | [IP tools](ips.md) |
 
 ## Conventions
 
