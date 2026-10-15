@@ -141,7 +141,7 @@ func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 			Description: "Read one node of the OpenSVC collector by exact name or node ID: identity, cluster, app, environment, status, freeze state, agent version and last contact, operating system, hardware, teams, location, and warranty, maintenance and obsolescence dates. " +
 				"A name several nodes hold is refused with their node IDs; pass one of them. " +
 				"status is the node status the collector Nodes page shows, a property set by the collector users with values each organization chooses, not reported by the node daemon; last_comm tells when the node daemon last reported. " +
-				"Collector dates are in its local time without a zone.",
+				"Its tags are read with list_tags, the groups responsible for its app with get_app. Collector dates are in its local time without a zone.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input GetNodeInput) (*mcp.CallToolResult, GetNodeOutput, error) {
