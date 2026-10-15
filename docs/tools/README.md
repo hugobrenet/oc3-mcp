@@ -20,6 +20,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | IP addresses | `list_ips` | [IP tools](ips.md) |
 | Tags | `list_tags` | [Tag tools](tags.md) |
 | Apps | `get_app` | [App tools](apps.md) |
+| Find | `find_objects` | [Find tools](find.md) |
 
 ## Conventions
 

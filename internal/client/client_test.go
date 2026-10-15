@@ -53,7 +53,7 @@ func TestGetJSONNormalizesErrors(t *testing.T) {
 	}))
 	err := newTestClient(t, collector).GetJSON(callerContext(t), "/nodes/missing", nil, &struct{}{})
 	var apiError *APIError
-	if !errors.As(err, &apiError) || apiError.StatusCode != http.StatusNotFound || apiError.Text != "node missing not found" {
+	if !errors.As(err, &apiError) || apiError.StatusCode != http.StatusNotFound || apiError.Text != "node missing not found" || !apiError.NotFound() {
 		t.Fatalf("error = %#v", err)
 	}
 	if !strings.Contains(err.Error(), "OpenSVC collector GET /nodes/missing returned HTTP 404") {
@@ -66,7 +66,7 @@ func TestGetJSONNormalizesErrors(t *testing.T) {
 	}
 	defer cancel()
 	err = newTestClient(t, collector).GetJSON(other, "/nodes", nil, &struct{}{})
-	if !errors.As(err, &apiError) || apiError.StatusCode != http.StatusUnauthorized || strings.Contains(err.Error(), "strategies") {
+	if !errors.As(err, &apiError) || apiError.StatusCode != http.StatusUnauthorized || strings.Contains(err.Error(), "strategies") || apiError.NotFound() {
 		t.Fatalf("unauthorized error = %v", err)
 	}
 }

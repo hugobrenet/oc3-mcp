@@ -425,11 +425,11 @@ func (s *Service) lookupService(ctx context.Context, service string, props []str
 	query.Set("meta", "false")
 	var response collectorList[collectorService]
 	if err := s.client.GetJSON(ctx, "/services/"+url.PathEscape(service), query, &response); err != nil {
-		return collectorService{}, fmt.Errorf("get service %s: %w", service, err)
+		return collectorService{}, fmt.Errorf("get service %s: %w%s", service, err, notFoundHint(err))
 	}
 	switch len(response.Data) {
 	case 0:
-		return collectorService{}, fmt.Errorf("get service %s: not found in the collector", service)
+		return collectorService{}, fmt.Errorf("get service %s: not found in the collector%s", service, findObjectsHint)
 	case 1:
 		return response.Data[0], nil
 	default:

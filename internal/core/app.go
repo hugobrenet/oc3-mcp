@@ -58,7 +58,7 @@ func (s *Service) GetApp(ctx context.Context, app string) (App, error) {
 	query.Set("props", strings.Join(appProps, ","))
 	var found collectorApp
 	if err := s.client.GetJSON(ctx, "/apps/"+url.PathEscape(app), query, &found); err != nil {
-		return App{}, fmt.Errorf("get app %s: %w", app, err)
+		return App{}, fmt.Errorf("get app %s: %w%s", app, err, notFoundHint(err))
 	}
 	if found.App == "" {
 		return App{}, fmt.Errorf("get app %s: unexpected collector response", app)
