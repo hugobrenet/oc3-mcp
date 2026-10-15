@@ -142,11 +142,11 @@ func Load() (Config, error) {
 		}
 		if delegatedAudience == "" {
 			// The client ID the collector trusts is also the audience of the
-			// exchanged tokens.
+			// exchanged tokens: only set with HTTPS and the token exchange.
 			delegatedAudience = audience
 		}
 		if !validAudience(delegatedAudience) {
-			return Config{}, fmt.Errorf("OPENSVC_MCP_DELEGATED_SOCKET requires OPENSVC_MCP_DELEGATED_AUDIENCE, or OPENSVC_MCP_COLLECTOR_AUDIENCE, the client ID of the collector: 1 to 256 bytes of text without whitespace or control characters")
+			return Config{}, fmt.Errorf("OPENSVC_MCP_DELEGATED_SOCKET requires OPENSVC_MCP_DELEGATED_AUDIENCE, the client ID of the collector: 1 to 256 bytes of text without whitespace or control characters; it defaults to OPENSVC_MCP_COLLECTOR_AUDIENCE only with HTTPS and the token exchange")
 		}
 		cfg.DelegatedIssuer, cfg.DelegatedAudience = delegatedIssuer, delegatedAudience
 	} else if delegatedIssuer != "" || delegatedAudience != "" {

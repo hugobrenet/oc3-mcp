@@ -15,9 +15,9 @@ const maxAuditValueBytes = 256
 // auditLogger receives one credential-free line per tool call. Tests replace it.
 var auditLogger = slog.Default()
 
-// auditToolCalls traces who called which tool, through which listener and
-// client application, and the exchange and call outcomes. It never logs
-// tokens, raw arguments or tool results.
+// auditToolCalls traces who called which tool, with which client application,
+// and the exchange and call outcomes. It never logs tokens, raw arguments or
+// tool results.
 func auditToolCalls(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
 		call, ok := request.(*mcp.CallToolRequest)
@@ -34,9 +34,9 @@ func auditToolCalls(next mcp.MethodHandler) mcp.MethodHandler {
 		if exchange == "" {
 			exchange = "none"
 		}
-		// On the Unix socket, the collector receives the caller's token
-		// unchanged and verifies it on each call: a refused call may log
-		// unverified claims.
+		// On the Unix socket, the Delegator verified the caller's token
+		// before the call, which never runs with a refused token; the
+		// collector receives that same token.
 		if delegation, _, ok := auth.DelegationFromContext(ctx); ok {
 			issuer, subject = delegation.Issuer, delegation.Subject
 			exchange, collectorSubject = "delegated", delegation.Subject
@@ -72,8 +72,8 @@ func auditToolCalls(next mcp.MethodHandler) mcp.MethodHandler {
 	}
 }
 
-// auditWhoAmI records one identity check of the whoami bridge: the claims of
-// the token, which the collector verifies, what the bridge answered and why.
+// auditWhoAmI records one identity check of the whoami bridge: the verified
+// claims of the token, what the bridge answered and why.
 func auditWhoAmI(ctx context.Context, delegation auth.Delegation, outcome string, status int, started time.Time, extra ...slog.Attr) {
 	attrs := []slog.Attr{
 		slog.String("issuer", delegation.Issuer),

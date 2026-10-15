@@ -26,5 +26,8 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 - Every result carries `provenance`: `source` (`opensvc_collector`) and
   `observed_at`, the UTC time the MCP collected it. Collector timestamps are
   returned as the collector gives them, in its local time without a zone.
-- Visibility is that of the collector account of the caller, whose access
-  token the MCP forwards, see [authentication](../configuration.md#authentication).
+- Visibility is that of the collector account of the caller: the MCP sends
+  the collector the verified token of the socket, see
+  [Unix socket authentication](../configuration.md#unix-socket-authentication),
+  or a token exchanged for the collector on HTTPS, see
+  [token exchange](../configuration.md#token-exchange).

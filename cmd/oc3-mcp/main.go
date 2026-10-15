@@ -29,8 +29,10 @@ const (
 	// a client sending it slowly (slowloris) is cut off.
 	readTimeout = 10 * time.Second
 	// writeTimeout bounds the processing and the response of a request, so
-	// that a client reading it slowly is cut off; it stays above the longest tool: a token exchange of up to 10 s, then collector requests of up to 30 s each.
-	writeTimeout    = 2 * time.Minute
+	// that a client reading it slowly is cut off. It stays above the longest
+	// tool: a token exchange of up to 1 min (request_timeout), then collector
+	// requests of up to 30 s each, two for get_service.
+	writeTimeout    = 3 * time.Minute
 	maxMCPBodyBytes = 1 << 20
 	shutdownTimeout = 30 * time.Second
 )
@@ -165,9 +167,10 @@ func newMCPHandler(cfg config.Config, collector *client.Client) (http.Handler, e
 	return http.MaxBytesHandler(mux, maxMCPBodyBytes), nil
 }
 
-// newDelegator verifies the tokens of the Unix socket with the OpenID provider
-// of the collector, configured, its keys trusted with the system roots or the
-// OAuth trust bundle of the HTTPS listener.
+// newDelegator verifies the tokens of the Unix socket with the configured
+// OpenID provider of the collector. Its keys are fetched trusting
+// OPENSVC_MCP_DELEGATED_CA_FILE, else the OAuth trust bundle of the HTTPS
+// listener, else the system roots.
 func newDelegator(cfg config.Config) (*auth.Delegator, error) {
 	caFile := cfg.DelegatedCAFile
 	if caFile == "" {

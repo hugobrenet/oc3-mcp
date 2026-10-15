@@ -13,8 +13,8 @@ OAuth.
 | OPENSVC_MCP_COLLECTOR_URL | required | Base URL of the collector API, HTTPS, for example `https://collector.example.com/api` |
 | OPENSVC_MCP_COLLECTOR_CA_FILE | empty | Optional absolute PEM trust bundle for the collector; replaces system roots |
 | OPENSVC_MCP_DELEGATED_SOCKET | empty | Absolute path of the Unix socket, for example `/run/opensvc-oc3-mcp/delegated.sock`; enables the socket listener |
-| OPENSVC_MCP_DELEGATED_ISSUER | required with the socket | Issuer of the OpenID provider of the collector, as its `/api/auth/info` shows: the tokens of the socket are verified for it |
-| OPENSVC_MCP_DELEGATED_AUDIENCE | OPENSVC_MCP_COLLECTOR_AUDIENCE | Client ID of the collector, the audience of the tokens of the socket |
+| OPENSVC_MCP_DELEGATED_ISSUER | required with the socket | Issuer of the OpenID provider of the collector, copied from the collector `/api/auth/info`: the tokens of the socket are verified for it |
+| OPENSVC_MCP_DELEGATED_AUDIENCE | OPENSVC_MCP_COLLECTOR_AUDIENCE with HTTPS and the token exchange; else required with the socket | Client ID of the collector, the audience of the tokens of the socket |
 | OPENSVC_MCP_TLS_CERT_FILE, OPENSVC_MCP_TLS_KEY_FILE | empty | Absolute PEM certificate and private key; enable the HTTPS listener |
 | OPENSVC_MCP_LISTEN_ADDR | 127.0.0.1:8444 | HTTPS bind address, explicit IP:port |
 | OPENSVC_MCP_OAUTH_RESOURCE_URL | required with HTTPS | Public URL of the MCP, ending in `/mcp`: the audience of the incoming tokens |
@@ -51,9 +51,10 @@ sign in at the identity provider with the public OAuth client of the MCP.
 On both listeners, HTTP headers are bounded to 64 KiB and request bodies to
 1 MiB; the read of the headers is bounded to 5 seconds and the read of a whole
 request, its body included, to 10 seconds, so that a client sending it slowly
-is cut off. The processing and the response of a request are bounded to 2
-minutes, above the longest tool (a token exchange, then collector requests of
-up to 30 seconds each), so that a client reading its response slowly is cut
+is cut off. The processing and the response of a request are bounded to 3
+minutes, above the longest tool (a token exchange of up to the 1-minute
+maximum `request_timeout`, then collector requests of up to 30 seconds each,
+two for `get_service`), so that a client reading its response slowly is cut
 off too.
 
 The token of an external client is never sent to the collector: it is
@@ -141,33 +142,34 @@ issued by the identity provider the collector trusts:
 Authorization: Bearer <OpenID Connect access token>
 ```
 
-The MCP verifies the token before any collector request, as the collector
-does: a JWT signed with an asymmetric algorithm, with a `kid`, by a key of the
-OpenID provider of the collector, `OPENSVC_MCP_DELEGATED_ISSUER` as `iss`,
-`OPENSVC_MCP_DELEGATED_AUDIENCE` in `aud`, a `sub` and an unexpired `exp`. A missing, malformed, expired or
-unverified token, a second `Authorization` header or a token in the query
-string returns 401 without reaching the collector. The request ends when the
-token expires.
+The MCP verifies the token locally before any collector request: a JWT
+signed with an asymmetric algorithm, with a `kid`, by a key of the OpenID
+provider of the collector, `OPENSVC_MCP_DELEGATED_ISSUER` as `iss`,
+`OPENSVC_MCP_DELEGATED_AUDIENCE` in `aud`, a `sub` and an unexpired `exp`;
+`iat` and `nbf` tolerate 30 seconds of clock skew. A missing, malformed,
+expired or refused token, a second `Authorization` header or a token in the
+query string returns 401 and never reaches the collector. The request ends
+when the token expires.
 
-Both values follow the OpenID configuration of the collector, which its
-public `GET /api/auth/info` shows in its `oidc` object (`issuer`,
-`client_id`): when the collector changes them, update the MCP, which refuses
-the tokens meanwhile. The keys of the issuer are discovered and cached 5
-minutes, with `OPENSVC_MCP_DELEGATED_CA_FILE` or the system roots; an unknown key
-ID reloads them at most every 30 seconds. When the keys cannot be loaded, the
-socket returns 503 with `Retry-After`.
+Both values follow the OpenID configuration of the collector: copy them from
+the `oidc` object (`issuer`, `client_id`) of its public `GET /api/auth/info`.
+The MCP does not discover them: when the collector changes them, update the
+MCP, which refuses the tokens meanwhile. The keys of the issuer are discovered
+and cached 5 minutes, trusting `OPENSVC_MCP_DELEGATED_CA_FILE`, else
+`OPENSVC_MCP_OAUTH_CA_FILE`, else the system roots; an unknown key ID reloads
+them at most every 30 seconds. When the keys cannot be loaded, the socket
+returns 503 with `Retry-After`.
 
-The MCP then forwards the token unchanged to the collector, which verifies it
+The MCP then sends the verified token to the collector, which verifies it
 too, resolves the account linked to its issuer and subject, and applies its
-claim rules. Every caller therefore sees
-what its own collector account sees. The token is sent to the collector
-origin only, and never logged or returned.
+claim rules. Every caller therefore sees what its own collector account sees.
+The token is sent to the collector origin only, and never logged or returned.
 
 ### `GET /mcp/auth/whoami`
 
-Proves the token by relaying it to the collector `GET /api/auth/whoami`. The
-collector must authenticate it as a bearer token (`auth_source: bearer`) with
-the token's own issuer and subject. The response is:
+Proves the verified token by relaying it to the collector
+`GET /api/auth/whoami`. The collector must authenticate it as a bearer token
+(`auth_source: bearer`) with the token's own issuer and subject. The response is:
 
 ```json
 {
@@ -212,7 +214,7 @@ INFO mcp tool call tool=get_node issuer=https://sso.example.com/application/o/co
 | Field | Meaning |
 |---|---|
 | `tool` | Requested tool, bounded to 256 bytes |
-| `issuer`, `subject` | On HTTPS, the verified identity of the MCP token. On the socket, the claims of the caller's token, which the collector verifies on each call: a refused call may log unverified claims |
+| `issuer`, `subject` | The verified identity of the caller's token: the MCP token on HTTPS, the delegated token on the socket. A refused token gets 401 before any tool call, so it is never logged here |
 | `client_id` | On HTTPS, the client application from the `client_id` or `azp` claim; empty on the socket |
 | `exchange` | `delegated` on the socket; on HTTPS, `ok`, the error message of a refused exchange, or `none` when no exchange was attempted |
 | `collector_subject` | The subject of the token the collector received, to correlate with its logs |
@@ -228,7 +230,7 @@ INFO mcp whoami issuer=https://sso.example.com/application/o/collector/ subject=
 
 | Field | Meaning |
 |---|---|
-| `issuer`, `subject` | Claims of the caller's access token |
+| `issuer`, `subject` | The verified identity of the caller's access token |
 | `outcome` | `ok`; `collector_refused` (the collector answered 401 or 403); `collector_failed` (any other collector failure, answered 502); `identity_mismatch` (the collector authenticated another source or identity than this token); `expired`; `bad_request` |
 | `status` | The HTTP status the bridge answered |
 | `duration` | Total check duration, including the collector request |
@@ -243,5 +245,5 @@ deployment.
 
 Requests use TLS 1.2 or later, no proxy and no redirect, with a 30-second
 timeout. Responses are bounded to 10 MiB. A collector error is returned with
-its HTTP status and the bounded collector message; a refused token is reported
-without the collector's details.
+its HTTP status and the bounded collector message; a token the collector
+refuses with 401 is reported without the collector's details.
