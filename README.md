@@ -58,3 +58,7 @@ go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
 
 The CI runs the same checks, plus module verification and a race-enabled test
 run.
+
+## License
+
+[Apache License 2.0](LICENSE).
