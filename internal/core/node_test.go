@@ -34,7 +34,7 @@ func TestListNodesQueriesOnePageAndMapsNodes(t *testing.T) {
 		t.Fatalf("page = %+v", nodes)
 	}
 	first := nodes.Nodes[0]
-	if first.Nodename != "ams-dev-app01" || first.Env != "DEV" || first.AssetStatus != "up" || first.OS != "linux Ubuntu 22.04" ||
+	if first.Nodename != "ams-dev-app01" || first.Env != "DEV" || first.Status != "up" || first.OS != "linux Ubuntu 22.04" ||
 		first.AgentVersion != "3.0.4" || first.LastComm != "2026-09-15 15:10:00.000" || !first.Frozen || nodes.Nodes[1].Frozen {
 		t.Fatalf("nodes = %+v", nodes.Nodes)
 	}
@@ -231,5 +231,33 @@ func TestCountNodes(t *testing.T) {
 		if _, err := newTestService(&fakeCollector{body: body}).CountNodes(t.Context(), CountNodesOptions{GroupBy: "os_name"}); err == nil {
 			t.Fatalf("response %s accepted", body)
 		}
+	}
+}
+
+// The status of a node is the one of the collector Nodes page: filtered,
+// counted and grouped as is, and returned as status.
+func TestNodeStatusIsFilteredGroupedAndReturned(t *testing.T) {
+	collector := &fakeCollector{body: `{"data":[{"node_id":"n-1","nodename":"dev2n1","status":"down"}],"meta":{"total":1}}`}
+	nodes, err := newTestService(collector).ListNodes(t.Context(), ListNodesOptions{NodeFilters: NodeFilters{OSName: "linux", Status: "down"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filters := strings.Join(collector.requests[0].query["filter"], "|"); filters != "status:eq:down|os_name:~linux" {
+		t.Fatalf("filters = %q", filters)
+	}
+	data, _ := json.Marshal(nodes.Nodes[0])
+	if nodes.Nodes[0].Status != "down" || !strings.Contains(string(data), `"status":"down"`) || strings.Contains(string(data), "asset_status") {
+		t.Fatalf("node = %s", data)
+	}
+	collector = &fakeCollector{body: `{"data":{"status":{"up":287,"down":98,"warn":94,"empty":5}},"meta":{"distinct":{"status":4},"other":{"status":0},"total":484}}`}
+	count, err := newTestService(collector).CountNodes(t.Context(), CountNodesOptions{GroupBy: "status"})
+	if err != nil || collector.requests[0].query.Get("props") != "status" || count.Groups[1] != (CountGroup{"down", 98}) || count.Groups[3] != (CountGroup{"", 5}) {
+		t.Fatalf("count = %+v, %v", count, err)
+	}
+	if _, err := newTestService(&fakeCollector{}).CountNodes(t.Context(), CountNodesOptions{GroupBy: "asset_status"}); err == nil {
+		t.Fatal("the former asset_status grouping is accepted")
+	}
+	if _, err := newTestService(&fakeCollector{}).ListNodes(t.Context(), ListNodesOptions{NodeFilters: NodeFilters{Status: " down"}}); err == nil {
+		t.Fatal("a padded status is accepted")
 	}
 }

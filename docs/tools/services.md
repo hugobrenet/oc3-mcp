@@ -76,6 +76,7 @@ language is not exposed.
 | `app` | Optional exact collector app |
 | `env` | Optional exact service environment, such as `PRD` or `DEV` |
 | `availstatus` | Optional exact availability status, such as `up`, `down`, `warn`, `n/a` or `undef` |
+| `status` | Optional exact service status, the aggregated overall status, such as `up`, `down`, `warn`, `n/a` or `undef`, as the collector Services page shows it: a service is up or down by it |
 | `topology` | Optional topology: `failover` or `flex` |
 | `frozen` | Optional freeze state of the service as a whole: `frozen` (every instance), `unfrozen` or `mixed` |
 | `placement` | Optional placement state: `optimal` or `non-optimal` |
@@ -91,7 +92,7 @@ language is not exposed.
 | `node` | With `node`, the node it resolved to: `node_id`, `nodename`, `cluster_id` |
 | `total` | Services matching the filters, as the collector counts them |
 | `count`, `truncated` | Services in this page, and whether more remain |
-| `services[]` | `svc_id`, `svcname`, `cluster_id`, `app`, `env`, `topology`, `availstatus`, `overall_status`, `frozen` (`frozen`, `unfrozen`, `mixed` or `n/a`), `placement`, `provisioned`, `nodes` (the nodes of the configuration), `status_updated` |
+| `services[]` | `svc_id`, `svcname`, `cluster_id`, `app`, `env`, `topology`, `status` (the aggregated overall status), `availstatus`, `frozen` (`frozen`, `unfrozen`, `mixed` or `n/a`), `placement`, `provisioned`, `nodes` (the nodes of the configuration), `status_updated` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
 
 Pages follow the collector offsets: a service added or removed between two
@@ -120,8 +121,8 @@ each, and refuses a count longer than 5 seconds.
 
 | Input | Meaning |
 |---|---|
-| `name` … `placement` | The filters of `list_services` except `node`, with the same meaning |
-| `group_by` | Optional grouping: `cluster_id`, `app`, `env`, `topology`, `availstatus`, `overall_status`, `frozen`, `placement` or `provisioned` |
+| `name` … `placement` | The filters of `list_services` except `node`, with the same meaning, `status` included |
+| `group_by` | Optional grouping: `cluster_id`, `app`, `env`, `topology`, `status`, `availstatus`, `frozen`, `placement` or `provisioned` |
 | `limit` | Optional number of values returned with `group_by`, 1 to 100, default 20 |
 
 #### Output

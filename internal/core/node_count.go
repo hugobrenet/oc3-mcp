@@ -12,7 +12,7 @@ var nodeGroupProps = map[string]string{
 	"cluster_id":    "cluster_id",
 	"app":           "app",
 	"env":           "node_env",
-	"asset_status":  "status",
+	"status":        "status",
 	"type":          "type",
 	"os_name":       "os_name",
 	"os_vendor":     "os_vendor",

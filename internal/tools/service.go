@@ -15,6 +15,7 @@ type ServiceFiltersInput struct {
 	App         string `json:"app,omitempty" jsonschema:"optional exact collector app"`
 	Env         string `json:"env,omitempty" jsonschema:"optional exact service environment, such as PRD or DEV"`
 	AvailStatus string `json:"availstatus,omitempty" jsonschema:"optional exact availability status, such as up, down, warn, n/a or undef"`
+	Status      string `json:"status,omitempty" jsonschema:"optional exact service status, the aggregated overall status, such as up, down, warn, n/a or undef, as the collector Services page shows it: use it for the services up or down"`
 	Topology    string `json:"topology,omitempty" jsonschema:"optional topology: failover or flex"`
 	Frozen      string `json:"frozen,omitempty" jsonschema:"optional freeze state of the service as a whole: frozen (every instance), unfrozen or mixed"`
 	Placement   string `json:"placement,omitempty" jsonschema:"optional placement state: optimal or non-optimal"`
@@ -22,14 +23,14 @@ type ServiceFiltersInput struct {
 
 func (f ServiceFiltersInput) core() core.ServiceFilters {
 	return core.ServiceFilters{
-		Name: f.Name, ClusterID: f.ClusterID, App: f.App, Env: f.Env, AvailStatus: f.AvailStatus,
+		Name: f.Name, ClusterID: f.ClusterID, App: f.App, Env: f.Env, AvailStatus: f.AvailStatus, Status: f.Status,
 		Topology: f.Topology, Frozen: f.Frozen, Placement: f.Placement,
 	}
 }
 
 type CountServicesInput struct {
 	ServiceFiltersInput
-	GroupBy string `json:"group_by,omitempty" jsonschema:"optional grouping: cluster_id, app, env, topology, availstatus, overall_status, frozen, placement or provisioned"`
+	GroupBy string `json:"group_by,omitempty" jsonschema:"optional grouping: cluster_id, app, env, topology, status, availstatus, frozen, placement or provisioned"`
 	Limit   int    `json:"limit,omitempty" jsonschema:"optional number of values returned with group_by, the most frequent first, between 1 and 100; defaults to 20"`
 }
 
@@ -96,8 +97,9 @@ func RegisterServiceTools(registrar *Registrar, service *core.Service) error {
 		&mcp.Tool{
 			Name:  "list_services",
 			Title: "List collector services",
-			Description: "List the services the OpenSVC collector knows, sorted by name: service ID, cluster ID, app, environment, topology, aggregated availability, overall, freeze, placement and provisioned states, configured nodes and status update time. " +
-				"Filter by text in the name, exact cluster ID, app, environment, availability status, topology, freeze state or placement, and by node to list only the services with an instance on it; use the cursor to continue a page. " +
+			Description: "List the services the OpenSVC collector knows, sorted by name: service ID, cluster ID, app, environment, topology, status, aggregated availability, freeze, placement and provisioned states, configured nodes and status update time. " +
+				"A service is up or down by its status, the aggregated overall status its agents report, as the collector Services page shows it: filter by status for the services down. " +
+				"Filter by text in the name, exact cluster ID, app, environment, status, availability status, topology, freeze state or placement, and by node to list only the services with an instance on it; use the cursor to continue a page. " +
 				"To count services, or to break them down by a state, use count_services instead of reading every page. " +
 				"States are those the collector last received. Collector dates are as it gives them. Use get_service for the instances of one service.",
 			Annotations: readOnlyClosedWorldAnnotations(),
@@ -119,8 +121,10 @@ func RegisterServiceTools(registrar *Registrar, service *core.Service) error {
 		&mcp.Tool{
 			Name:  "count_services",
 			Title: "Count collector services",
-			Description: "Count the services the OpenSVC collector knows that match the filters of list_services, except node, as the collector computes it, and with group_by break them down by one property, such as availstatus, overall_status, topology, frozen, placement, app, env or cluster_id, the most frequent values first. " +
+			Description: "Count the services the OpenSVC collector knows that match the filters of list_services, except node, as the collector computes it, and with group_by break them down by one property, such as status, availstatus, topology, frozen, placement, app, env or cluster_id, the most frequent values first. " +
 				"Use it for any question of how many services, or of their distribution by state, instead of reading the pages of list_services. " +
+				"A service is up or down by its status, as the collector Services page shows it: count the services down with status down, or break them down with group_by status. " +
+				"When a filter value is unsure, group_by that property first to see the values the collector holds. " +
 				"States are those the collector last received.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},

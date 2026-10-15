@@ -13,6 +13,7 @@ type NodeFiltersInput struct {
 	ClusterID    string `json:"cluster_id,omitempty" jsonschema:"optional exact cluster ID"`
 	App          string `json:"app,omitempty" jsonschema:"optional exact collector app"`
 	Env          string `json:"env,omitempty" jsonschema:"optional exact node environment, such as PRD or DEV"`
+	Status       string `json:"status,omitempty" jsonschema:"optional exact node status, a property the collector users set on the node, whose values each organization chooses, such as Ready, Not Ready, Operating, up or down; use group_by status to see the values the collector holds"`
 	Frozen       bool   `json:"frozen,omitempty" jsonschema:"optional; true keeps only the frozen nodes"`
 	FrozenBefore string `json:"frozen_before,omitempty" jsonschema:"optional; keeps only the nodes frozen at or before this date, in collector local time: YYYY-MM-DD, YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS"`
 	OSName       string `json:"os_name,omitempty" jsonschema:"optional text the operating system name contains, case-insensitive, such as linux, windows, sunos or freebsd"`
@@ -29,7 +30,7 @@ type NodeFiltersInput struct {
 
 func (f NodeFiltersInput) core() core.NodeFilters {
 	return core.NodeFilters{
-		Name: f.Name, ClusterID: f.ClusterID, App: f.App, Env: f.Env, Frozen: f.Frozen, FrozenBefore: f.FrozenBefore,
+		Name: f.Name, ClusterID: f.ClusterID, App: f.App, Env: f.Env, Status: f.Status, Frozen: f.Frozen, FrozenBefore: f.FrozenBefore,
 		OSName: f.OSName, OSVendor: f.OSVendor, OSRelease: f.OSRelease, AgentVersion: f.AgentVersion,
 		Manufacturer: f.Manufacturer, Model: f.Model, Team: f.Team, Country: f.Country, City: f.City, SilentFor: f.SilentFor,
 	}
@@ -43,7 +44,7 @@ type ListNodesInput struct {
 
 type CountNodesInput struct {
 	NodeFiltersInput
-	GroupBy string `json:"group_by,omitempty" jsonschema:"optional grouping: cluster_id, app, env, asset_status, type, os_name, os_vendor, os_release, os_arch, agent_version, manufacturer, model, team, country or city"`
+	GroupBy string `json:"group_by,omitempty" jsonschema:"optional grouping: cluster_id, app, env, status, type, os_name, os_vendor, os_release, os_arch, agent_version, manufacturer, model, team, country or city"`
 	Limit   int    `json:"limit,omitempty" jsonschema:"optional number of values returned with group_by, the most frequent first, between 1 and 100; defaults to 20"`
 }
 
@@ -90,11 +91,12 @@ func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 		&mcp.Tool{
 			Name:  "list_nodes",
 			Title: "List collector nodes",
-			Description: "List the nodes the OpenSVC collector knows, sorted by name: node ID, cluster ID, app, environment, operating system, agent version, last contact with the collector, freeze flag and freeze date. " +
-				"Filter by name, cluster, app, environment, operating system name, vendor and release, agent version, hardware manufacturer and model, responsible team, country, city, frozen state or freeze date, and by silent_for to find the nodes that stopped reporting; use the cursor to continue a page. " +
+			Description: "List the nodes the OpenSVC collector knows, sorted by name: node ID, cluster ID, app, environment, status, operating system, agent version, last contact with the collector, freeze flag and freeze date. " +
+				"status is the node status the collector Nodes page shows, a property set by the collector users with values each organization chooses, not reported by the node daemon. " +
+				"Filter by name, cluster, app, environment, status, operating system name, vendor and release, agent version, hardware manufacturer and model, responsible team, country, city, frozen state or freeze date, and by silent_for to find the nodes that stopped reporting; use the cursor to continue a page. " +
 				"To count nodes, or to break them down by a property, use count_nodes instead of reading every page. " +
 				"frozen_at is empty when the collector does not store the freeze date of the node. " +
-				"asset_status is an inventory property, not a live state: last_comm tells when the node daemon last reported. " +
+				"last_comm tells when the node daemon last reported: use silent_for for the nodes that stopped reporting. " +
 				"Collector dates are in its local time without a zone. Use get_node for the details of one node.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
@@ -115,6 +117,9 @@ func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 			Title: "Count collector nodes",
 			Description: "Count the nodes the OpenSVC collector knows that match the filters of list_nodes, as the collector computes it, and with group_by break them down by one property, such as os_name, os_release, env, app, agent_version, manufacturer, team or country, the most frequent values first. " +
 				"Use it for any question of how many nodes, or of the distribution of the fleet, instead of reading the pages of list_nodes. " +
+				"status is a property set by the collector users, with values each organization chooses, such as Ready, Not Ready or Operating, not reported by the node daemon: to filter on it, check its values with group_by status first. " +
+				"silent_for tells the nodes whose daemon stopped reporting. " +
+				"When a filter value is unsure, group_by that property first to see the values the collector holds. " +
 				"The collector groups the values case-insensitively. Combine the filters to narrow the count, such as os_name linux and env PRD grouped by os_release.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
@@ -133,9 +138,10 @@ func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 		&mcp.Tool{
 			Name:  "get_node",
 			Title: "Get collector node",
-			Description: "Read one node of the OpenSVC collector by exact name or node ID: identity, cluster, app, environment, freeze state, agent version and last contact, operating system, hardware, teams, location, and warranty, maintenance and obsolescence dates. " +
+			Description: "Read one node of the OpenSVC collector by exact name or node ID: identity, cluster, app, environment, status, freeze state, agent version and last contact, operating system, hardware, teams, location, and warranty, maintenance and obsolescence dates. " +
 				"A name several nodes hold is refused with their node IDs; pass one of them. " +
-				"asset_status is an inventory property, not a live state. Collector dates are in its local time without a zone.",
+				"status is the node status the collector Nodes page shows, a property set by the collector users with values each organization chooses, not reported by the node daemon; last_comm tells when the node daemon last reported. " +
+				"Collector dates are in its local time without a zone.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input GetNodeInput) (*mcp.CallToolResult, GetNodeOutput, error) {

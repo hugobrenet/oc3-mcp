@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -23,7 +24,7 @@ func TestListServicesQueriesServices(t *testing.T) {
 		t.Fatalf("page = %+v", services)
 	}
 	got := services.Services[0]
-	if got.Svcname != "ns1/svc/web" || got.App != "WEB" || got.Env != "PRD" || got.AvailStatus != "warn" || got.OverallStatus != "warn" ||
+	if got.Svcname != "ns1/svc/web" || got.App != "WEB" || got.Env != "PRD" || got.AvailStatus != "warn" || got.Status != "warn" ||
 		got.Frozen != "unfrozen" || got.Provisioned != "True" || strings.Join(got.Nodes, ",") != "n1,n2" || got.StatusUpdated != "2026-10-12 11:50:12" {
 		t.Fatalf("service = %+v", got)
 	}
@@ -169,5 +170,29 @@ func TestCountServices(t *testing.T) {
 		if _, err := newTestService(collector).CountServices(t.Context(), options); err == nil || len(collector.requests) != 0 {
 			t.Fatalf("options %+v accepted", options)
 		}
+	}
+}
+
+// The status of a service is its aggregated overall status, the one of the
+// collector Services page: filtered, grouped and returned as status.
+func TestServiceStatusIsFilteredGroupedAndReturned(t *testing.T) {
+	collector := &fakeCollector{body: `{"data":[{"svc_id":"s-1","svcname":"web","svc_status":"down","svc_availstatus":"up"}],"meta":{"total":1}}`}
+	services, err := newTestService(collector).ListServices(t.Context(), ListServicesOptions{ServiceFilters: ServiceFilters{Status: "down", AvailStatus: "up"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filters := strings.Join(collector.requests[0].query["filter"], "|"); filters != "svc_availstatus:eq:up|svc_status:eq:down" {
+		t.Fatalf("filters = %q", filters)
+	}
+	data, _ := json.Marshal(services.Services[0])
+	if services.Services[0].Status != "down" || !strings.Contains(string(data), `"status":"down"`) || strings.Contains(string(data), "overall_status") {
+		t.Fatalf("service = %s", data)
+	}
+	collector = &fakeCollector{body: `{"data":{"svc_status":{"up":253,"down":194}},"meta":{"distinct":{"svc_status":2},"total":447}}`}
+	if count, err := newTestService(collector).CountServices(t.Context(), CountServicesOptions{GroupBy: "status"}); err != nil || collector.requests[0].query.Get("props") != "svc_status" || count.Groups[0] != (CountGroup{"up", 253}) {
+		t.Fatalf("count = %+v, %v", count, err)
+	}
+	if _, err := newTestService(&fakeCollector{}).CountServices(t.Context(), CountServicesOptions{GroupBy: "overall_status"}); err == nil {
+		t.Fatal("the former overall_status grouping is accepted")
 	}
 }

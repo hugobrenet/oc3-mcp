@@ -28,8 +28,13 @@ Implementation:
 The collector stores what the node daemons push, plus the properties set by
 its users. Visibility is that of the collector account of the caller.
 
-- `asset_status` is an inventory property of the node record, not a live
-  state. `last_comm` tells when the node daemon last contacted the collector.
+- `status` is the node status the collector Nodes page shows: a property the
+  collector users set on the node record through the collector API, whose
+  values each organization chooses, such as `Ready`, `Not Ready`,
+  `Operating`, `up` or `down`. It is not reported by the node daemon and does
+  not tell the state of the server; `group_by` `status` lists the values in
+  use. `last_comm` tells when the node daemon last contacted the collector,
+  and `silent_for` finds the nodes that stopped reporting.
 - Collector dates are returned as the collector gives them, in its local time
   without a zone, such as `2026-10-12 11:00:07.000`.
 - Several clusters may hold the same node name. The node ID is unique.
@@ -59,6 +64,7 @@ language is not exposed.
 | `cluster_id` | Optional exact cluster ID |
 | `app` | Optional exact collector app |
 | `env` | Optional exact node environment, such as `PRD` or `DEV` |
+| `status` | Optional exact node status: a property set by the collector users, whose values each organization chooses, such as `Ready`, `Not Ready`, `Operating`, `up` or `down` |
 | `frozen` | Optional; `true` lists only the frozen nodes |
 | `frozen_before` | Optional; lists only the nodes frozen at or before this date, in collector local time: `YYYY-MM-DD`, `YYYY-MM-DD HH:MM` or `YYYY-MM-DD HH:MM:SS`. It implies `frozen` |
 | `os_name` | Optional text the operating system name contains, case-insensitive, such as `linux`, `windows`, `sunos` or `freebsd` |
@@ -83,7 +89,7 @@ spaces. A cursor used with other filters is refused.
 | `provenance` | Collector API source and MCP collection time |
 | `total` | Nodes matching the filters, as the collector counts them |
 | `count`, `truncated` | Nodes in this page, and whether more remain |
-| `nodes[]` | `node_id`, `nodename`, `cluster_id`, `app`, `env`, `asset_status`, `os`, `agent_version`, `last_comm`, `frozen`, `frozen_at` |
+| `nodes[]` | `node_id`, `nodename`, `cluster_id`, `app`, `env`, `status`, `os`, `agent_version`, `last_comm`, `frozen`, `frozen_at` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
 
 Pages follow the collector offsets: a node added or removed between two calls
@@ -117,7 +123,7 @@ each, and refuses a count longer than 5 seconds.
 | Input | Meaning |
 |---|---|
 | `name` … `silent_for` | The filters of `list_nodes`, with the same meaning |
-| `group_by` | Optional grouping: `cluster_id`, `app`, `env`, `asset_status`, `type`, `os_name`, `os_vendor`, `os_release`, `os_arch`, `agent_version`, `manufacturer`, `model`, `team`, `country` or `city` |
+| `group_by` | Optional grouping: `cluster_id`, `app`, `env`, `status`, `type`, `os_name`, `os_vendor`, `os_release`, `os_arch`, `agent_version`, `manufacturer`, `model`, `team`, `country` or `city` |
 | `limit` | Optional number of values returned with `group_by`, 1 to 100, default 20 |
 
 #### Output
@@ -156,7 +162,7 @@ hold is refused, with their node and cluster IDs: pass one node ID.
 | Output field | Meaning |
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
-| `node` | `node_id`, `nodename`, `fqdn`, `cluster_id`, `app`, `env`, `asset_status`, `role`, `type`, `frozen`, `frozen_at`, `snooze_till` |
+| `node` | `node_id`, `nodename`, `fqdn`, `cluster_id`, `app`, `env`, `status`, `role`, `type`, `frozen`, `frozen_at`, `snooze_till` |
 | `agent` | `version`, `last_comm`, and `updated`, the last update of the node record |
 | `os` | `name`, `vendor`, `release`, `kernel`, `arch`, `timezone` (the offset the node reported), `last_boot` |
 | `hardware` | `manufacturer`, `model`, `serial`, CPU `model`, `vendor`, `cores`, `threads`, `dies` and `freq` (MHz), `mem_mb`, `mem_banks`, `mem_slots`, `bios_version`, `sp_version` |

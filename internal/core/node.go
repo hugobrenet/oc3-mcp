@@ -34,6 +34,7 @@ type NodeFilters struct {
 	ClusterID    string
 	App          string
 	Env          string
+	Status       string
 	Frozen       bool
 	FrozenBefore string
 	OSName       string
@@ -69,7 +70,7 @@ type NodeSummary struct {
 	ClusterID    string `json:"cluster_id,omitempty" jsonschema:"the ID of the OpenSVC cluster of the node"`
 	App          string `json:"app,omitempty" jsonschema:"the collector app the node belongs to"`
 	Env          string `json:"env,omitempty" jsonschema:"the node environment, such as PRD or DEV"`
-	AssetStatus  string `json:"asset_status,omitempty" jsonschema:"the asset status property set on the node record; not a live state"`
+	Status       string `json:"status,omitempty" jsonschema:"the node status the collector Nodes page shows, a property the collector users set on the node, whose values each organization chooses, such as Ready, Not Ready, Operating, up or down; it is not reported by the node daemon"`
 	OS           string `json:"os,omitempty" jsonschema:"the operating system name, vendor and release"`
 	AgentVersion string `json:"agent_version,omitempty" jsonschema:"the OpenSVC agent version the node last reported"`
 	LastComm     string `json:"last_comm,omitempty" jsonschema:"the last time the node daemon contacted the collector, in collector local time without a zone"`
@@ -89,18 +90,18 @@ type NodeDetails struct {
 }
 
 type NodeIdentity struct {
-	NodeID      string `json:"node_id" jsonschema:"the collector node ID"`
-	Nodename    string `json:"nodename" jsonschema:"the node name"`
-	FQDN        string `json:"fqdn,omitempty" jsonschema:"the fully qualified domain name"`
-	ClusterID   string `json:"cluster_id,omitempty" jsonschema:"the ID of the OpenSVC cluster of the node"`
-	App         string `json:"app,omitempty" jsonschema:"the collector app the node belongs to"`
-	Env         string `json:"env,omitempty" jsonschema:"the node environment, such as PRD or DEV"`
-	AssetStatus string `json:"asset_status,omitempty" jsonschema:"the asset status property set on the node record; not a live state"`
-	Role        string `json:"role,omitempty" jsonschema:"the node role property"`
-	Type        string `json:"type,omitempty" jsonschema:"the node type, such as physical or virtual"`
-	Frozen      bool   `json:"frozen" jsonschema:"whether the node is frozen, as the collector last received it"`
-	FrozenAt    string `json:"frozen_at,omitempty" jsonschema:"when the node was frozen, as the collector gives it"`
-	SnoozeTill  string `json:"snooze_till,omitempty" jsonschema:"the end of the snooze of the node alerts, as the collector gives it"`
+	NodeID     string `json:"node_id" jsonschema:"the collector node ID"`
+	Nodename   string `json:"nodename" jsonschema:"the node name"`
+	FQDN       string `json:"fqdn,omitempty" jsonschema:"the fully qualified domain name"`
+	ClusterID  string `json:"cluster_id,omitempty" jsonschema:"the ID of the OpenSVC cluster of the node"`
+	App        string `json:"app,omitempty" jsonschema:"the collector app the node belongs to"`
+	Env        string `json:"env,omitempty" jsonschema:"the node environment, such as PRD or DEV"`
+	Status     string `json:"status,omitempty" jsonschema:"the node status the collector Nodes page shows, a property the collector users set on the node, whose values each organization chooses, such as Ready, Not Ready, Operating, up or down; it is not reported by the node daemon"`
+	Role       string `json:"role,omitempty" jsonschema:"the node role property"`
+	Type       string `json:"type,omitempty" jsonschema:"the node type, such as physical or virtual"`
+	Frozen     bool   `json:"frozen" jsonschema:"whether the node is frozen, as the collector last received it"`
+	FrozenAt   string `json:"frozen_at,omitempty" jsonschema:"when the node was frozen, as the collector gives it"`
+	SnoozeTill string `json:"snooze_till,omitempty" jsonschema:"the end of the snooze of the node alerts, as the collector gives it"`
 }
 
 type NodeAgent struct {
@@ -247,7 +248,7 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 	for _, node := range response.Data {
 		result.Nodes = append(result.Nodes, NodeSummary{
 			NodeID: node.NodeID, Nodename: node.Nodename, ClusterID: node.ClusterID, App: node.App, Env: node.NodeEnv,
-			AssetStatus: node.Status, OS: node.OSConcat, AgentVersion: node.Version, LastComm: node.LastComm,
+			Status: node.Status, OS: node.OSConcat, AgentVersion: node.Version, LastComm: node.LastComm,
 			Frozen: collectorBool(node.NodeFrozen), FrozenAt: node.NodeFrozenAt,
 		})
 	}
@@ -265,7 +266,7 @@ var silentForPattern = regexp.MustCompile(`^[1-9][0-9]{0,4}[dhm]$`)
 // collectorFilters translates the filters into collector filters.
 func (f NodeFilters) collectorFilters() ([]string, error) {
 	for name, value := range map[string]string{
-		"name": f.Name, "app": f.App, "env": f.Env, "os_name": f.OSName, "os_vendor": f.OSVendor, "os_release": f.OSRelease,
+		"name": f.Name, "app": f.App, "env": f.Env, "status": f.Status, "os_name": f.OSName, "os_vendor": f.OSVendor, "os_release": f.OSRelease,
 		"agent_version": f.AgentVersion, "manufacturer": f.Manufacturer, "model": f.Model, "team": f.Team, "country": f.Country, "city": f.City,
 	} {
 		if err := validateFilterValue(name, value); err != nil {
@@ -301,6 +302,7 @@ func (f NodeFilters) collectorFilters() ([]string, error) {
 	equals("cluster_id", f.ClusterID)
 	equals("app", f.App)
 	equals("node_env", f.Env)
+	equals("status", f.Status)
 	if f.Frozen || f.FrozenBefore != "" {
 		filters = append(filters, filterEquals("node_frozen", "T"))
 	}
@@ -333,7 +335,7 @@ func (s *Service) GetNode(ctx context.Context, node string) (NodeDetails, error)
 		Provenance: s.newProvenance(),
 		Node: NodeIdentity{
 			NodeID: n.NodeID, Nodename: n.Nodename, FQDN: n.FQDN, ClusterID: n.ClusterID, App: n.App, Env: n.NodeEnv,
-			AssetStatus: n.Status, Role: n.Role, Type: n.Type, Frozen: collectorBool(n.NodeFrozen), FrozenAt: n.NodeFrozenAt,
+			Status: n.Status, Role: n.Role, Type: n.Type, Frozen: collectorBool(n.NodeFrozen), FrozenAt: n.NodeFrozenAt,
 			SnoozeTill: n.SnoozeTill,
 		},
 		Agent: NodeAgent{Version: n.Version, LastComm: n.LastComm, Updated: n.Updated},
