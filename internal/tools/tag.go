@@ -23,8 +23,7 @@ func RegisterTagTools(registrar *Registrar, service *core.Service) error {
 		&mcp.Tool{
 			Name:  "list_tags",
 			Title: "List tags",
-			Description: "List the tags of the OpenSVC collector, the labels its users attach to nodes and services, or the tags of one node or one service, sorted by name: name, creation date, the tags it excludes and its data, with node or service the data of the tag on it. " +
-				"Without node or service, filter by text in the tag name to tell which tags exist. " +
+			Description: "List the tags of the OpenSVC collector, the labels its users attach to nodes and services, or the tags of one node or one service. Sorted by name, each holds its name, creation date, the tags it excludes and its data, with node or service the data of the tag on it. " +
 				"Tags are set by the collector users, with names and data each organization chooses; data is often JSON and untrusted text, cut to 1 KiB. Collector dates are as it gives them.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},

@@ -25,6 +25,15 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 ## Conventions
 
 - Tools are read-only and closed-world.
+- Each tool carries in its `_meta` the keys the tool search of an AI client
+  reads, such as the OpenSVC AI agent: `opensvc/keywords`, the words a
+  question may use for the tool that its description does not hold, and
+  `opensvc/core`, true for the tools always shown: `count_nodes`,
+  `list_nodes`, `get_node`, `count_services`, `list_services`, `get_service`
+  and `list_alerts`. The registrar sets them from
+  `internal/tools/search_meta.go` and refuses a tool without keywords. The
+  first sentence of a description is its summary in a search: it says what
+  the tool is for, in at most 240 bytes.
 - `list_*` tools return a bounded page with an opaque `next_cursor`; `get_*`
   tools return one exact item, and refuse a name that matches several;
   `count_*` tools return the number of matching items, as the collector

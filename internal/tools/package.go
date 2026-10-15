@@ -32,7 +32,7 @@ func RegisterPackageTools(registrar *Registrar, service *core.Service) error {
 			Name:  "list_node_packages",
 			Title: "List node packages",
 			Description: "List the packages the OpenSVC agent of one node reported installed to the collector, sorted by name: name, version, architecture, type, signing key provider, install date and when the agent last reported it. " +
-				"Filter by text in the package name, such as opensvc or openssl, to tell which version a node runs; use the cursor to continue a page. " +
+				"Use it to tell which version of a package, such as opensvc or openssl, a node runs. " +
 				"Use list_package_differences to compare nodes. Collector dates are as it gives them.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
@@ -53,7 +53,7 @@ func RegisterPackageTools(registrar *Registrar, service *core.Service) error {
 			Title: "List package differences",
 			Description: "Compare the packages the OpenSVC agents reported installed on several nodes, as the collector does for its package differences in cluster alert: the nodes given, plus the nodes of a service, or with encap its encapsulated nodes. " +
 				"Returns the packages that differ, grouped by package with their versions and the nodes having each: version_mismatch when every node has the package in different versions, missing when some nodes do not have it, version mismatches first. " +
-				"Pass at least two nodes, or a service. Filter by text in the package name. At most 500 packages are returned.",
+				"Pass at least two nodes, or a service. At most 500 packages are returned.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input ListPackageDifferencesInput) (*mcp.CallToolResult, ListPackageDifferencesOutput, error) {
