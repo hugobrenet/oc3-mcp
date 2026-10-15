@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -36,15 +37,23 @@ var serviceInstanceProps = []string{
 	"mon_appstatus", "mon_hbstatus",
 }
 
-type ListServicesOptions struct {
+// ServiceFilters are the typed filters of list_services and count_services.
+type ServiceFilters struct {
 	Name        string
 	ClusterID   string
 	App         string
 	Env         string
 	AvailStatus string
-	Node        string
-	Limit       int
-	Cursor      string
+	Topology    string
+	Frozen      string
+	Placement   string
+}
+
+type ListServicesOptions struct {
+	ServiceFilters
+	Node   string
+	Limit  int
+	Cursor string
 }
 
 type ServiceList struct {
@@ -231,13 +240,44 @@ type collectorInstance struct {
 // ListServices reads one page of the services the collector account sees,
 // sorted by name, with typed filters. With node, it lists the services
 // having an instance on that node.
-func (s *Service) ListServices(ctx context.Context, options ListServicesOptions) (ServiceList, error) {
-	for name, value := range map[string]string{"name": options.Name, "app": options.App, "env": options.Env, "availstatus": options.AvailStatus} {
+// validate checks the filters given by the caller.
+func (f ServiceFilters) validate() error {
+	for name, value := range map[string]string{"name": f.Name, "app": f.App, "env": f.Env, "availstatus": f.AvailStatus} {
 		if err := validateFilterValue(name, value); err != nil {
-			return ServiceList{}, err
+			return err
 		}
 	}
-	if err := validateCollectorUUID("cluster_id", options.ClusterID); err != nil {
+	if err := validateCollectorUUID("cluster_id", f.ClusterID); err != nil {
+		return err
+	}
+	for name, allowed := range map[string][2]string{"topology": {f.Topology, "failover, flex"}, "frozen": {f.Frozen, "frozen, unfrozen, mixed"}, "placement": {f.Placement, "optimal, non-optimal"}} {
+		if allowed[0] != "" && !slices.Contains(strings.Split(allowed[1], ", "), allowed[0]) {
+			return fmt.Errorf("%s must be one of %s", name, allowed[1])
+		}
+	}
+	return nil
+}
+
+// collectorFilters translates the filters into collector filters on the
+// service props, named with prefix.
+func (f ServiceFilters) collectorFilters(prefix string) []string {
+	var filters []string
+	if f.Name != "" {
+		filters = append(filters, filterContains(prefix+"svcname", f.Name))
+	}
+	for _, filter := range [][2]string{
+		{"cluster_id", f.ClusterID}, {"svc_app", f.App}, {"svc_env", f.Env}, {"svc_availstatus", f.AvailStatus},
+		{"svc_topology", f.Topology}, {"svc_frozen", f.Frozen}, {"svc_placement", f.Placement},
+	} {
+		if filter[1] != "" {
+			filters = append(filters, filterEquals(prefix+filter[0], filter[1]))
+		}
+	}
+	return filters
+}
+
+func (s *Service) ListServices(ctx context.Context, options ListServicesOptions) (ServiceList, error) {
+	if err := options.ServiceFilters.validate(); err != nil {
 		return ServiceList{}, err
 	}
 	limit, err := pageLimit(options.Limit, defaultListServicesLimit, maxListServicesLimit)
@@ -258,21 +298,7 @@ func (s *Service) ListServices(ctx context.Context, options ListServicesOptions)
 	if node != nil {
 		filters = append(filters, filterEquals("node_id", node.NodeID))
 	}
-	if options.Name != "" {
-		filters = append(filters, filterContains(prefix+"svcname", options.Name))
-	}
-	if options.ClusterID != "" {
-		filters = append(filters, filterEquals(prefix+"cluster_id", options.ClusterID))
-	}
-	if options.App != "" {
-		filters = append(filters, filterEquals(prefix+"svc_app", options.App))
-	}
-	if options.Env != "" {
-		filters = append(filters, filterEquals(prefix+"svc_env", options.Env))
-	}
-	if options.AvailStatus != "" {
-		filters = append(filters, filterEquals(prefix+"svc_availstatus", options.AvailStatus))
-	}
+	filters = append(filters, options.ServiceFilters.collectorFilters(prefix)...)
 	fingerprint := listFingerprint(url.Values{"filter": filters})
 	offset, err := decodeListCursor(options.Cursor, fingerprint)
 	if err != nil {
