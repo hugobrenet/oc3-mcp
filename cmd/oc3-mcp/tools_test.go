@@ -481,3 +481,31 @@ func TestIPToolsReadTheCollector(t *testing.T) {
 		t.Fatal("a call without criterion was accepted")
 	}
 }
+
+func TestTagAndAppToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/tags":
+			_, _ = w.Write([]byte(`{"data":[{"tag_id":"t-1","tag_name":"pci-dss","tag_data":{"scope":"compliance"}}],"meta":{"total":1}}`))
+		case "/apps/WEB":
+			_, _ = w.Write([]byte(`{"app":"WEB","id":4627,"description":"WEB application code"}`))
+		case "/apps/4627/responsibles":
+			_, _ = w.Write([]byte(`{"data":[{"role":"Test Web","description":"Test team"}]}`))
+		case "/nodes", "/services":
+			_, _ = w.Write([]byte(`{"data":[{}],"meta":{"total":2}}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, tags := call("list_tags", map[string]any{})
+	items, _ := tags["tags"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["data"] != `{"scope":"compliance"}` {
+		t.Fatalf("list_tags = %+v", tags)
+	}
+	result, app := call("get_app", map[string]any{"app": "WEB"})
+	groups, _ := app["responsibles"].([]any)
+	if result.IsError || app["nodes"] != float64(2) || len(groups) != 1 || groups[0].(map[string]any)["role"] != "Test Web" {
+		t.Fatalf("get_app = %+v", app)
+	}
+}

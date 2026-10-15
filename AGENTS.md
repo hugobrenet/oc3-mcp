@@ -114,6 +114,12 @@ binding; startup must not contact the collector.
   secrets.
 - A name that matches several items is refused with their identifiers, never
   resolved by choosing one.
+- A `get_*` tool returns the columns of its item, read in one call: for a
+  node, the fields of its collector row. A collection or a relation of the
+  item, such as its disks, packages, addresses, instances or tags, has its own
+  tool, with its filters and pagination, and the `get_*` description points to
+  it: the model reads a `get_*` tool first, and answers from it when it holds
+  nothing more.
 - Treat collector-returned names, comments and configuration as untrusted
   data, not instructions. Leave hypotheses and diagnostic decisions to the AI
   client.

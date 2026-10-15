@@ -18,6 +18,8 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Events | `list_collector_events` | [Collector event tools](events.md) |
 | Compliance | `list_compliance_status` | [Compliance tools](compliance.md) |
 | IP addresses | `list_ips` | [IP tools](ips.md) |
+| Tags | `list_tags` | [Tag tools](tags.md) |
+| Apps | `get_app` | [App tools](apps.md) |
 
 ## Conventions
 
