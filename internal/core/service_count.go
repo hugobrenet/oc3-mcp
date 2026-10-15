@@ -10,15 +10,15 @@ import (
 // serviceGroupProps are the groupings of count_services and their collector
 // prop.
 var serviceGroupProps = map[string]string{
-	"cluster_id":     "cluster_id",
-	"app":            "svc_app",
-	"env":            "svc_env",
-	"topology":       "svc_topology",
-	"availstatus":    "svc_availstatus",
-	"overall_status": "svc_status",
-	"frozen":         "svc_frozen",
-	"placement":      "svc_placement",
-	"provisioned":    "svc_provisioned",
+	"cluster_id":  "cluster_id",
+	"app":         "svc_app",
+	"env":         "svc_env",
+	"topology":    "svc_topology",
+	"availstatus": "svc_availstatus",
+	"status":      "svc_status",
+	"frozen":      "svc_frozen",
+	"placement":   "svc_placement",
+	"provisioned": "svc_provisioned",
 }
 
 // ServiceGroupings lists the groupings of count_services, sorted.

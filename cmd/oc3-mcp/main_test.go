@@ -134,6 +134,37 @@ func TestMCPInitializeAndListTools(t *testing.T) {
 	if strings.Join(names, ",") != "count_nodes,count_services,get_node,get_node_san_topology,get_node_stats,get_service,get_service_action_logs,get_service_resource_history,get_service_status_history,list_alerts,list_clusters,list_collector_events,list_compliance_status,list_frozen_instances,list_node_checks,list_node_disks,list_node_packages,list_nodes,list_package_differences,list_service_actions,list_service_checks,list_service_resources,list_services" {
 		t.Fatalf("tools = %v", names)
 	}
+	// The model learns that a service is up or down by its status, and that
+	// the status of a node is a property its users set with their own values;
+	// it finds the status filter in the schemas.
+	byName := map[string]*mcp.Tool{}
+	for _, tool := range tools.Tools {
+		byName[tool.Name] = tool
+	}
+	for name, rule := range map[string]string{
+		"list_nodes": "values each organization chooses", "count_nodes": "values each organization chooses", "get_node": "values each organization chooses",
+		"list_services": "A service is up or down by its status", "count_services": "A service is up or down by its status",
+	} {
+		tool := byName[name]
+		if !strings.Contains(tool.Description, rule) || strings.Contains(tool.Description, "not a live state") {
+			t.Errorf("%s description = %q", name, tool.Description)
+		}
+		if strings.HasSuffix(name, "nodes") || name == "get_node" {
+			if strings.Contains(tool.Description, "up or down by its status") {
+				t.Errorf("%s tells that a node is up or down by its status", name)
+			}
+		}
+		if name == "get_node" {
+			continue
+		}
+		schema, _ := json.Marshal(tool.InputSchema)
+		if !strings.Contains(string(schema), `"status":{`) || strings.Contains(string(schema), "asset_status") || strings.Contains(string(schema), "overall_status") {
+			t.Errorf("%s schema lacks the status filter: %s", name, schema)
+		}
+		if strings.HasSuffix(name, "nodes") && !strings.Contains(string(schema), "Not Ready") {
+			t.Errorf("%s status filter does not present free values: %s", name, schema)
+		}
+	}
 }
 
 func TestMCPRequiresAnAccessToken(t *testing.T) {

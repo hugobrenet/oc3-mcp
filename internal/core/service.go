@@ -44,6 +44,7 @@ type ServiceFilters struct {
 	App         string
 	Env         string
 	AvailStatus string
+	Status      string
 	Topology    string
 	Frozen      string
 	Placement   string
@@ -80,7 +81,7 @@ type ServiceSummary struct {
 	Env           string   `json:"env,omitempty" jsonschema:"the service environment, such as PRD or DEV"`
 	Topology      string   `json:"topology,omitempty" jsonschema:"the service topology, such as failover or flex"`
 	AvailStatus   string   `json:"availstatus,omitempty" jsonschema:"the aggregated availability status the collector last received, such as up, down, warn, n/a or undef"`
-	OverallStatus string   `json:"overall_status,omitempty" jsonschema:"the aggregated overall status the collector last received"`
+	Status        string   `json:"status,omitempty" jsonschema:"the service status, the aggregated overall status the collector last received, such as up, down, warn, n/a or undef, as the collector Services page shows it: whether the service is up or down"`
 	Frozen        string   `json:"frozen,omitempty" jsonschema:"the aggregated freeze state: frozen, unfrozen, mixed or n/a"`
 	Placement     string   `json:"placement,omitempty" jsonschema:"the placement state, such as optimal or non-optimal"`
 	Provisioned   string   `json:"provisioned,omitempty" jsonschema:"the aggregated provisioned state, such as True, False, mixed or n/a"`
@@ -242,7 +243,7 @@ type collectorInstance struct {
 // having an instance on that node.
 // validate checks the filters given by the caller.
 func (f ServiceFilters) validate() error {
-	for name, value := range map[string]string{"name": f.Name, "app": f.App, "env": f.Env, "availstatus": f.AvailStatus} {
+	for name, value := range map[string]string{"name": f.Name, "app": f.App, "env": f.Env, "availstatus": f.AvailStatus, "status": f.Status} {
 		if err := validateFilterValue(name, value); err != nil {
 			return err
 		}
@@ -266,7 +267,7 @@ func (f ServiceFilters) collectorFilters(prefix string) []string {
 		filters = append(filters, filterContains(prefix+"svcname", f.Name))
 	}
 	for _, filter := range [][2]string{
-		{"cluster_id", f.ClusterID}, {"svc_app", f.App}, {"svc_env", f.Env}, {"svc_availstatus", f.AvailStatus},
+		{"cluster_id", f.ClusterID}, {"svc_app", f.App}, {"svc_env", f.Env}, {"svc_availstatus", f.AvailStatus}, {"svc_status", f.Status},
 		{"svc_topology", f.Topology}, {"svc_frozen", f.Frozen}, {"svc_placement", f.Placement},
 	} {
 		if filter[1] != "" {
@@ -342,7 +343,7 @@ func (s *Service) ListServices(ctx context.Context, options ListServicesOptions)
 	for _, service := range services {
 		result.Services = append(result.Services, ServiceSummary{
 			SvcID: service.SvcID, Svcname: service.Svcname, ClusterID: service.ClusterID, App: service.SvcApp, Env: service.SvcEnv,
-			Topology: service.SvcTopology, AvailStatus: service.SvcAvailStatus, OverallStatus: service.SvcStatus, Frozen: service.SvcFrozen,
+			Topology: service.SvcTopology, AvailStatus: service.SvcAvailStatus, Status: service.SvcStatus, Frozen: service.SvcFrozen,
 			Placement: service.SvcPlacement, Provisioned: service.SvcProvisioned, Nodes: strings.Fields(service.SvcNodes),
 			StatusUpdated: service.SvcStatusUpdated,
 		})
