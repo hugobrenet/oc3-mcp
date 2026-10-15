@@ -1,6 +1,7 @@
 ---
 domain: node
 tools:
+  - count_nodes
   - get_node
   - get_node_san_topology
   - get_node_stats
@@ -18,9 +19,10 @@ without a diagnostic verdict.
 
 Implementation:
 
-- business logic: `internal/core/node.go`, `internal/core/node_san.go`,
-  `internal/core/node_disk.go` and `internal/core/node_stats.go`, with the
-  shared list helpers of `internal/core/collector_list.go`;
+- business logic: `internal/core/node.go`, `internal/core/node_count.go`,
+  `internal/core/node_san.go`, `internal/core/node_disk.go` and
+  `internal/core/node_stats.go`, with the shared list and count helpers of
+  `internal/core/collector_list.go` and `internal/core/collector_stats.go`;
 - MCP definitions: `internal/tools/node.go`.
 
 The collector stores what the node daemons push, plus the properties set by
@@ -37,7 +39,8 @@ its users. Visibility is that of the collector account of the caller.
 ### `list_nodes`
 
 Returns one page of nodes, sorted by node name then node ID. Use it to find a
-node, or the nodes of a cluster, app or environment.
+node, or the nodes of a cluster, app, environment, operating system, hardware,
+team or location. To count nodes, use `count_nodes`.
 
 #### Collector API
 
@@ -58,6 +61,15 @@ language is not exposed.
 | `env` | Optional exact node environment, such as `PRD` or `DEV` |
 | `frozen` | Optional; `true` lists only the frozen nodes |
 | `frozen_before` | Optional; lists only the nodes frozen at or before this date, in collector local time: `YYYY-MM-DD`, `YYYY-MM-DD HH:MM` or `YYYY-MM-DD HH:MM:SS`. It implies `frozen` |
+| `os_name` | Optional text the operating system name contains, case-insensitive, such as `linux`, `windows`, `sunos` or `freebsd` |
+| `os_vendor` | Optional text the operating system vendor or distribution contains, case-insensitive, such as `red hat` or `ubuntu` |
+| `os_release` | Optional exact operating system release, such as `9.4`; a release ending with a dot, such as `9.`, selects every release starting with it |
+| `agent_version` | Optional exact OpenSVC agent version, such as `3.0.4`; a version ending with a dot, such as `2.`, selects every version starting with it |
+| `manufacturer` | Optional text the hardware manufacturer contains, case-insensitive |
+| `model` | Optional text the hardware model contains, case-insensitive |
+| `team` | Optional text the name of the responsible team contains, case-insensitive |
+| `country`, `city` | Optional text the country or city of the node location contains, case-insensitive |
+| `silent_for` | Optional duration, in days, hours or minutes such as `7d`, `12h` or `30m`: lists only the nodes whose last contact with the collector is older. Nodes that never reported are left out |
 | `limit` | Optional page size, 1 to 200, default 50 |
 | `cursor` | Optional `next_cursor` of a previous call with the same filters |
 
@@ -81,6 +93,43 @@ can shift the following pages.
 empty for a frozen node when the collector does not store the freeze date its
 daemon reports: `frozen_before` then lists no node, while `frozen` still lists
 them. `last_comm` is not the freeze date.
+
+### `count_nodes`
+
+Counts the nodes matching the filters of `list_nodes`, as the collector
+computes it, and with `group_by` breaks them down by one property, the most
+frequent values first. Use it for how many nodes, and for the distribution of
+the fleet, instead of reading every page of `list_nodes`.
+
+#### Collector API
+
+```text
+GET /api/nodes?props=node_id&filter=…&limit=1
+GET /api/nodes?stats=true&props=<grouping prop>&filter=…&limit=…
+```
+
+With `stats`, the collector counts the rows of each value over the whole
+selection. It groups the values case-insensitively and shows one spelling of
+each, and refuses a count longer than 5 seconds.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `name` … `silent_for` | The filters of `list_nodes`, with the same meaning |
+| `group_by` | Optional grouping: `cluster_id`, `app`, `env`, `asset_status`, `type`, `os_name`, `os_vendor`, `os_release`, `os_arch`, `agent_version`, `manufacturer`, `model`, `team`, `country` or `city` |
+| `limit` | Optional number of values returned with `group_by`, 1 to 100, default 20 |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `total` | Nodes matching the filters |
+| `group_by` | The grouping asked |
+| `groups[]` | With `group_by`: `value`, empty for the nodes without one, and `count`, the most frequent first |
+| `distinct` | With `group_by`: distinct values among the matching nodes |
+| `other`, `truncated` | With `group_by`: matching nodes whose value was left out by `limit`, and whether there are any |
 
 ### `get_node`
 

@@ -7,16 +7,47 @@ import (
 	"github.com/opensvc/oc3-mcp/internal/core"
 )
 
-type ListNodesInput struct {
+// NodeFiltersInput are the node filters shared by list_nodes and count_nodes.
+type NodeFiltersInput struct {
 	Name         string `json:"name,omitempty" jsonschema:"optional text the node name contains, case-insensitive"`
 	ClusterID    string `json:"cluster_id,omitempty" jsonschema:"optional exact cluster ID"`
 	App          string `json:"app,omitempty" jsonschema:"optional exact collector app"`
 	Env          string `json:"env,omitempty" jsonschema:"optional exact node environment, such as PRD or DEV"`
-	Frozen       bool   `json:"frozen,omitempty" jsonschema:"optional; true lists only the frozen nodes"`
-	FrozenBefore string `json:"frozen_before,omitempty" jsonschema:"optional; lists only the nodes frozen at or before this date, in collector local time: YYYY-MM-DD, YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS"`
-	Limit        int    `json:"limit,omitempty" jsonschema:"optional page size between 1 and 200; defaults to 50"`
-	Cursor       string `json:"cursor,omitempty" jsonschema:"optional next_cursor returned by a previous call with the same filters"`
+	Frozen       bool   `json:"frozen,omitempty" jsonschema:"optional; true keeps only the frozen nodes"`
+	FrozenBefore string `json:"frozen_before,omitempty" jsonschema:"optional; keeps only the nodes frozen at or before this date, in collector local time: YYYY-MM-DD, YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS"`
+	OSName       string `json:"os_name,omitempty" jsonschema:"optional text the operating system name contains, case-insensitive, such as linux, windows, sunos or freebsd"`
+	OSVendor     string `json:"os_vendor,omitempty" jsonschema:"optional text the operating system vendor or distribution contains, case-insensitive, such as red hat, ubuntu or debian"`
+	OSRelease    string `json:"os_release,omitempty" jsonschema:"optional exact operating system release, such as 9.4; a release ending with a dot, such as 9., selects every release starting with it"`
+	AgentVersion string `json:"agent_version,omitempty" jsonschema:"optional exact OpenSVC agent version, such as 3.0.4; a version ending with a dot, such as 2., selects every version starting with it"`
+	Manufacturer string `json:"manufacturer,omitempty" jsonschema:"optional text the hardware manufacturer contains, case-insensitive, such as dell or hpe"`
+	Model        string `json:"model,omitempty" jsonschema:"optional text the hardware model contains, case-insensitive"`
+	Team         string `json:"team,omitempty" jsonschema:"optional text the name of the team responsible for the node contains, case-insensitive"`
+	Country      string `json:"country,omitempty" jsonschema:"optional text the country of the node location contains, case-insensitive, such as France"`
+	City         string `json:"city,omitempty" jsonschema:"optional text the city of the node location contains, case-insensitive"`
+	SilentFor    string `json:"silent_for,omitempty" jsonschema:"optional; keeps only the nodes whose last contact with the collector is older than this duration, in days, hours or minutes, such as 7d, 12h or 30m; nodes that never reported are left out"`
 }
+
+func (f NodeFiltersInput) core() core.NodeFilters {
+	return core.NodeFilters{
+		Name: f.Name, ClusterID: f.ClusterID, App: f.App, Env: f.Env, Frozen: f.Frozen, FrozenBefore: f.FrozenBefore,
+		OSName: f.OSName, OSVendor: f.OSVendor, OSRelease: f.OSRelease, AgentVersion: f.AgentVersion,
+		Manufacturer: f.Manufacturer, Model: f.Model, Team: f.Team, Country: f.Country, City: f.City, SilentFor: f.SilentFor,
+	}
+}
+
+type ListNodesInput struct {
+	NodeFiltersInput
+	Limit  int    `json:"limit,omitempty" jsonschema:"optional page size between 1 and 200; defaults to 50"`
+	Cursor string `json:"cursor,omitempty" jsonschema:"optional next_cursor returned by a previous call with the same filters"`
+}
+
+type CountNodesInput struct {
+	NodeFiltersInput
+	GroupBy string `json:"group_by,omitempty" jsonschema:"optional grouping: cluster_id, app, env, asset_status, type, os_name, os_vendor, os_release, os_arch, agent_version, manufacturer, model, team, country or city"`
+	Limit   int    `json:"limit,omitempty" jsonschema:"optional number of values returned with group_by, the most frequent first, between 1 and 100; defaults to 20"`
+}
+
+type CountNodesOutput = core.NodeCount
 
 type ListNodesOutput = core.NodeList
 
@@ -60,21 +91,39 @@ func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 			Name:  "list_nodes",
 			Title: "List collector nodes",
 			Description: "List the nodes the OpenSVC collector knows, sorted by name: node ID, cluster ID, app, environment, operating system, agent version, last contact with the collector, freeze flag and freeze date. " +
-				"Filter by text in the name, exact cluster ID, app or environment, by frozen state, or by freeze date with frozen_before to list the nodes frozen since a date; use the cursor to continue a page. " +
+				"Filter by name, cluster, app, environment, operating system name, vendor and release, agent version, hardware manufacturer and model, responsible team, country, city, frozen state or freeze date, and by silent_for to find the nodes that stopped reporting; use the cursor to continue a page. " +
+				"To count nodes, or to break them down by a property, use count_nodes instead of reading every page. " +
 				"frozen_at is empty when the collector does not store the freeze date of the node. " +
 				"asset_status is an inventory property, not a live state: last_comm tells when the node daemon last reported. " +
 				"Collector dates are in its local time without a zone. Use get_node for the details of one node.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input ListNodesInput) (*mcp.CallToolResult, ListNodesOutput, error) {
-			nodes, err := service.ListNodes(ctx, core.ListNodesOptions{
-				Name: input.Name, ClusterID: input.ClusterID, App: input.App, Env: input.Env, Frozen: input.Frozen, FrozenBefore: input.FrozenBefore,
-				Limit: input.Limit, Cursor: input.Cursor,
-			})
+			nodes, err := service.ListNodes(ctx, core.ListNodesOptions{NodeFilters: input.core(), Limit: input.Limit, Cursor: input.Cursor})
 			if err != nil {
 				return nil, ListNodesOutput{}, err
 			}
 			return nil, nodes, nil
+		},
+	); err != nil {
+		return err
+	}
+	if err := addTool(
+		registrar,
+		&mcp.Tool{
+			Name:  "count_nodes",
+			Title: "Count collector nodes",
+			Description: "Count the nodes the OpenSVC collector knows that match the filters of list_nodes, as the collector computes it, and with group_by break them down by one property, such as os_name, os_release, env, app, agent_version, manufacturer, team or country, the most frequent values first. " +
+				"Use it for any question of how many nodes, or of the distribution of the fleet, instead of reading the pages of list_nodes. " +
+				"The collector groups the values case-insensitively. Combine the filters to narrow the count, such as os_name linux and env PRD grouped by os_release.",
+			Annotations: readOnlyClosedWorldAnnotations(),
+		},
+		func(ctx context.Context, _ *mcp.CallToolRequest, input CountNodesInput) (*mcp.CallToolResult, CountNodesOutput, error) {
+			count, err := service.CountNodes(ctx, core.CountNodesOptions{NodeFilters: input.core(), GroupBy: input.GroupBy, Limit: input.Limit})
+			if err != nil {
+				return nil, CountNodesOutput{}, err
+			}
+			return nil, count, nil
 		},
 	); err != nil {
 		return err

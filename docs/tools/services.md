@@ -1,6 +1,7 @@
 ---
 domain: service
 tools:
+  - count_services
   - get_service
   - get_service_resource_history
   - get_service_status_history
@@ -20,11 +21,13 @@ or degraded, and where a service runs, without a diagnostic verdict.
 Implementation:
 
 - business logic: `internal/core/service.go`,
+  `internal/core/service_count.go`,
   `internal/core/service_status_history.go`,
   `internal/core/service_resource.go`,
   `internal/core/service_resource_history.go` and
-  `internal/core/service_frozen_instance.go`, with the shared list helpers of
-  `internal/core/collector_list.go` and the node lookup of
+  `internal/core/service_frozen_instance.go`, with the shared list and count
+  helpers of `internal/core/collector_list.go` and
+  `internal/core/collector_stats.go`, and the node lookup of
   `internal/core/node.go`;
 - MCP definitions: `internal/tools/service.go`.
 
@@ -73,6 +76,9 @@ language is not exposed.
 | `app` | Optional exact collector app |
 | `env` | Optional exact service environment, such as `PRD` or `DEV` |
 | `availstatus` | Optional exact availability status, such as `up`, `down`, `warn`, `n/a` or `undef` |
+| `topology` | Optional topology: `failover` or `flex` |
+| `frozen` | Optional freeze state of the service as a whole: `frozen` (every instance), `unfrozen` or `mixed` |
+| `placement` | Optional placement state: `optimal` or `non-optimal` |
 | `node` | Optional exact node name or node ID: only the services with an instance on it. A name several nodes hold is refused with their node IDs |
 | `limit` | Optional page size, 1 to 200, default 50 |
 | `cursor` | Optional `next_cursor` of a previous call with the same filters |
@@ -90,6 +96,44 @@ language is not exposed.
 
 Pages follow the collector offsets: a service added or removed between two
 calls can shift the following pages.
+
+### `count_services`
+
+Counts the services matching the filters of `list_services`, except `node`,
+as the collector computes it, and with `group_by` breaks them down by one
+property, the most frequent values first. Use it for how many services, and
+for their distribution by state, instead of reading every page of
+`list_services`.
+
+#### Collector API
+
+```text
+GET /api/services?props=svc_id&filter=…&limit=1
+GET /api/services?stats=true&props=<grouping prop>&filter=…&limit=…
+```
+
+With `stats`, the collector counts the rows of each value over the whole
+selection. It groups the values case-insensitively and shows one spelling of
+each, and refuses a count longer than 5 seconds.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `name` … `placement` | The filters of `list_services` except `node`, with the same meaning |
+| `group_by` | Optional grouping: `cluster_id`, `app`, `env`, `topology`, `availstatus`, `overall_status`, `frozen`, `placement` or `provisioned` |
+| `limit` | Optional number of values returned with `group_by`, 1 to 100, default 20 |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `total` | Services matching the filters |
+| `group_by` | The grouping asked |
+| `groups[]` | With `group_by`: `value`, empty for the services without one, and `count`, the most frequent first |
+| `distinct` | With `group_by`: distinct values among the matching services |
+| `other`, `truncated` | With `group_by`: matching services whose value was left out by `limit`, and whether there are any |
 
 ### `get_service`
 

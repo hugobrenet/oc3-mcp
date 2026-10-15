@@ -10,7 +10,7 @@ func TestListServicesQueriesServices(t *testing.T) {
 		{"svc_id":"d550b789-b0fa-11f1-93de-b292af0c1f00","svcname":"ns1/svc/web","cluster_id":"82e47bfb-182f-413b-b5dd-9de8164095d5","svc_app":"WEB","svc_env":"PRD",
 		 "svc_topology":"failover","svc_availstatus":"warn","svc_status":"warn","svc_frozen":"unfrozen","svc_placement":"optimal","svc_provisioned":"True",
 		 "svc_nodes":"n1 n2","svc_status_updated":"2026-10-12 11:50:12"}],"meta":{"total":3}}`}
-	services, err := newTestService(collector).ListServices(t.Context(), ListServicesOptions{Name: "web", App: "WEB", AvailStatus: "warn", Limit: 1})
+	services, err := newTestService(collector).ListServices(t.Context(), ListServicesOptions{ServiceFilters: ServiceFilters{Name: "web", App: "WEB", AvailStatus: "warn"}, Limit: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestListServicesOfANodeReadsItsInstances(t *testing.T) {
 		"/services_instances": `{"data":[{"svc_id":"s1","services.svcname":"ns1/svc/web","services.svc_availstatus":"down","services.svc_env":null,"services.svc_nodes":"dev2n1"}],
 			"meta":{"total":1}}`,
 	}}
-	services, err := newTestService(collector).ListServices(t.Context(), ListServicesOptions{Node: "dev2n1", Env: "PRD", AvailStatus: "down"})
+	services, err := newTestService(collector).ListServices(t.Context(), ListServicesOptions{Node: "dev2n1", ServiceFilters: ServiceFilters{Env: "PRD", AvailStatus: "down"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,8 +64,8 @@ func TestListServicesRefusesAnAmbiguousNode(t *testing.T) {
 func TestListServicesRejectsInvalidInputs(t *testing.T) {
 	for _, options := range []ListServicesOptions{
 		{Limit: 201},
-		{ClusterID: "not-a-uuid"},
-		{AvailStatus: " up"},
+		{ServiceFilters: ServiceFilters{ClusterID: "not-a-uuid"}},
+		{ServiceFilters: ServiceFilters{AvailStatus: " up"}},
 		{Node: "a/b"},
 		{Cursor: "garbage"},
 	} {
@@ -80,7 +80,7 @@ func TestListServicesRejectsInvalidInputs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := newTestService(collector).ListServices(t.Context(), ListServicesOptions{Limit: 1, App: "WEB", Cursor: page.NextCursor}); err == nil {
+	if _, err := newTestService(collector).ListServices(t.Context(), ListServicesOptions{Limit: 1, ServiceFilters: ServiceFilters{App: "WEB"}, Cursor: page.NextCursor}); err == nil {
 		t.Fatal("a cursor of other filters was accepted")
 	}
 }
@@ -126,6 +126,48 @@ func TestGetServiceRefusesAnAmbiguousNameAndInvalidInputs(t *testing.T) {
 		collector := &fakeCollector{body: `{"data":[]}`}
 		if _, err := newTestService(collector).GetService(t.Context(), service); err == nil || len(collector.requests) != 0 {
 			t.Fatalf("service %q accepted", service)
+		}
+	}
+}
+
+func TestListServicesFiltersStates(t *testing.T) {
+	collector := &fakeCollector{body: `{"data":[],"meta":{"total":0}}`}
+	if _, err := newTestService(collector).ListServices(t.Context(), ListServicesOptions{ServiceFilters: ServiceFilters{Topology: "flex", Frozen: "frozen", Placement: "non-optimal"}}); err != nil {
+		t.Fatal(err)
+	}
+	if filters := strings.Join(collector.requests[0].query["filter"], "|"); filters != "svc_topology:eq:flex|svc_frozen:eq:frozen|svc_placement:eq:non-optimal" {
+		t.Fatalf("filters = %q", filters)
+	}
+	for _, filters := range []ServiceFilters{{Topology: "standby"}, {Frozen: "true"}, {Placement: "bad"}} {
+		collector := &fakeCollector{}
+		if _, err := newTestService(collector).ListServices(t.Context(), ListServicesOptions{ServiceFilters: filters}); err == nil || len(collector.requests) != 0 {
+			t.Fatalf("filters %+v accepted", filters)
+		}
+	}
+}
+
+func TestCountServices(t *testing.T) {
+	collector := &fakeCollector{body: `{"data":{"svc_placement":{"optimal":213,"non-optimal":26,"n/a":374,"empty":31}},"meta":{"distinct":{"svc_placement":4},"other":{"svc_placement":0},"total":644}}`}
+	count, err := newTestService(collector).CountServices(t.Context(), CountServicesOptions{GroupBy: "placement"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := collector.requests[0]
+	if request.path != "/services" || request.query.Get("stats") != "true" || request.query.Get("props") != "svc_placement" {
+		t.Fatalf("request = %+v", request)
+	}
+	if count.Total != 644 || count.Truncated || len(count.Groups) != 4 || count.Groups[0] != (CountGroup{"n/a", 374}) || count.Groups[3] != (CountGroup{"non-optimal", 26}) {
+		t.Fatalf("count = %+v", count)
+	}
+	collector = &fakeCollector{body: `{"data":[{"svc_id":"s-1"}],"meta":{"total":13}}`}
+	count, err = newTestService(collector).CountServices(t.Context(), CountServicesOptions{ServiceFilters: ServiceFilters{Topology: "flex", AvailStatus: "down"}})
+	if err != nil || count.Total != 13 || strings.Join(collector.requests[0].query["filter"], "|") != "svc_availstatus:eq:down|svc_topology:eq:flex" {
+		t.Fatalf("count = %+v, %v, %+v", count, err, collector.requests)
+	}
+	for _, options := range []CountServicesOptions{{GroupBy: "svcname"}, {ServiceFilters: ServiceFilters{Frozen: "yes"}}, {Limit: -1}} {
+		collector := &fakeCollector{}
+		if _, err := newTestService(collector).CountServices(t.Context(), options); err == nil || len(collector.requests) != 0 {
+			t.Fatalf("options %+v accepted", options)
 		}
 	}
 }

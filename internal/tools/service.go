@@ -7,15 +7,39 @@ import (
 	"github.com/opensvc/oc3-mcp/internal/core"
 )
 
-type ListServicesInput struct {
+// ServiceFiltersInput are the service filters shared by list_services and
+// count_services.
+type ServiceFiltersInput struct {
 	Name        string `json:"name,omitempty" jsonschema:"optional text the service name contains, case-insensitive"`
 	ClusterID   string `json:"cluster_id,omitempty" jsonschema:"optional exact cluster ID"`
 	App         string `json:"app,omitempty" jsonschema:"optional exact collector app"`
 	Env         string `json:"env,omitempty" jsonschema:"optional exact service environment, such as PRD or DEV"`
 	AvailStatus string `json:"availstatus,omitempty" jsonschema:"optional exact availability status, such as up, down, warn, n/a or undef"`
-	Node        string `json:"node,omitempty" jsonschema:"optional exact node name or node ID; lists only the services with an instance on that node"`
-	Limit       int    `json:"limit,omitempty" jsonschema:"optional page size between 1 and 200; defaults to 50"`
-	Cursor      string `json:"cursor,omitempty" jsonschema:"optional next_cursor returned by a previous call with the same filters"`
+	Topology    string `json:"topology,omitempty" jsonschema:"optional topology: failover or flex"`
+	Frozen      string `json:"frozen,omitempty" jsonschema:"optional freeze state of the service as a whole: frozen (every instance), unfrozen or mixed"`
+	Placement   string `json:"placement,omitempty" jsonschema:"optional placement state: optimal or non-optimal"`
+}
+
+func (f ServiceFiltersInput) core() core.ServiceFilters {
+	return core.ServiceFilters{
+		Name: f.Name, ClusterID: f.ClusterID, App: f.App, Env: f.Env, AvailStatus: f.AvailStatus,
+		Topology: f.Topology, Frozen: f.Frozen, Placement: f.Placement,
+	}
+}
+
+type CountServicesInput struct {
+	ServiceFiltersInput
+	GroupBy string `json:"group_by,omitempty" jsonschema:"optional grouping: cluster_id, app, env, topology, availstatus, overall_status, frozen, placement or provisioned"`
+	Limit   int    `json:"limit,omitempty" jsonschema:"optional number of values returned with group_by, the most frequent first, between 1 and 100; defaults to 20"`
+}
+
+type CountServicesOutput = core.ServiceCount
+
+type ListServicesInput struct {
+	ServiceFiltersInput
+	Node   string `json:"node,omitempty" jsonschema:"optional exact node name or node ID; lists only the services with an instance on that node"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"optional page size between 1 and 200; defaults to 50"`
+	Cursor string `json:"cursor,omitempty" jsonschema:"optional next_cursor returned by a previous call with the same filters"`
 }
 
 type ListServicesOutput = core.ServiceList
@@ -73,19 +97,39 @@ func RegisterServiceTools(registrar *Registrar, service *core.Service) error {
 			Name:  "list_services",
 			Title: "List collector services",
 			Description: "List the services the OpenSVC collector knows, sorted by name: service ID, cluster ID, app, environment, topology, aggregated availability, overall, freeze, placement and provisioned states, configured nodes and status update time. " +
-				"Filter by text in the name, exact cluster ID, app, environment or availability status, and by node to list only the services with an instance on it; use the cursor to continue a page. " +
+				"Filter by text in the name, exact cluster ID, app, environment, availability status, topology, freeze state or placement, and by node to list only the services with an instance on it; use the cursor to continue a page. " +
+				"To count services, or to break them down by a state, use count_services instead of reading every page. " +
 				"States are those the collector last received. Collector dates are as it gives them. Use get_service for the instances of one service.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input ListServicesInput) (*mcp.CallToolResult, ListServicesOutput, error) {
 			services, err := service.ListServices(ctx, core.ListServicesOptions{
-				Name: input.Name, ClusterID: input.ClusterID, App: input.App, Env: input.Env, AvailStatus: input.AvailStatus,
-				Node: input.Node, Limit: input.Limit, Cursor: input.Cursor,
+				ServiceFilters: input.core(), Node: input.Node, Limit: input.Limit, Cursor: input.Cursor,
 			})
 			if err != nil {
 				return nil, ListServicesOutput{}, err
 			}
 			return nil, services, nil
+		},
+	); err != nil {
+		return err
+	}
+	if err := addTool(
+		registrar,
+		&mcp.Tool{
+			Name:  "count_services",
+			Title: "Count collector services",
+			Description: "Count the services the OpenSVC collector knows that match the filters of list_services, except node, as the collector computes it, and with group_by break them down by one property, such as availstatus, overall_status, topology, frozen, placement, app, env or cluster_id, the most frequent values first. " +
+				"Use it for any question of how many services, or of their distribution by state, instead of reading the pages of list_services. " +
+				"States are those the collector last received.",
+			Annotations: readOnlyClosedWorldAnnotations(),
+		},
+		func(ctx context.Context, _ *mcp.CallToolRequest, input CountServicesInput) (*mcp.CallToolResult, CountServicesOutput, error) {
+			count, err := service.CountServices(ctx, core.CountServicesOptions{ServiceFilters: input.core(), GroupBy: input.GroupBy, Limit: input.Limit})
+			if err != nil {
+				return nil, CountServicesOutput{}, err
+			}
+			return nil, count, nil
 		},
 	); err != nil {
 		return err

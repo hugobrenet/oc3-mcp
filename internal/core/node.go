@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -27,15 +28,30 @@ var nodeDetailProps = []string{
 	"warranty_end", "maintenance_end", "hw_obs_warn_date", "hw_obs_alert_date", "os_obs_warn_date", "os_obs_alert_date",
 }
 
-type ListNodesOptions struct {
+// NodeFilters are the typed filters of list_nodes and count_nodes.
+type NodeFilters struct {
 	Name         string
 	ClusterID    string
 	App          string
 	Env          string
 	Frozen       bool
 	FrozenBefore string
-	Limit        int
-	Cursor       string
+	OSName       string
+	OSVendor     string
+	OSRelease    string
+	AgentVersion string
+	Manufacturer string
+	Model        string
+	Team         string
+	Country      string
+	City         string
+	SilentFor    string
+}
+
+type ListNodesOptions struct {
+	NodeFilters
+	Limit  int
+	Cursor string
 }
 
 type NodeList struct {
@@ -206,39 +222,13 @@ type collectorNode struct {
 // ListNodes reads one page of the nodes the collector account sees, sorted
 // by node name, with typed filters.
 func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (NodeList, error) {
-	for name, value := range map[string]string{"name": options.Name, "app": options.App, "env": options.Env} {
-		if err := validateFilterValue(name, value); err != nil {
-			return NodeList{}, err
-		}
-	}
-	if err := validateCollectorUUID("cluster_id", options.ClusterID); err != nil {
-		return NodeList{}, err
-	}
-	if err := validateCollectorDate("frozen_before", options.FrozenBefore); err != nil {
+	filters, err := options.NodeFilters.collectorFilters()
+	if err != nil {
 		return NodeList{}, err
 	}
 	limit, err := pageLimit(options.Limit, defaultListNodesLimit, maxListNodesLimit)
 	if err != nil {
 		return NodeList{}, err
-	}
-	var filters []string
-	if options.Name != "" {
-		filters = append(filters, filterContains("nodename", options.Name))
-	}
-	if options.ClusterID != "" {
-		filters = append(filters, filterEquals("cluster_id", options.ClusterID))
-	}
-	if options.App != "" {
-		filters = append(filters, filterEquals("app", options.App))
-	}
-	if options.Env != "" {
-		filters = append(filters, filterEquals("node_env", options.Env))
-	}
-	if options.Frozen || options.FrozenBefore != "" {
-		filters = append(filters, filterEquals("node_frozen", "T"))
-	}
-	if options.FrozenBefore != "" {
-		filters = append(filters, "node_frozen_at:lte:"+options.FrozenBefore)
 	}
 	fingerprint := listFingerprint(url.Values{"filter": filters})
 	offset, err := decodeListCursor(options.Cursor, fingerprint)
@@ -266,6 +256,70 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 		result.Truncated = true
 	}
 	return result, nil
+}
+
+// silentForPattern is a duration of the collector relative dates: a number
+// of days, hours or minutes.
+var silentForPattern = regexp.MustCompile(`^[1-9][0-9]{0,4}[dhm]$`)
+
+// collectorFilters translates the filters into collector filters.
+func (f NodeFilters) collectorFilters() ([]string, error) {
+	for name, value := range map[string]string{
+		"name": f.Name, "app": f.App, "env": f.Env, "os_name": f.OSName, "os_vendor": f.OSVendor, "os_release": f.OSRelease,
+		"agent_version": f.AgentVersion, "manufacturer": f.Manufacturer, "model": f.Model, "team": f.Team, "country": f.Country, "city": f.City,
+	} {
+		if err := validateFilterValue(name, value); err != nil {
+			return nil, err
+		}
+	}
+	if err := validateCollectorUUID("cluster_id", f.ClusterID); err != nil {
+		return nil, err
+	}
+	if err := validateCollectorDate("frozen_before", f.FrozenBefore); err != nil {
+		return nil, err
+	}
+	if f.SilentFor != "" && !silentForPattern.MatchString(f.SilentFor) {
+		return nil, fmt.Errorf("silent_for must be a number of days, hours or minutes, such as 7d, 12h or 30m")
+	}
+	var filters []string
+	contains := func(prop, value string) {
+		if value != "" {
+			filters = append(filters, filterContains(prop, value))
+		}
+	}
+	equals := func(prop, value string) {
+		if value != "" {
+			filters = append(filters, filterEquals(prop, value))
+		}
+	}
+	family := func(prop, value string) {
+		if value != "" {
+			filters = append(filters, filterEqualsOrFamily(prop, value))
+		}
+	}
+	contains("nodename", f.Name)
+	equals("cluster_id", f.ClusterID)
+	equals("app", f.App)
+	equals("node_env", f.Env)
+	if f.Frozen || f.FrozenBefore != "" {
+		filters = append(filters, filterEquals("node_frozen", "T"))
+	}
+	if f.FrozenBefore != "" {
+		filters = append(filters, "node_frozen_at:lte:"+f.FrozenBefore)
+	}
+	contains("os_name", f.OSName)
+	contains("os_vendor", f.OSVendor)
+	family("os_release", f.OSRelease)
+	family("version", f.AgentVersion)
+	contains("manufacturer", f.Manufacturer)
+	contains("model", f.Model)
+	contains("team_responsible", f.Team)
+	contains("loc_country", f.Country)
+	contains("loc_city", f.City)
+	if f.SilentFor != "" {
+		filters = append(filters, "last_comm:lt:-"+f.SilentFor)
+	}
+	return filters, nil
 }
 
 // GetNode reads one node by its exact name or node ID. A name held by
