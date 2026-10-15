@@ -445,3 +445,30 @@ func TestComplianceToolsReadTheCollector(t *testing.T) {
 		t.Fatalf("list_compliance_status = %+v", list)
 	}
 }
+
+func TestIPToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/ips":
+			if filters := strings.Join(r.URL.Query()["filter"], "|"); filters != "addr:eq:10.29.0.21" {
+				t.Errorf("ips filters = %q", filters)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","nodename":"n1","intf":"br-prd","type":"ipv4","addr":"10.29.0.21","mask":"24"}],"meta":{"total":1}}`))
+		case "/resources":
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s-1","services.svcname":"testnfs","node_id":"id-1","nodes.nodename":"n1","rid":"ip#1","res_type":"ip.host","res_status":"up",
+				"res_desc":"host 10.29.0.21/24 br-prd"}],"meta":{"total":1}}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, ips := call("list_ips", map[string]any{"ip": "10.29.0.21"})
+	nodes, _ := ips["node_addresses"].([]any)
+	services, _ := ips["service_addresses"].([]any)
+	if result.IsError || len(nodes) != 1 || nodes[0].(map[string]any)["interface"] != "br-prd" || len(services) != 1 || services[0].(map[string]any)["svcname"] != "testnfs" {
+		t.Fatalf("list_ips = %+v", ips)
+	}
+	if result, _ := call("list_ips", map[string]any{}); !result.IsError {
+		t.Fatal("a call without criterion was accepted")
+	}
+}
