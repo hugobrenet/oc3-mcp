@@ -11,6 +11,7 @@ func setValidEnv(t *testing.T) {
 	t.Setenv("OPENSVC_MCP_DELEGATED_SOCKET", "/run/opensvc-oc3-mcp/delegated.sock")
 	t.Setenv("OPENSVC_MCP_DELEGATED_ISSUER", "https://sso.example.com/application/o/oc3/")
 	t.Setenv("OPENSVC_MCP_DELEGATED_AUDIENCE", "collector-client-id")
+	t.Setenv("OPENSVC_MCP_DELEGATED_CA_FILE", "")
 	t.Setenv("OPENSVC_MCP_COLLECTOR_URL", "https://collector.example.com/api")
 	t.Setenv("OPENSVC_MCP_COLLECTOR_CA_FILE", "")
 	for _, name := range []string{"OPENSVC_MCP_TLS_CERT_FILE", "OPENSVC_MCP_TLS_KEY_FILE", "OPENSVC_MCP_LISTEN_ADDR", "OPENSVC_MCP_OAUTH_RESOURCE_URL",
@@ -81,6 +82,7 @@ func setHTTPSEnv(t *testing.T) {
 	t.Setenv("OPENSVC_MCP_DELEGATED_SOCKET", "")
 	t.Setenv("OPENSVC_MCP_DELEGATED_ISSUER", "")
 	t.Setenv("OPENSVC_MCP_DELEGATED_AUDIENCE", "")
+	t.Setenv("OPENSVC_MCP_DELEGATED_CA_FILE", "")
 	t.Setenv("OPENSVC_MCP_TLS_CERT_FILE", "/etc/opensvc-oc3-mcp/server.crt")
 	t.Setenv("OPENSVC_MCP_TLS_KEY_FILE", "/etc/opensvc-oc3-mcp/server.key")
 	t.Setenv("OPENSVC_MCP_LISTEN_ADDR", "")
@@ -230,6 +232,29 @@ func TestLoadDelegatedProvider(t *testing.T) {
 		t.Setenv("OPENSVC_MCP_DELEGATED_ISSUER", "https://sso.example.com/application/o/oc3/")
 		if _, err := Load(); err == nil {
 			t.Fatal("delegated provider accepted without the socket")
+		}
+	})
+}
+
+func TestLoadDelegatedCAFile(t *testing.T) {
+	// A socket-only configuration trusts a private CA for the OpenID provider.
+	setValidEnv(t)
+	t.Setenv("OPENSVC_MCP_DELEGATED_CA_FILE", "/etc/opensvc-oc3-mcp/sso-ca.pem")
+	if cfg, err := Load(); err != nil || cfg.HTTPSEnabled() || cfg.DelegatedCAFile != "/etc/opensvc-oc3-mcp/sso-ca.pem" {
+		t.Fatalf("socket-only CA refused: %+v %v", cfg, err)
+	}
+	t.Run("relative", func(t *testing.T) {
+		setValidEnv(t)
+		t.Setenv("OPENSVC_MCP_DELEGATED_CA_FILE", "sso-ca.pem")
+		if _, err := Load(); err == nil {
+			t.Fatal("relative CA path accepted")
+		}
+	})
+	t.Run("without the socket", func(t *testing.T) {
+		setHTTPSEnv(t)
+		t.Setenv("OPENSVC_MCP_DELEGATED_CA_FILE", "/etc/opensvc-oc3-mcp/sso-ca.pem")
+		if _, err := Load(); err == nil {
+			t.Fatal("CA accepted without the socket")
 		}
 	})
 }

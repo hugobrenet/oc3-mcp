@@ -20,7 +20,8 @@ OAuth.
 | OPENSVC_MCP_OAUTH_RESOURCE_URL | required with HTTPS | Public URL of the MCP, ending in `/mcp`: the audience of the incoming tokens |
 | OPENSVC_MCP_OAUTH_ISSUER | required with HTTPS | Issuer of the incoming tokens, the public OAuth client of the MCP |
 | OPENSVC_MCP_OAUTH_RESOURCE_NAME | OpenSVC Collector MCP | Name published in the resource metadata |
-| OPENSVC_MCP_OAUTH_CA_FILE | empty | Optional absolute PEM trust bundle for the issuer, also for the OpenID provider of the collector on the Unix socket |
+| OPENSVC_MCP_OAUTH_CA_FILE | empty | Optional absolute PEM trust bundle for the issuer |
+| OPENSVC_MCP_DELEGATED_CA_FILE | empty | Optional absolute PEM trust bundle for the OpenID provider of the collector of the Unix socket, replacing the system roots; without it, the socket uses `OPENSVC_MCP_OAUTH_CA_FILE` when the HTTPS listener has one, else the system roots. Requires the socket |
 | OPENSVC_MCP_AUTH_CONFIG_FILE | empty | Exchange profiles, see [token exchange](#token-exchange) |
 | OPENSVC_MCP_COLLECTOR_AUTH_PROFILE | empty | The profile of OPENSVC_MCP_AUTH_CONFIG_FILE that exchanges the tokens |
 | OPENSVC_MCP_COLLECTOR_AUDIENCE | empty | The audience requested for the collector: the client ID the collector trusts |
@@ -152,7 +153,7 @@ Both values follow the OpenID configuration of the collector, which its
 public `GET /api/auth/info` shows in its `oidc` object (`issuer`,
 `client_id`): when the collector changes them, update the MCP, which refuses
 the tokens meanwhile. The keys of the issuer are discovered and cached 5
-minutes, with the system roots or `OPENSVC_MCP_OAUTH_CA_FILE`; an unknown key
+minutes, with `OPENSVC_MCP_DELEGATED_CA_FILE` or the system roots; an unknown key
 ID reloads them at most every 30 seconds. When the keys cannot be loaded, the
 socket returns 503 with `Retry-After`.
 
