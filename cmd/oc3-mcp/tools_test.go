@@ -533,3 +533,23 @@ func TestFindObjectsReadsTheCollectorSearch(t *testing.T) {
 		t.Fatalf("find_objects item = %+v", item)
 	}
 }
+
+func TestRequestToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/workflows":
+			if filters := strings.Join(r.URL.Query()["filter"], "|"); filters != "status:eq:pending" {
+				t.Errorf("filters = %q", filters)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"id":1354,"form_name":"sample-vm-request","status":"pending","steps":1,"creator":" Manager","last_assignee":"Infra Unix"}],"meta":{"total":1}}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, list := call("list_requests", map[string]any{"status": "pending"})
+	items, _ := list["requests"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["assignee"] != "Infra Unix" || items[0].(map[string]any)["creator"] != "Manager" {
+		t.Fatalf("list_requests = %+v", list)
+	}
+}

@@ -107,6 +107,13 @@ func filterEquals(prop string, value string) string {
 	return prop + ":eq:" + value
 }
 
+// filterEqualsTrimmed matches prop equal to value, case-insensitively,
+// whatever the spaces around it: the collector stores some names with stray
+// spaces, such as the " Manager" of a user without a first name.
+func filterEqualsTrimmed(prop string, value string) string {
+	return prop + ":~^[[:space:]]*" + regexp.QuoteMeta(value) + "[[:space:]]*$"
+}
+
 // filterEqualsOrFamily matches prop equal to value or, when value ends with a
 // dot, such as service., starting with it.
 func filterEqualsOrFamily(prop string, value string) string {
