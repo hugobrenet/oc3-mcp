@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -457,6 +458,16 @@ func TestComplianceToolsReadTheCollector(t *testing.T) {
 				"variables":[{"var_name":"root_password","var_class":"raw","var_value":"s3cret"},{"var_name":"motd","var_class":"file","var_value":"{\"path\":\"/etc/motd\"}"}]}]}`))
 		case "/compliance/rulesets/22/usage":
 			_, _ = w.Write([]byte(`{"data":{"modulesets":[],"rulesets":[{"id":23,"ruleset_name":"os.linux.security"}],"nodes":[],"services":[]}}`))
+		case "/filtersets":
+			_, _ = w.Write([]byte(`{"data":[{"id":283,"fset_name":"big-memory"}],"meta":{"total":1}}`))
+		case "/filtersets/big-memory":
+			_, _ = w.Write([]byte(`{"data":[{"id":283,"fset_name":"big-memory"}]}`))
+		case "/filtersets/283/export":
+			_, _ = w.Write([]byte(`{"filtersets":[{"id":283,"fset_name":"big-memory","filters":[{"f_log_op":"AND","f_order":1,"filter":{"f_table":"nodes","f_field":"mem_bytes","f_op":">=","f_value":"131072"}}]}]}`))
+		case "/filtersets/283/nodes", "/filtersets/283/services":
+			_, _ = w.Write([]byte(`{"data":[],"meta":{"total":0}}`))
+		case "/filtersets/283/usage":
+			_, _ = w.Write([]byte(`{"data":{"rulesets":[{"id":1030,"ruleset_name":"ctx.big-memory"}],"users":[{"id":1,"email":"jane@example.com","name":"Jane Doe"}]}}`))
 		case "/compliance/modulesets/base.linux":
 			_, _ = w.Write([]byte(`{"data":[{"id":3,"modset_name":"base.linux"}]}`))
 		case "/compliance/modulesets/3/export":
@@ -502,6 +513,15 @@ func TestComplianceToolsReadTheCollector(t *testing.T) {
 	variables, _ := ruleset["variables"].([]any)
 	if result.IsError || len(variables) != 2 || variables[1].(map[string]any)["value"] != "(masked)" || ruleset["included_by"].([]any)[0] != "os.linux.security" {
 		t.Fatalf("get_compliance_ruleset = %+v", ruleset)
+	}
+	result, filtersets := call("list_filtersets", map[string]any{})
+	if items, _ := filtersets["filtersets"].([]any); result.IsError || len(items) != 1 {
+		t.Fatalf("list_filtersets = %+v", filtersets)
+	}
+	result, filterset := call("get_filterset", map[string]any{"filterset": "big-memory"})
+	if result.IsError || filterset["criteria"].([]any)[0].(map[string]any)["filter"] != "nodes.mem_bytes >= 131072" ||
+		filterset["rulesets"].([]any)[0] != "ctx.big-memory" || strings.Contains(fmt.Sprint(filterset), "Jane") || filterset["session_filter_users"] != float64(1) {
+		t.Fatalf("get_filterset = %+v", filterset)
 	}
 	result, modulesets := call("list_compliance_modulesets", map[string]any{})
 	items, _ := modulesets["modulesets"].([]any)
