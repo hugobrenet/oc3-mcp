@@ -539,14 +539,22 @@ func TestRequestToolsReadTheCollector(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
 		case "/workflows":
-			if filters := strings.Join(r.URL.Query()["filter"], "|"); filters != "status:eq:pending" {
+			if filters := strings.Join(r.URL.Query()["filter"], "|"); filters != "status:eq:pending" && filters != "id:eq:1354" {
 				t.Errorf("filters = %q", filters)
 			}
-			_, _ = w.Write([]byte(`{"data":[{"id":1354,"form_name":"sample-vm-request","status":"pending","steps":1,"creator":" Manager","last_assignee":"Infra Unix"}],"meta":{"total":1}}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":1354,"form_head_id":1411,"form_name":"sample-vm-request","status":"pending","steps":1,"creator":" Manager","last_assignee":"Infra Unix"}],"meta":{"total":1}}`))
+		case "/forms_store":
+			_, _ = w.Write([]byte(`{"data":[{"form_name":"sample-vm-request","form_submitter":" Manager","form_assignee":"Infra Unix","form_data":"{\"hostname\": \"web-12\"}",
+				"form_definition":{"Label":"Virtual machine request","Inputs":[{"Id":"hostname","Label":"Hostname"}]}}],"meta":{"total":1}}`))
 		default:
 			notFound(w, "missing")
 		}
 	})
+	result, details := call("get_request", map[string]any{"id": 1354})
+	steps, _ := details["steps"].([]any)
+	if result.IsError || len(steps) != 1 || steps[0].(map[string]any)["values"].([]any)[0].(map[string]any)["value"] != "web-12" {
+		t.Fatalf("get_request = %+v", details)
+	}
 	result, list := call("list_requests", map[string]any{"status": "pending"})
 	items, _ := list["requests"].([]any)
 	if result.IsError || len(items) != 1 || items[0].(map[string]any)["assignee"] != "Infra Unix" || items[0].(map[string]any)["creator"] != "Manager" {
