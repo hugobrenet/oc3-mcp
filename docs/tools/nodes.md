@@ -53,6 +53,19 @@ team or location. To count nodes, use `count_nodes`.
 GET /api/nodes?props=…&orderby=nodename,node_id&filter=…&limit=…&offset=…
 ```
 
+With `tag`, the MCP first resolves the tag by its name, which the collector
+compares case-insensitively, or by its ID, then reads the nodes holding it,
+with the same filters, sort and statistics:
+
+```text
+GET /api/tags?props=tag_id,tag_name&filter=tag_name:eq:<tag>&limit=200
+GET /api/tags/<tag_id>/nodes?…
+```
+
+A tag name several tags hold is refused with their IDs, unless one of them
+has exactly the spelling given. An unknown tag is refused, pointing to
+`list_tags`.
+
 The filters are built by the MCP from the typed inputs; the collector filter
 language is not exposed.
 
@@ -76,6 +89,7 @@ language is not exposed.
 | `team` | Optional text the name of the responsible team contains, case-insensitive |
 | `country`, `city` | Optional text the country or city of the node location contains, case-insensitive |
 | `silent_for` | Optional duration, in days, hours or minutes such as `7d`, `12h` or `30m`: lists only the nodes whose last contact with the collector is older. Nodes that never reported are left out |
+| `tag` | Optional exact tag name, case-insensitive, or tag ID: only the nodes holding this tag |
 | `limit` | Optional page size, 1 to 200, default 50 |
 | `cursor` | Optional `next_cursor` of a previous call with the same filters |
 
@@ -87,6 +101,7 @@ spaces. A cursor used with other filters is refused.
 | Output field | Meaning |
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
+| `tag` | With `tag`, the tag it resolved to: `tag_id`, `name` |
 | `total` | Nodes matching the filters, as the collector counts them |
 | `count`, `truncated` | Nodes in this page, and whether more remain |
 | `nodes[]` | `node_id`, `nodename`, `cluster_id`, `app`, `env`, `status`, `os`, `agent_version`, `last_comm`, `frozen`, `frozen_at` |
@@ -114,6 +129,9 @@ GET /api/nodes?props=node_id&filter=…&limit=1
 GET /api/nodes?stats=true&props=<grouping prop>&filter=…&limit=…
 ```
 
+With `tag`, the same queries read `/api/tags/<tag_id>/nodes`, as in
+`list_nodes`.
+
 With `stats`, the collector counts the rows of each value over the whole
 selection. It groups the values case-insensitively and shows one spelling of
 each, and refuses a count longer than 5 seconds.
@@ -122,7 +140,7 @@ each, and refuses a count longer than 5 seconds.
 
 | Input | Meaning |
 |---|---|
-| `name` … `silent_for` | The filters of `list_nodes`, with the same meaning |
+| `name` … `tag` | The filters of `list_nodes`, with the same meaning |
 | `group_by` | Optional grouping: `cluster_id`, `app`, `env`, `status`, `type`, `os_name`, `os_vendor`, `os_release`, `os_arch`, `agent_version`, `manufacturer`, `model`, `team`, `country` or `city` |
 | `limit` | Optional number of values returned with `group_by`, 1 to 100, default 20 |
 
@@ -131,6 +149,7 @@ each, and refuses a count longer than 5 seconds.
 | Output field | Meaning |
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
+| `tag` | With `tag`, the tag it resolved to |
 | `total` | Nodes matching the filters |
 | `group_by` | The grouping asked |
 | `groups[]` | With `group_by`: `value`, empty for the nodes without one, and `count`, the most frequent first |

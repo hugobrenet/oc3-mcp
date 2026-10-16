@@ -47,6 +47,8 @@ type NodeFilters struct {
 	Country      string
 	City         string
 	SilentFor    string
+	// Tag keeps the nodes holding this tag, by name or tag ID.
+	Tag string
 }
 
 type ListNodesOptions struct {
@@ -57,6 +59,7 @@ type ListNodesOptions struct {
 
 type NodeList struct {
 	Provenance Provenance    `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
+	Tag        *TagReference `json:"tag,omitempty" jsonschema:"the tag the tag filter resolved to; only the nodes holding it are listed"`
 	Total      int           `json:"total" jsonschema:"the number of nodes matching the filters, as the collector counts them"`
 	Count      int           `json:"count" jsonschema:"the number of nodes returned in this page"`
 	Nodes      []NodeSummary `json:"nodes" jsonschema:"the nodes sorted by node name, then node ID"`
@@ -221,7 +224,8 @@ type collectorNode struct {
 }
 
 // ListNodes reads one page of the nodes the collector account sees, sorted
-// by node name, with typed filters.
+// by node name, with typed filters and, with a tag, among the nodes holding
+// it.
 func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (NodeList, error) {
 	filters, err := options.NodeFilters.collectorFilters()
 	if err != nil {
@@ -231,20 +235,24 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 	if err != nil {
 		return NodeList{}, err
 	}
-	fingerprint := listFingerprint(url.Values{"filter": filters})
+	path, tag, err := s.taggedPath(ctx, options.Tag, "nodes")
+	if err != nil {
+		return NodeList{}, err
+	}
+	fingerprint := listFingerprint(url.Values{"path": {path}, "filter": filters})
 	offset, err := decodeListCursor(options.Cursor, fingerprint)
 	if err != nil {
 		return NodeList{}, err
 	}
 
 	var response collectorList[collectorNode]
-	if err := s.client.GetJSON(ctx, "/nodes", pageQuery(nodeSummaryProps, "nodename,node_id", filters, limit, offset), &response); err != nil {
+	if err := s.client.GetJSON(ctx, path, pageQuery(nodeSummaryProps, "nodename,node_id", filters, limit, offset), &response); err != nil {
 		return NodeList{}, fmt.Errorf("list nodes: %w", err)
 	}
 	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
 		return NodeList{}, fmt.Errorf("list nodes: unexpected collector response")
 	}
-	result := NodeList{Provenance: s.newProvenance(), Total: *response.Meta.Total, Count: len(response.Data), Nodes: make([]NodeSummary, 0, len(response.Data))}
+	result := NodeList{Provenance: s.newProvenance(), Tag: tag, Total: *response.Meta.Total, Count: len(response.Data), Nodes: make([]NodeSummary, 0, len(response.Data))}
 	for _, node := range response.Data {
 		result.Nodes = append(result.Nodes, NodeSummary{
 			NodeID: node.NodeID, Nodename: node.Nodename, ClusterID: node.ClusterID, App: node.App, Env: node.NodeEnv,
