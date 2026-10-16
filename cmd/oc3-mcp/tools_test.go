@@ -462,6 +462,9 @@ func TestComplianceToolsReadTheCollector(t *testing.T) {
 	if result, _ := call("list_compliance_runs", map[string]any{"action": "repair"}); !result.IsError {
 		t.Fatal("list_compliance_runs accepted action repair")
 	}
+	if result, _ := call("count_compliance_runs", map[string]any{"group_by": "date"}); !result.IsError {
+		t.Fatal("count_compliance_runs accepted group_by date")
+	}
 	result, list := call("list_compliance_status", map[string]any{"module": "sec.", "status": "nok"})
 	statuses, _ := list["statuses"].([]any)
 	if result.IsError || len(statuses) != 1 || statuses[0].(map[string]any)["status"] != "nok" || statuses[0].(map[string]any)["nodename"] != "n1" {

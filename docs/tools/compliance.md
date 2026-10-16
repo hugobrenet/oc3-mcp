@@ -3,6 +3,7 @@ domain: compliance
 tools:
   - list_compliance_status
   - list_compliance_runs
+  - count_compliance_runs
 stability: experimental
 ---
 
@@ -110,3 +111,42 @@ The node and the service are resolved as for `list_compliance_status`. The
 | `count`, `truncated` | Runs in this page, and whether more remain |
 | `runs[]` | `id`, `module`, `node_id`, `nodename`, `svc_id`, `svcname`, `action`, `status`, `exit_code`, `date`, `log`, as in `list_compliance_status` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
+
+### `count_compliance_runs`
+
+Counts the runs matching the filters of `list_compliance_runs`, as the
+collector computes it, and with `group_by` breaks them down by one property,
+the most frequent values first. Use it for how many checks failed or fixes ran
+over a period, and which modules or nodes have the most.
+
+#### Collector API
+
+```text
+GET /api/compliance/logs?props=id&filter=…&limit=1
+GET /api/compliance/logs?stats=true&props=<grouping prop>&filter=…&limit=…
+```
+
+The groupings read `run_module`, `nodes.nodename`, `services.svcname`,
+`run_action` and `run_status`; the exit codes 0, 1 and 2 are named `ok`, `nok`
+and `na`, another code is given as is. Runs on a node itself have no service:
+their service group is the empty value.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `node`, `service`, `module`, `action`, `status`, `since`, `until` | As for `list_compliance_runs` |
+| `group_by` | Optional grouping: `module`, `node`, `service`, `action` or `status` |
+| `limit` | Optional number of values returned with `group_by`, 1 to 100, default 20 |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `node`, `service` | The node or service the filters resolved to |
+| `total` | Runs matching the filters |
+| `group_by` | The grouping asked |
+| `groups[]` | With `group_by`: `value`, empty for the runs without one, and `count`, the most frequent first |
+| `distinct` | With `group_by`: distinct values among the matching runs |
+| `other`, `truncated` | With `group_by`: matching runs whose value was left out by `limit`, and whether there are any |

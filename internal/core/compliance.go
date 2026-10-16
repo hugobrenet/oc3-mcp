@@ -284,3 +284,86 @@ func complianceRunOf(row collectorComplianceStatus) ComplianceRun {
 		Action: row.Action, Status: status, ExitCode: row.Status, Date: row.Date, Log: log,
 	}
 }
+
+// complianceRunGroupProps are the groupings of count_compliance_runs and
+// their collector prop.
+var complianceRunGroupProps = map[string]string{
+	"module":  "run_module",
+	"node":    "nodes.nodename",
+	"service": "services.svcname",
+	"action":  "run_action",
+	"status":  "run_status",
+}
+
+// ComplianceRunGroupings lists the groupings of count_compliance_runs, sorted.
+func ComplianceRunGroupings() []string {
+	names := make([]string, 0, len(complianceRunGroupProps))
+	for name := range complianceRunGroupProps {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+type CountComplianceRunsOptions struct {
+	Node    string
+	Service string
+	Module  string
+	Action  string
+	Status  string
+	Since   string
+	Until   string
+	GroupBy string
+	Limit   int
+}
+
+type ComplianceRunCount struct {
+	Provenance Provenance        `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
+	Node       *NodeReference    `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
+	Service    *ServiceReference `json:"service,omitempty" jsonschema:"the service the service filter resolved to"`
+	Total      int               `json:"total" jsonschema:"the number of runs matching the filters, as the collector counts them"`
+	GroupBy    string            `json:"group_by,omitempty" jsonschema:"the grouping asked"`
+	Groups     []CountGroup      `json:"groups,omitempty" jsonschema:"with group_by, the most frequent values first, and the number of matching runs with each; a status is named ok, nok or na, another exit code given as is"`
+	Distinct   int               `json:"distinct,omitempty" jsonschema:"with group_by, the number of distinct values among the matching runs"`
+	Other      int               `json:"other,omitempty" jsonschema:"with group_by, the number of matching runs whose value is not in groups, left out by limit"`
+	Truncated  bool              `json:"truncated" jsonschema:"whether values were left out by limit"`
+}
+
+// CountComplianceRuns counts the runs of the compliance modules matching the
+// filters and, with a grouping, the runs of each value, as the collector
+// computes them.
+func (s *Service) CountComplianceRuns(ctx context.Context, options CountComplianceRunsOptions) (ComplianceRunCount, error) {
+	prop := ""
+	if options.GroupBy != "" {
+		var ok bool
+		if prop, ok = complianceRunGroupProps[options.GroupBy]; !ok {
+			return ComplianceRunCount{}, fmt.Errorf("group_by must be one of %s", strings.Join(ComplianceRunGroupings(), ", "))
+		}
+	}
+	limit, err := pageLimit(options.Limit, defaultCountGroups, maxCountGroups)
+	if err != nil {
+		return ComplianceRunCount{}, err
+	}
+	scope, err := s.complianceScope(ctx, complianceFilters{
+		Node: options.Node, Service: options.Service, Module: options.Module, Action: options.Action,
+		Status: options.Status, Since: options.Since, Until: options.Until,
+	})
+	if err != nil {
+		return ComplianceRunCount{}, err
+	}
+	total, groups, distinct, other, err := s.countRows(ctx, "/compliance/logs", "id", scope.filters, prop, limit)
+	if err != nil {
+		return ComplianceRunCount{}, fmt.Errorf("count compliance runs: %w", err)
+	}
+	if options.GroupBy == "status" {
+		for i, group := range groups {
+			if code, err := strconv.Atoi(group.Value); err == nil && code >= 0 && code < len(complianceStatusNames) {
+				groups[i].Value = complianceStatusNames[code]
+			}
+		}
+	}
+	return ComplianceRunCount{
+		Provenance: s.newProvenance(), Node: scope.node, Service: scope.service, Total: total, GroupBy: options.GroupBy,
+		Groups: groups, Distinct: distinct, Other: other, Truncated: other > 0,
+	}, nil
+}
