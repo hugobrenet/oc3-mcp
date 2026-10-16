@@ -30,12 +30,13 @@ type ServiceFiltersInput struct {
 	Topology    string `json:"topology,omitempty" jsonschema:"optional topology: failover or flex"`
 	Frozen      string `json:"frozen,omitempty" jsonschema:"optional freeze state of the service as a whole: frozen (every instance), unfrozen or mixed"`
 	Placement   string `json:"placement,omitempty" jsonschema:"optional placement state: optimal or non-optimal"`
+	Tag         string `json:"tag,omitempty" jsonschema:"optional exact tag name, case-insensitive, or tag ID; keeps only the services holding this tag, a label the collector users attach, such as backup-nightly"`
 }
 
 func (f ServiceFiltersInput) core() core.ServiceFilters {
 	return core.ServiceFilters{
 		Name: f.Name, ClusterID: f.ClusterID, App: f.App, Env: f.Env, AvailStatus: f.AvailStatus, Status: f.Status,
-		Topology: f.Topology, Frozen: f.Frozen, Placement: f.Placement,
+		Topology: f.Topology, Frozen: f.Frozen, Placement: f.Placement, Tag: f.Tag,
 	}
 }
 
@@ -135,7 +136,7 @@ func RegisterServiceTools(registrar *Registrar, service *core.Service) error {
 			Title: "List collector services",
 			Description: "List the services the OpenSVC collector knows, sorted by name: service ID, cluster ID, app, environment, topology, status, aggregated availability, freeze, placement and provisioned states, configured nodes and status update time. " +
 				"A service is up or down by its status, the aggregated overall status its agents report, as the collector Services page shows it: filter by status for the services down. " +
-				"Filter by text in the name, exact cluster ID, app, environment, status, availability status, topology, freeze state or placement, and by node to list only the services with an instance on it; use the cursor to continue a page. " +
+				"Filter by text in the name, tag, exact cluster ID, app, environment, status, availability status, topology, freeze state or placement, and by node to list only the services with an instance on it; use the cursor to continue a page. " +
 				"To count services, or to break them down by a state, use count_services instead of reading every page. " +
 				"States are those the collector last received. Collector dates are as it gives them. Use get_service for the instances of one service. " +
 				instancesPointer,

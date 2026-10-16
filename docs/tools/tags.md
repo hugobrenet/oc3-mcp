@@ -19,7 +19,9 @@ Implementation:
 
 Tags are a relation, not a column of the node or the service: a node may hold
 several, each with its own attach data. `get_node` and `get_service` therefore
-leave them out and point to `list_tags`.
+leave them out and point to `list_tags`. The nodes and services holding a tag
+are listed and counted by `list_nodes`, `count_nodes`, `list_services` and
+`count_services` with their `tag` filter.
 
 ## Tools
 

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -64,6 +65,94 @@ func TestListTagsRejectsInvalidInputs(t *testing.T) {
 	} {
 		collector := &fakeCollector{body: `{"data":[],"meta":{"total":0}}`}
 		if _, err := newTestService(collector).ListTags(t.Context(), options); err == nil || len(collector.requests) != 0 {
+			t.Fatalf("options %+v accepted", options)
+		}
+	}
+}
+
+func TestTagFilterReadsTheNodesAndServicesHoldingTheTag(t *testing.T) {
+	const tagID = "8c4a1d2e-0f3b-4c5d-9e6f-7a8b9c0d1e2f"
+	collector := &fakeCollector{answer: func(path string, query url.Values) string {
+		switch path {
+		case "/tags":
+			return `{"data":[{"tag_id":"` + tagID + `","tag_name":"pci-dss"}],"meta":{"total":1}}`
+		case "/tags/" + tagID + "/nodes":
+			if query.Get("stats") == "true" {
+				return `{"data":{"app":{"WEB":1,"DATA":1}},"meta":{"total":2,"distinct":{"app":2}}}`
+			}
+			return `{"data":[{"node_id":"n-1","nodename":"ams-dev-app01"}],"meta":{"total":2}}`
+		case "/tags/" + tagID + "/services":
+			if query.Get("stats") == "true" {
+				return `{"data":{"svc_status":{"down":1}},"meta":{"total":1,"distinct":{"svc_status":1}}}`
+			}
+			return `{"data":[{"svc_id":"s-1","svcname":"foo"}],"meta":{"total":1}}`
+		}
+		return `{"data":[],"meta":{"total":0}}`
+	}}
+	service := newTestService(collector)
+	nodes, err := service.ListNodes(t.Context(), ListNodesOptions{NodeFilters: NodeFilters{OSName: "linux", Tag: "PCI-DSS"}, Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if collector.requests[0].query.Get("filter") != "tag_name:eq:PCI-DSS" ||
+		collector.requests[1].query.Get("filter") != "os_name:~linux" || collector.requests[1].query.Get("orderby") != "nodename,node_id" {
+		t.Fatalf("requests = %+v", collector.requests)
+	}
+	if nodes.Tag == nil || nodes.Tag.TagID != tagID || nodes.Tag.Name != "pci-dss" || nodes.Total != 2 || !nodes.Truncated {
+		t.Fatalf("nodes = %+v", nodes)
+	}
+	// A cursor is bound to the tag: it does not continue the list of all nodes.
+	if _, err := service.ListNodes(t.Context(), ListNodesOptions{NodeFilters: NodeFilters{OSName: "linux"}, Cursor: nodes.NextCursor}); err == nil {
+		t.Fatal("cursor of a tagged list accepted without the tag")
+	}
+	count, err := service.CountNodes(t.Context(), CountNodesOptions{NodeFilters: NodeFilters{Tag: tagID}, GroupBy: "app"})
+	if err != nil || count.Tag == nil || count.Total != 2 || len(count.Groups) != 2 {
+		t.Fatalf("count = %+v, %v", count, err)
+	}
+	if request := collector.requests[len(collector.requests)-2]; request.query.Get("filter") != "tag_id:eq:"+tagID {
+		t.Fatalf("tag ID lookup = %+v", request)
+	}
+	services, err := service.ListServices(t.Context(), ListServicesOptions{ServiceFilters: ServiceFilters{Status: "down", Tag: "pci-dss"}})
+	if err != nil || services.Tag == nil || services.Total != 1 || services.Services[0].Svcname != "foo" {
+		t.Fatalf("services = %+v, %v", services, err)
+	}
+	if request := collector.requests[len(collector.requests)-1]; request.path != "/tags/"+tagID+"/services" || request.query.Get("filter") != "svc_status:eq:down" {
+		t.Fatalf("services request = %+v", request)
+	}
+	serviceCount, err := service.CountServices(t.Context(), CountServicesOptions{ServiceFilters: ServiceFilters{Tag: "pci-dss"}, GroupBy: "status"})
+	if err != nil || serviceCount.Tag == nil || serviceCount.Total != 1 || serviceCount.Groups[0].Value != "down" {
+		t.Fatalf("service count = %+v, %v", serviceCount, err)
+	}
+}
+
+func TestTagFilterRefusesUnknownAndAmbiguousTags(t *testing.T) {
+	collector := &fakeCollector{body: `{"data":[],"meta":{"total":0}}`}
+	if _, err := newTestService(collector).ListNodes(t.Context(), ListNodesOptions{NodeFilters: NodeFilters{Tag: "nosuch"}}); err == nil ||
+		!strings.Contains(err.Error(), "list_tags") || len(collector.requests) != 1 {
+		t.Fatalf("unknown tag: %v, %d requests", err, len(collector.requests))
+	}
+	collector = &fakeCollector{body: `{"data":[{"tag_id":"t-1","tag_name":"Test"},{"tag_id":"t-2","tag_name":"TEST"}],"meta":{"total":2}}`}
+	if _, err := newTestService(collector).CountServices(t.Context(), CountServicesOptions{ServiceFilters: ServiceFilters{Tag: "test"}}); err == nil ||
+		!strings.Contains(err.Error(), "t-1 (Test)") || !strings.Contains(err.Error(), "t-2 (TEST)") {
+		t.Fatalf("ambiguous tag: %v", err)
+	}
+	// The exact spelling picks one of the tags the collector matches case-insensitively.
+	collector = &fakeCollector{answer: func(path string, _ url.Values) string {
+		if path == "/tags" {
+			return `{"data":[{"tag_id":"t-1","tag_name":"Test"},{"tag_id":"t-2","tag_name":"TEST"}],"meta":{"total":2}}`
+		}
+		return `{"data":[],"meta":{"total":0}}`
+	}}
+	if count, err := newTestService(collector).CountNodes(t.Context(), CountNodesOptions{NodeFilters: NodeFilters{Tag: "TEST"}}); err != nil ||
+		count.Tag.TagID != "t-2" || collector.requests[1].path != "/tags/t-2/nodes" {
+		t.Fatalf("exact spelling: %+v, %v", count, err)
+	}
+	for _, options := range []ListServicesOptions{
+		{Node: "dev2n1", ServiceFilters: ServiceFilters{Tag: "pci-dss"}},
+		{ServiceFilters: ServiceFilters{Tag: " pci-dss"}},
+	} {
+		collector := &fakeCollector{body: `{"data":[],"meta":{"total":0}}`}
+		if _, err := newTestService(collector).ListServices(t.Context(), options); err == nil || len(collector.requests) != 0 {
 			t.Fatalf("options %+v accepted", options)
 		}
 	}

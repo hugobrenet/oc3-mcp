@@ -51,6 +51,8 @@ type ServiceFilters struct {
 	Topology    string
 	Frozen      string
 	Placement   string
+	// Tag keeps the services holding this tag, by name or tag ID.
+	Tag string
 }
 
 type ListServicesOptions struct {
@@ -63,6 +65,7 @@ type ListServicesOptions struct {
 type ServiceList struct {
 	Provenance Provenance       `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Node       *NodeReference   `json:"node,omitempty" jsonschema:"the node the node filter resolved to; only services with an instance on it are listed"`
+	Tag        *TagReference    `json:"tag,omitempty" jsonschema:"the tag the tag filter resolved to; only the services holding it are listed"`
 	Total      int              `json:"total" jsonschema:"the number of services matching the filters, as the collector counts them"`
 	Count      int              `json:"count" jsonschema:"the number of services returned in this page"`
 	Services   []ServiceSummary `json:"services" jsonschema:"the services sorted by name, then service ID"`
@@ -246,9 +249,6 @@ type collectorInstance struct {
 	MonHBStatus         string `json:"mon_hbstatus"`
 }
 
-// ListServices reads one page of the services the collector account sees,
-// sorted by name, with typed filters. With node, it lists the services
-// having an instance on that node.
 // validate checks the filters given by the caller.
 func (f ServiceFilters) validate() error {
 	for name, value := range map[string]string{"name": f.Name, "app": f.App, "env": f.Env, "availstatus": f.AvailStatus, "status": f.Status} {
@@ -285,11 +285,21 @@ func (f ServiceFilters) collectorFilters(prefix string) []string {
 	return filters
 }
 
+// ListServices reads one page of the services the collector account sees,
+// sorted by name, with typed filters. With node, it lists the services
+// having an instance on that node; with tag, those holding it.
 func (s *Service) ListServices(ctx context.Context, options ListServicesOptions) (ServiceList, error) {
 	if err := options.ServiceFilters.validate(); err != nil {
 		return ServiceList{}, err
 	}
+	if options.Node != "" && options.Tag != "" {
+		return ServiceList{}, fmt.Errorf("pass node or tag, not both")
+	}
 	limit, err := pageLimit(options.Limit, defaultListServicesLimit, maxListServicesLimit)
+	if err != nil {
+		return ServiceList{}, err
+	}
+	path, tag, err := s.taggedPath(ctx, options.Tag, "services")
 	if err != nil {
 		return ServiceList{}, err
 	}
@@ -308,7 +318,7 @@ func (s *Service) ListServices(ctx context.Context, options ListServicesOptions)
 		filters = append(filters, filterEquals("node_id", node.NodeID))
 	}
 	filters = append(filters, options.ServiceFilters.collectorFilters(prefix)...)
-	fingerprint := listFingerprint(url.Values{"filter": filters})
+	fingerprint := listFingerprint(url.Values{"path": {path}, "filter": filters})
 	offset, err := decodeListCursor(options.Cursor, fingerprint)
 	if err != nil {
 		return ServiceList{}, err
@@ -318,7 +328,7 @@ func (s *Service) ListServices(ctx context.Context, options ListServicesOptions)
 	var total *int
 	if node == nil {
 		var response collectorList[collectorService]
-		if err := s.client.GetJSON(ctx, "/services", pageQuery(serviceSummaryProps, "svcname,svc_id", filters, limit, offset), &response); err != nil {
+		if err := s.client.GetJSON(ctx, path, pageQuery(serviceSummaryProps, "svcname,svc_id", filters, limit, offset), &response); err != nil {
 			return ServiceList{}, fmt.Errorf("list services: %w", err)
 		}
 		services, total = response.Data, response.Meta.Total
@@ -347,7 +357,7 @@ func (s *Service) ListServices(ctx context.Context, options ListServicesOptions)
 	if total == nil || *total < 0 || len(services) > limit {
 		return ServiceList{}, fmt.Errorf("list services: unexpected collector response")
 	}
-	result := ServiceList{Provenance: s.newProvenance(), Node: node, Total: *total, Count: len(services), Services: make([]ServiceSummary, 0, len(services))}
+	result := ServiceList{Provenance: s.newProvenance(), Node: node, Tag: tag, Total: *total, Count: len(services), Services: make([]ServiceSummary, 0, len(services))}
 	for _, service := range services {
 		result.Services = append(result.Services, ServiceSummary{
 			SvcID: service.SvcID, Svcname: service.Svcname, ClusterID: service.ClusterID, App: service.SvcApp, Env: service.SvcEnv,

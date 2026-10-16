@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 )
 
 const (
@@ -141,4 +142,61 @@ func tagText(raw json.RawMessage) (string, bool) {
 		text = compact.String()
 	}
 	return truncateUTF8(text, maxTagDataBytes)
+}
+
+// TagReference is the tag a tag filter resolved to.
+type TagReference struct {
+	TagID string `json:"tag_id" jsonschema:"the collector tag ID"`
+	Name  string `json:"name" jsonschema:"the tag name"`
+}
+
+// lookupTag reads one tag by its name, which the collector compares
+// case-insensitively, or by its tag ID. A name several tags hold is refused
+// with their IDs, unless one of them has exactly this spelling.
+func (s *Service) lookupTag(ctx context.Context, tag string) (TagReference, error) {
+	if err := validateFilterValue("tag", tag); err != nil {
+		return TagReference{}, err
+	}
+	filter := filterEquals("tag_name", tag)
+	if collectorUUIDPattern.MatchString(tag) {
+		filter = filterEquals("tag_id", tag)
+	}
+	var response collectorList[collectorTag]
+	if err := s.client.GetJSON(ctx, "/tags", pageQuery([]string{"tag_id", "tag_name"}, "tag_name,tag_id", []string{filter}, maxListTagsLimit, 0), &response); err != nil {
+		return TagReference{}, fmt.Errorf("get tag %s: %w", tag, err)
+	}
+	var exact []collectorTag
+	for _, row := range response.Data {
+		if row.TagName == tag || row.TagID == tag {
+			exact = append(exact, row)
+		}
+	}
+	switch {
+	case len(response.Data) == 0:
+		return TagReference{}, fmt.Errorf("get tag %s: not found in the collector; use list_tags to see the tag names", tag)
+	case len(response.Data) == 1:
+		return TagReference{TagID: response.Data[0].TagID, Name: response.Data[0].TagName}, nil
+	case len(exact) == 1:
+		return TagReference{TagID: exact[0].TagID, Name: exact[0].TagName}, nil
+	default:
+		tags := make([]string, 0, len(response.Data))
+		for _, row := range response.Data {
+			tags = append(tags, row.TagID+" ("+row.TagName+")")
+		}
+		return TagReference{}, fmt.Errorf("get tag %s: the name matches %d tags, pass one tag ID: %s", tag, len(tags), strings.Join(tags, ", "))
+	}
+}
+
+// taggedPath is the collector list of the nodes or services, or with tag
+// of those holding it: the collector applies the same filters, sort and
+// statistics to both.
+func (s *Service) taggedPath(ctx context.Context, tag string, kind string) (string, *TagReference, error) {
+	if tag == "" {
+		return "/" + kind, nil, nil
+	}
+	found, err := s.lookupTag(ctx, tag)
+	if err != nil {
+		return "", nil, err
+	}
+	return "/tags/" + url.PathEscape(found.TagID) + "/" + kind, &found, nil
 }

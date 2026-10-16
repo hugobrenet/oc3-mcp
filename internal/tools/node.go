@@ -26,6 +26,7 @@ type NodeFiltersInput struct {
 	Country      string `json:"country,omitempty" jsonschema:"optional text the country of the node location contains, case-insensitive, such as France"`
 	City         string `json:"city,omitempty" jsonschema:"optional text the city of the node location contains, case-insensitive"`
 	SilentFor    string `json:"silent_for,omitempty" jsonschema:"optional; keeps only the nodes whose last contact with the collector is older than this duration, in days, hours or minutes, such as 7d, 12h or 30m; nodes that never reported are left out"`
+	Tag          string `json:"tag,omitempty" jsonschema:"optional exact tag name, case-insensitive, or tag ID; keeps only the nodes holding this tag, a label the collector users attach, such as pci-dss"`
 }
 
 func (f NodeFiltersInput) core() core.NodeFilters {
@@ -33,6 +34,7 @@ func (f NodeFiltersInput) core() core.NodeFilters {
 		Name: f.Name, ClusterID: f.ClusterID, App: f.App, Env: f.Env, Status: f.Status, Frozen: f.Frozen, FrozenBefore: f.FrozenBefore,
 		OSName: f.OSName, OSVendor: f.OSVendor, OSRelease: f.OSRelease, AgentVersion: f.AgentVersion,
 		Manufacturer: f.Manufacturer, Model: f.Model, Team: f.Team, Country: f.Country, City: f.City, SilentFor: f.SilentFor,
+		Tag: f.Tag,
 	}
 }
 
@@ -93,7 +95,7 @@ func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 			Title: "List collector nodes",
 			Description: "List the nodes the OpenSVC collector knows, sorted by name: node ID, cluster ID, app, environment, status, operating system, agent version, last contact with the collector, freeze flag and freeze date. " +
 				"status is the node status the collector Nodes page shows, a property set by the collector users with values each organization chooses, not reported by the node daemon. " +
-				"Filter by name, cluster, app, environment, status, operating system name, vendor and release, agent version, hardware manufacturer and model, responsible team, country, city, frozen state or freeze date, and by silent_for to find the nodes that stopped reporting; use the cursor to continue a page. " +
+				"Filter by name, tag, cluster, app, environment, status, operating system name, vendor and release, agent version, hardware manufacturer and model, responsible team, country, city, frozen state or freeze date, and by silent_for to find the nodes that stopped reporting; use the cursor to continue a page. " +
 				"To count nodes, or to break them down by a property, use count_nodes instead of reading every page. " +
 				"frozen_at is empty when the collector does not store the freeze date of the node. " +
 				"last_comm tells when the node daemon last reported: use silent_for for the nodes that stopped reporting. " +
