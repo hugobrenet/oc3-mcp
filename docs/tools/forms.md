@@ -16,7 +16,7 @@ Implementation:
 
 - business logic: `internal/core/form.go` and `internal/core/form_detail.go`,
   with the shared list helpers of `internal/core/collector_list.go` and the
-  masking rules of `internal/core/request_detail.go`;
+  masking rules of `internal/core/mask.go`;
 - MCP definitions: `internal/tools/form.go`.
 
 Visibility is that of the collector account of the caller: a manager sees

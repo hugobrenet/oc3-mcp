@@ -39,7 +39,8 @@ that of the collector account of the caller.
   clusters may hold the same name; the service ID is unique.
 - States are those the collector last received, not a live probe. Collector
   dates are returned as the collector gives them.
-- The configuration text of a service is never returned: it may hold secrets.
+- `get_service` returns the configuration text of a service, as its agents
+  pushed it, masked partially: see below.
 
 ## Tools
 
@@ -165,7 +166,7 @@ service ID.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `service` | `svc_id`, `svcname`, `cluster_id`, `app`, `env`, `comment` (untrusted text), `created`, `updated`, `snooze_till` |
-| `config` | `topology`, `ha`, `autostart`, `nodes`, `drp_node`, `drp_nodes`, `drp_type`, `flex_min_nodes`, `flex_max_nodes`, `flex_target` |
+| `config` | `topology`, `ha`, `autostart`, `nodes`, `drp_node`, `drp_nodes`, `drp_type`, `flex_min_nodes`, `flex_max_nodes`, `flex_target`, and the configuration `text`, `text_truncated`, `text_updated` |
 | `status` | Aggregated `overall`, `avail`, `frozen`, `placement`, `provisioned`, and `updated` |
 | `availability` | `rate_percent`, the availability of the last 30 days the collector computes, `sla_percent`, the target, each null when unknown, and `updated` |
 | `instances` | `total`, `count`, `truncated` after 200, and `items[]` sorted by node name |
@@ -174,6 +175,25 @@ Each instance holds `node_id`, `nodename`, `avail`, `overall`,
 `monitor_state` (such as `idle`), `monitor_global_expect` (such as `none`),
 `frozen`, `frozen_at`, `updated`, and `resources`: the status of its `ip`,
 `fs`, `disk`, `container`, `share`, `sync`, `app` and `hb` resources.
+
+#### Configuration text
+
+`config.text` is the `svc_config` the collector stores, the configuration the
+agents pushed, cut to 32 KiB, and `text_updated` when it last received it. The
+collector serves it to the same account; the MCP masks, with the rules of
+`internal/core/mask.go`:
+
+- the value of a `key = value` line whose key names a secret or a mail, such
+  as `env.DB_PASSWORD` or `acme_email`, and its indented continuation lines;
+  a key scoped to a node, such as `password@node1`, is read without its scope;
+- the email addresses of the values and of the comments, not of the keys,
+  which may hold a node scope such as `schedule@node1.example.com`.
+
+`secrets_environment` and `configs_environment` stay in clear: their values
+name the keys of the secret and configuration objects to read, such as
+`DB_PASSWORD=app/db_password`, not the secrets. The masking is partial: a
+secret under a key that names none stays in clear, and the tool description
+tells the model not to present the text as free of secrets.
 
 ### `get_service_status_history`
 

@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -20,9 +18,6 @@ const (
 	maxFormGroups        = 100
 	maxFormNameMatches   = 10
 )
-
-// yamlKeyLinePattern reads a "key: value" line of YAML, a list item or not.
-var yamlKeyLinePattern = regexp.MustCompile(`^(\s*(?:-\s+)?)([^:#\n]+?):(\s+)(\S.*)$`)
 
 var formDetailProps = []string{"id", "form_name", "form_type", "form_folder", "form_author", "form_created", "form_yaml", "form_definition"}
 
@@ -211,83 +206,4 @@ func formText(value any) string {
 	}
 	text, _ := valueText(value)
 	return text
-}
-
-// maskFormYAML masks, in the definition text of a form, the values of the
-// keys that may name a secret or an email address, block or flow ones
-// included, the email addresses, and the masked default values, then cuts
-// it.
-func maskFormYAML(text string, masked []string) (string, bool) {
-	lines := strings.Split(text, "\n")
-	// keyIndent is the indentation of the last sensitive key whose value
-	// goes on below it, -1 when none: its more indented lines are its value.
-	keyIndent := -1
-	for i, line := range lines {
-		indent := len(line) - len(strings.TrimLeft(line, " \t"))
-		if keyIndent >= 0 {
-			if strings.TrimSpace(line) == "" {
-				continue
-			}
-			if indent > keyIndent {
-				lines[i] = line[:indent] + maskedRequestValue
-				continue
-			}
-			keyIndent = -1
-		}
-		match := yamlKeyLinePattern.FindStringSubmatch(line)
-		if match == nil {
-			// A key alone on its line takes the more indented lines below.
-			item := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
-			if key, ok := strings.CutSuffix(item, ":"); ok && sensitiveName(strings.TrimSpace(key)) {
-				keyIndent = indent
-			}
-			lines[i] = maskFlowYAML(line)
-			continue
-		}
-		key, value := strings.TrimSpace(match[2]), strings.TrimSpace(match[4])
-		switch {
-		case sensitiveName(key):
-			lines[i] = match[1] + match[2] + ":" + match[3] + maskedRequestValue
-			// A block scalar, | or >, holds its value on the lines below.
-			if strings.HasPrefix(value, "|") || strings.HasPrefix(value, ">") {
-				keyIndent = indent
-			}
-		case slices.Contains(masked, unquoteYAML(value)):
-			// A masked default is masked where it is a value, not in other
-			// words that happen to hold it.
-			lines[i] = match[1] + match[2] + ":" + match[3] + maskedRequestValue
-		default:
-			lines[i] = maskFlowYAML(line)
-		}
-	}
-	text = strings.Join(lines, "\n")
-	text = emailPattern.ReplaceAllString(text, maskedRequestValue)
-	return truncateUTF8(text, maxFormYAML)
-}
-
-// yamlFlowPairPattern reads a key: value pair of a flow mapping, such as
-// {password: x, user: y}.
-var yamlFlowPairPattern = regexp.MustCompile(`([{,]\s*)([^{},:\[\]]+?)(\s*:\s*)([^,{}\[\]]+)`)
-
-// maskFlowYAML masks the values of the sensitive keys of the flow mappings
-// of a line.
-func maskFlowYAML(line string) string {
-	if !strings.Contains(line, "{") {
-		return line
-	}
-	return yamlFlowPairPattern.ReplaceAllStringFunc(line, func(pair string) string {
-		match := yamlFlowPairPattern.FindStringSubmatch(pair)
-		if !sensitiveName(strings.TrimSpace(match[2])) {
-			return pair
-		}
-		return match[1] + match[2] + match[3] + maskedRequestValue
-	})
-}
-
-// unquoteYAML reads a plain or quoted YAML scalar.
-func unquoteYAML(value string) string {
-	if len(value) >= 2 && (value[0] == '"' || value[0] == '\'') && value[len(value)-1] == value[0] {
-		return value[1 : len(value)-1]
-	}
-	return value
 }
