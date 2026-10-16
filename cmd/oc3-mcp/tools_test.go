@@ -448,13 +448,22 @@ func TestComplianceToolsReadTheCollector(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":[{"id":3,"modset_name":"base.linux"}],"meta":{"total":1}}`))
 		case "/compliance/modulesets_modules":
 			_, _ = w.Write([]byte(`{"data":[{"id":10,"modset_id":3,"modset_mod_name":"linux.files","autofix":"T"}],"meta":{"total":1}}`))
+		case "/compliance/rulesets":
+			_, _ = w.Write([]byte(`{"data":[{"id":22,"ruleset_name":"os.linux.base","ruleset_type":"explicit","ruleset_public":"T"}],"meta":{"total":1}}`))
+		case "/compliance/rulesets/os.linux.base":
+			_, _ = w.Write([]byte(`{"data":[{"id":22,"ruleset_name":"os.linux.base","ruleset_type":"explicit","ruleset_public":"T"}]}`))
+		case "/compliance/rulesets/22/export":
+			_, _ = w.Write([]byte(`{"filtersets":[],"rulesets":[{"id":22,"ruleset_name":"os.linux.base","ruleset_type":"explicit","fset_name":null,"rulesets":[],
+				"variables":[{"var_name":"root_password","var_class":"raw","var_value":"s3cret"},{"var_name":"motd","var_class":"file","var_value":"{\"path\":\"/etc/motd\"}"}]}]}`))
+		case "/compliance/rulesets/22/usage":
+			_, _ = w.Write([]byte(`{"data":{"modulesets":[],"rulesets":[{"id":23,"ruleset_name":"os.linux.security"}],"nodes":[],"services":[]}}`))
 		case "/compliance/modulesets/base.linux":
 			_, _ = w.Write([]byte(`{"data":[{"id":3,"modset_name":"base.linux"}]}`))
 		case "/compliance/modulesets/3/export":
 			_, _ = w.Write([]byte(`{"filtersets":[],"rulesets":[],"modulesets":[{"id":3,"modset_name":"base.linux","modules":[{"modset_mod_name":"linux.files","autofix":"T"}],"modulesets":[],"rulesets":[],"publications":["Everybody"],"responsibles":["Infra Unix"]}]}`))
 		case "/compliance/modulesets/3/usage":
 			_, _ = w.Write([]byte(`{"data":{"modulesets":[{"id":1,"modset_name":"app.web"}]}}`))
-		case "/compliance/modulesets/3/nodes", "/compliance/modulesets/3/services":
+		case "/compliance/modulesets/3/nodes", "/compliance/modulesets/3/services", "/compliance/rulesets/22/nodes", "/compliance/rulesets/22/services":
 			_, _ = w.Write([]byte(`{"data":[],"meta":{"total":0}}`))
 		case "/compliance/logs":
 			if filters := strings.Join(r.URL.Query()["filter"], "|"); filters != `run_module:eq:linux.files|run_action:eq:fix|run_date:lte:2026-09-30 23:59:59` {
@@ -484,6 +493,15 @@ func TestComplianceToolsReadTheCollector(t *testing.T) {
 	}
 	if result, _ := call("get_compliance_moduleset", map[string]any{}); !result.IsError {
 		t.Fatal("get_compliance_moduleset accepted no moduleset")
+	}
+	result, rulesets := call("list_compliance_rulesets", map[string]any{"type": "explicit"})
+	if items, _ := rulesets["rulesets"].([]any); result.IsError || len(items) != 1 || items[0].(map[string]any)["name"] != "os.linux.base" {
+		t.Fatalf("list_compliance_rulesets = %+v", rulesets)
+	}
+	result, ruleset := call("get_compliance_ruleset", map[string]any{"ruleset": "os.linux.base"})
+	variables, _ := ruleset["variables"].([]any)
+	if result.IsError || len(variables) != 2 || variables[1].(map[string]any)["value"] != "(masked)" || ruleset["included_by"].([]any)[0] != "os.linux.security" {
+		t.Fatalf("get_compliance_ruleset = %+v", ruleset)
 	}
 	result, modulesets := call("list_compliance_modulesets", map[string]any{})
 	items, _ := modulesets["modulesets"].([]any)
