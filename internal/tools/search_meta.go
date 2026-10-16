@@ -30,6 +30,7 @@ var coreTools = []string{"count_nodes", "list_nodes", "get_node", "count_service
 // description does not hold, such as synonyms: the model does not see them,
 // they only rank the tool in a search.
 var toolKeywords = map[string][]string{
+	"count_compliance_runs":        {"how many", "number of fixes", "failed checks", "compliance statistics", "per module", "per node", "distribution"},
 	"count_instances":              {"how many instances", "number of instances", "instances per node", "statistics", "distribution"},
 	"count_nodes":                  {"how many nodes", "number", "distribution", "statistics", "fleet", "inventory", "servers", "hosts"},
 	"count_services":               {"how many services", "number", "distribution", "statistics", "services down"},

@@ -152,3 +152,41 @@ func TestListComplianceRunsRejectsInvalidInputs(t *testing.T) {
 		}
 	}
 }
+
+func TestCountComplianceRunsGroupsAndNamesTheStatuses(t *testing.T) {
+	collector := &fakeCollector{body: `{"data":{"run_status":{"0":21,"1":10,"2":4,"3":1,"-15":1}},"meta":{"total":37,"distinct":{"run_status":5},"other":{"run_status":0}}}`}
+	count, err := newTestService(collector).CountComplianceRuns(t.Context(), CountComplianceRunsOptions{Action: "fix", Since: "2026-09-01", GroupBy: "status"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := collector.requests[0].query
+	if collector.requests[0].path != "/compliance/logs" || query.Get("stats") != "true" || query.Get("props") != "run_status" ||
+		strings.Join(query["filter"], " ") != "run_action:eq:fix run_date:gte:2026-09-01" {
+		t.Fatalf("request = %+v", collector.requests[0])
+	}
+	values := map[string]int{}
+	for _, group := range count.Groups {
+		values[group.Value] = group.Count
+	}
+	if count.Total != 37 || count.Distinct != 5 || count.Truncated || values["ok"] != 21 || values["nok"] != 10 || values["na"] != 4 || values["3"] != 1 || values["-15"] != 1 {
+		t.Fatalf("count = %+v", count)
+	}
+	// Without group_by, the total alone is read.
+	collector = &fakeCollector{body: `{"data":[{"id":1}],"meta":{"total":7}}`}
+	count, err = newTestService(collector).CountComplianceRuns(t.Context(), CountComplianceRunsOptions{Module: "sec."})
+	if err != nil || count.Total != 7 || count.Groups != nil || collector.requests[0].query.Get("limit") != "1" {
+		t.Fatalf("total = %+v, %v", count, err)
+	}
+	// A node grouping reads the joined node name.
+	collector = &fakeCollector{body: `{"data":{"nodes.nodename":{"dev2n2":8,"dev2n1":6}},"meta":{"total":14,"distinct":{"nodes.nodename":11},"other":{"nodes.nodename":23}}}`}
+	count, err = newTestService(collector).CountComplianceRuns(t.Context(), CountComplianceRunsOptions{GroupBy: "node", Limit: 2})
+	if err != nil || count.Groups[0].Value != "dev2n2" || count.Other != 23 || !count.Truncated || collector.requests[0].query.Get("props") != "nodes.nodename" {
+		t.Fatalf("by node = %+v, %v", count, err)
+	}
+	for _, options := range []CountComplianceRunsOptions{{GroupBy: "date"}, {Limit: 101}, {Action: "repair"}, {Until: "tomorrow"}} {
+		collector := &fakeCollector{body: `{"data":[],"meta":{"total":0}}`}
+		if _, err := newTestService(collector).CountComplianceRuns(t.Context(), options); err == nil || len(collector.requests) != 0 {
+			t.Fatalf("options %+v accepted", options)
+		}
+	}
+}

@@ -33,6 +33,20 @@ type ListComplianceRunsInput struct {
 
 type ListComplianceRunsOutput = core.ComplianceRunList
 
+type CountComplianceRunsInput struct {
+	Node    string `json:"node,omitempty" jsonschema:"optional exact node name or node ID; the runs on that node, its service instances included"`
+	Service string `json:"service,omitempty" jsonschema:"optional exact service name or service ID; the runs for the instances of that service"`
+	Module  string `json:"module,omitempty" jsonschema:"optional exact module, such as sec.ssh, or with a trailing dot a whole family, such as sec."`
+	Action  string `json:"action,omitempty" jsonschema:"optional action: check, fixable (a check of whether a fix applies) or fix"`
+	Status  string `json:"status,omitempty" jsonschema:"optional status: ok, nok (not compliant) or na (not applicable)"`
+	Since   string `json:"since,omitempty" jsonschema:"optional earliest run date, in collector local time: YYYY-MM-DD, YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS"`
+	Until   string `json:"until,omitempty" jsonschema:"optional latest run date, in collector local time; a day alone is taken to its end"`
+	GroupBy string `json:"group_by,omitempty" jsonschema:"optional grouping: module, node, service, action or status"`
+	Limit   int    `json:"limit,omitempty" jsonschema:"optional number of values returned with group_by, the most frequent first, between 1 and 100; defaults to 20"`
+}
+
+type CountComplianceRunsOutput = core.ComplianceRunCount
+
 func RegisterComplianceTools(registrar *Registrar, service *core.Service) error {
 	if err := addTool(
 		registrar,
@@ -58,7 +72,7 @@ func RegisterComplianceTools(registrar *Registrar, service *core.Service) error 
 	); err != nil {
 		return err
 	}
-	return addTool(
+	if err := addTool(
 		registrar,
 		&mcp.Tool{
 			Name:  "list_compliance_runs",
@@ -79,6 +93,29 @@ func RegisterComplianceTools(registrar *Registrar, service *core.Service) error 
 				return nil, ListComplianceRunsOutput{}, err
 			}
 			return nil, runs, nil
+		},
+	); err != nil {
+		return err
+	}
+	return addTool(
+		registrar,
+		&mcp.Tool{
+			Name:  "count_compliance_runs",
+			Title: "Count compliance runs",
+			Description: "Count the runs of the compliance modules matching the filters of list_compliance_runs, as the collector computes it, and with group_by break them down by module, node, service, action or status, the most frequent values first. " +
+				"Use it for how many checks failed or fixes ran over a period, and which modules or nodes have the most, instead of reading the pages of list_compliance_runs. " +
+				"Status is ok (exit code 0), nok (1, not compliant) or na (2, not applicable); another exit code is given as is. Collector dates are in its local time without a zone.",
+			Annotations: readOnlyClosedWorldAnnotations(),
+		},
+		func(ctx context.Context, _ *mcp.CallToolRequest, input CountComplianceRunsInput) (*mcp.CallToolResult, CountComplianceRunsOutput, error) {
+			count, err := service.CountComplianceRuns(ctx, core.CountComplianceRunsOptions{
+				Node: input.Node, Service: input.Service, Module: input.Module, Action: input.Action, Status: input.Status,
+				Since: input.Since, Until: input.Until, GroupBy: input.GroupBy, Limit: input.Limit,
+			})
+			if err != nil {
+				return nil, CountComplianceRunsOutput{}, err
+			}
+			return nil, count, nil
 		},
 	)
 }
