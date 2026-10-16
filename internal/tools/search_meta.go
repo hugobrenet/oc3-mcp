@@ -38,6 +38,7 @@ var toolKeywords = map[string][]string{
 	"get_node":                     {"node details", "server", "host", "machine", "hardware", "operating system", "warranty", "location", "rack"},
 	"get_node_san_topology":        {"fc", "fibre channel", "hba", "fabric", "switch", "zoning", "storage paths", "wwn", "multipath"},
 	"get_node_stats":               {"performance", "metrics", "cpu", "memory", "load", "usage", "io", "network traffic", "saturation"},
+	"get_request":                  {"request details", "request steps", "decision", "form values", "who approved", "values entered"},
 	"get_service":                  {"service details", "instances", "availability", "sla", "topology", "where it runs"},
 	"get_service_action_logs":      {"action log", "output", "error", "failure", "why it failed", "session"},
 	"get_service_resource_history": {"resource history", "since when", "degraded", "flapping", "resource down"},

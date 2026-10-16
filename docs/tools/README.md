@@ -21,7 +21,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Tags | `list_tags` | [Tag tools](tags.md) |
 | Apps | `get_app` | [App tools](apps.md) |
 | Find | `find_objects` | [Find tools](find.md) |
-| Requests | `list_requests` | [Request tools](requests.md) |
+| Requests | `list_requests`, `get_request` | [Request tools](requests.md) |
 
 ## Conventions
 

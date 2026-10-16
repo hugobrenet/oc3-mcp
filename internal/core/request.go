@@ -134,14 +134,19 @@ func (s *Service) ListRequests(ctx context.Context, options ListRequestsOptions)
 	}
 	result := RequestList{Provenance: s.newProvenance(), Total: *response.Meta.Total, Count: len(response.Data), Requests: make([]Request, 0, len(response.Data))}
 	for _, row := range response.Data {
-		result.Requests = append(result.Requests, Request{
-			ID: row.ID, Form: row.FormName, FormFolder: row.FormFolder, LastForm: row.LastFormName, Status: row.Status, Steps: row.Steps,
-			Creator: strings.TrimSpace(row.Creator), Created: row.CreateDate, Assignee: strings.TrimSpace(row.LastAssignee), Updated: row.LastUpdate,
-		})
+		result.Requests = append(result.Requests, requestOf(row))
 	}
 	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
 	return result, nil
+}
+
+// requestOf turns a collector workflow row into a request.
+func requestOf(row collectorRequest) Request {
+	return Request{
+		ID: row.ID, Form: row.FormName, FormFolder: row.FormFolder, LastForm: row.LastFormName, Status: row.Status, Steps: row.Steps,
+		Creator: strings.TrimSpace(row.Creator), Created: row.CreateDate, Assignee: strings.TrimSpace(row.LastAssignee), Updated: row.LastUpdate,
+	}
 }
