@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -24,26 +23,6 @@ const (
 	maxRequestValues   = 256 << 10
 	maskedRequestValue = "(masked)"
 )
-
-// sensitiveNamePattern tells, by whole words, the names of the inputs and
-// keys whose value may be a secret or an email address: admin_password,
-// apiKey, Authorization or requestor_email, not private_ip or bypass.
-var sensitiveNamePattern = regexp.MustCompile(`(?i)(^|[^a-z])(pass(word|wd|phrase)?s?|pwd|secrets?|tokens?|credentials?|private[ _-]?keys?|(api|ssh|secret|access)[ _-]?keys?|authorization|cookies?|e?[ _-]?mails?)([^a-z]|$)`)
-
-// camelCasePattern splits camelCase names into words: apiKey reads api_Key.
-var camelCasePattern = regexp.MustCompile(`([a-z0-9])([A-Z])`)
-
-// emailPattern tells a text that holds an email address.
-var emailPattern = regexp.MustCompile(`[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}`)
-
-func sensitiveName(names ...string) bool {
-	for _, name := range names {
-		if name != "" && sensitiveNamePattern.MatchString(camelCasePattern.ReplaceAllString(name, "${1}_${2}")) {
-			return true
-		}
-	}
-	return false
-}
 
 var requestStepProps = []string{"id", "form_name", "form_submitter", "form_submit_date", "form_assignee", "form_data", "form_definition"}
 
@@ -294,41 +273,6 @@ func valuesSize(values []RequestValue) int {
 		size += valueSize(value)
 	}
 	return size
-}
-
-// maskValue masks, in a JSON value, the values of the sensitive keys of its
-// objects and the strings holding an email address, and tells whether it
-// masked any.
-func maskValue(value any) (any, bool) {
-	switch value := value.(type) {
-	case map[string]any:
-		masked := make(map[string]any, len(value))
-		found := false
-		for key, item := range value {
-			if sensitiveName(key) {
-				masked[key], found = maskedRequestValue, true
-				continue
-			}
-			var itemFound bool
-			masked[key], itemFound = maskValue(item)
-			found = found || itemFound
-		}
-		return masked, found
-	case []any:
-		masked := make([]any, len(value))
-		found := false
-		for i, item := range value {
-			var itemFound bool
-			masked[i], itemFound = maskValue(item)
-			found = found || itemFound
-		}
-		return masked, found
-	case string:
-		if emailPattern.MatchString(value) {
-			return maskedRequestValue, true
-		}
-	}
-	return value, false
 }
 
 // valueText writes a value as text: a string as it is, another JSON value
