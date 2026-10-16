@@ -36,10 +36,11 @@ var toolKeywords = map[string][]string{
 	"find_objects":                 {"search", "lookup", "partial name", "unknown name", "what is", "fuzzy", "find"},
 	"get_app":                      {"application", "owner", "ownership", "responsible", "team", "who", "contact"},
 	"get_form":                     {"form details", "form inputs", "fields", "form yaml", "who can submit", "form definition"},
+	"get_group":                    {"group details", "responsible for", "what does the team manage", "team responsibilities", "group apps"},
 	"get_node":                     {"node details", "server", "host", "machine", "hardware", "operating system", "warranty", "location", "rack"},
 	"get_node_san_topology":        {"fc", "fibre channel", "hba", "fabric", "switch", "zoning", "storage paths", "wwn", "multipath"},
 	"get_node_sysreport_diff":      {"sysreport", "what changed", "configuration change", "diff", "before after", "file change", "drift"},
-	"get_node_sysreport_file":      {"sysreport", "file content", "configuration file", "command output", "fstab", "sysctl", "hosts"},
+	"get_node_sysreport_file":      {"sysreport", "file content", "configuration file", "command output", "show file", "hosts"},
 	"get_node_stats":               {"performance", "metrics", "cpu", "memory", "load", "usage", "io", "network traffic", "saturation"},
 	"get_request":                  {"request details", "request steps", "decision", "form values", "who approved", "values entered"},
 	"get_service":                  {"service details", "instances", "availability", "sla", "topology", "where it runs"},
@@ -50,6 +51,7 @@ var toolKeywords = map[string][]string{
 	"list_clusters":                {"cluster", "quorum", "cluster list", "agent version"},
 	"list_collector_events":        {"event", "audit", "collector log", "who changed", "history", "undef"},
 	"list_compliance_status":       {"compliance", "non-compliant", "module", "policy", "security", "fix", "drift"},
+	"list_groups":                  {"groups", "teams", "list groups", "organization", "privilege", "role", "user groups", "membership", "belong"},
 	"list_instances":               {"instance", "instances down", "passive", "failover", "standby", "frozen", "running on node"},
 	"list_forms":                   {"form", "forms catalog", "which form", "request form", "compliance variable", "template"},
 	"list_ips":                     {"ip", "address", "owner", "ownership", "vip", "interface", "mac", "network", "subnet"},
@@ -66,6 +68,7 @@ var toolKeywords = map[string][]string{
 	"list_service_resources":       {"resource", "filesystem", "ip", "disk", "container", "driver", "resource status"},
 	"list_services":                {"service list", "applications", "services down", "frozen", "placement"},
 	"list_tags":                    {"tag", "label", "labels", "attribute", "classification", "metadata"},
+	"list_users":                   {"user", "users", "people", "person", "who", "member", "members", "contact", "team members", "group members", "who is in"},
 }
 
 // searchMeta is the _meta of a tool for the tool search. Every tool has
