@@ -78,7 +78,15 @@ GET /api/tags/<tag_id>/services?…
 A tag name several tags hold is refused with their IDs, unless one of them
 has exactly the spelling given. An unknown tag is refused, pointing to
 `list_tags`.
-`node` and `tag` are not combined.
+
+With `filterset`, the MCP resolves the filterset by its exact name or ID,
+`GET /api/filtersets/<filterset>?props=…`, then reads the services it selects
+with the same filters, sort and statistics, `GET /api/filtersets/<id>/services?…`.
+The members are those the collector computes, which does not apply the logic
+of an included filterset: see [filterset tools](filtersets.md). An unknown
+filterset is refused, pointing to `list_filtersets`. `tag` and `filterset` are
+not combined.
+`node`, `tag` and `filterset` are not combined.
 
 The filters are built by the MCP from the typed inputs; the collector filter
 language is not exposed.
@@ -97,6 +105,7 @@ language is not exposed.
 | `frozen` | Optional freeze state of the service as a whole: `frozen` (every instance), `unfrozen` or `mixed` |
 | `placement` | Optional placement state: `optimal` or `non-optimal` |
 | `tag` | Optional exact tag name, case-insensitive, or tag ID: only the services holding this tag |
+| `filterset` | Optional exact filterset name or ID: only the services the filterset selects. Not with `tag` |
 | `node` | Optional exact node name or node ID: only the services with an instance on it. A name several nodes hold is refused with their node IDs |
 | `limit` | Optional page size, 1 to 200, default 50 |
 | `cursor` | Optional `next_cursor` of a previous call with the same filters |
@@ -108,6 +117,7 @@ language is not exposed.
 | `provenance` | Collector API source and MCP collection time |
 | `node` | With `node`, the node it resolved to: `node_id`, `nodename`, `cluster_id` |
 | `tag` | With `tag`, the tag it resolved to: `tag_id`, `name` |
+| `filterset` | With `filterset`, the filterset it resolved to: `id`, `name` |
 | `total` | Services matching the filters, as the collector counts them |
 | `count`, `truncated` | Services in this page, and whether more remain |
 | `services[]` | `svc_id`, `svcname`, `cluster_id`, `app`, `env`, `topology`, `status` (the aggregated overall status), `availstatus`, `frozen` (`frozen`, `unfrozen`, `mixed` or `n/a`), `placement`, `provisioned`, `nodes` (the nodes of the configuration), `status_updated` |
@@ -133,6 +143,7 @@ GET /api/services?stats=true&props=<grouping prop>&filter=…&limit=…
 
 With `tag`, the same queries read `/api/tags/<tag_id>/services`, as in
 `list_services`.
+With `filterset`, they read `/api/filtersets/<id>/services`.
 
 With `stats`, the collector counts the rows of each value over the whole
 selection. It groups the values case-insensitively and shows one spelling of
@@ -142,7 +153,7 @@ each, and refuses a count longer than 5 seconds.
 
 | Input | Meaning |
 |---|---|
-| `name` … `tag` | The filters of `list_services` except `node`, with the same meaning, `status` included |
+| `name` … `filterset` | The filters of `list_services` except `node`, with the same meaning, `status` included |
 | `group_by` | Optional grouping: `cluster_id`, `app`, `env`, `topology`, `status`, `availstatus`, `frozen`, `placement` or `provisioned` |
 | `limit` | Optional number of values returned with `group_by`, 1 to 100, default 20 |
 
@@ -152,6 +163,7 @@ each, and refuses a count longer than 5 seconds.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `tag` | With `tag`, the tag it resolved to |
+| `filterset` | With `filterset`, the filterset it resolved to |
 | `total` | Services matching the filters |
 | `group_by` | The grouping asked |
 | `groups[]` | With `group_by`: `value`, empty for the services without one, and `count`, the most frequent first |

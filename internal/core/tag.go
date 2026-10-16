@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -187,16 +188,31 @@ func (s *Service) lookupTag(ctx context.Context, tag string) (TagReference, erro
 	}
 }
 
-// taggedPath is the collector list of the nodes or services, or with tag
-// of those holding it: the collector applies the same filters, sort and
-// statistics to both.
-func (s *Service) taggedPath(ctx context.Context, tag string, kind string) (string, *TagReference, error) {
-	if tag == "" {
-		return "/" + kind, nil, nil
+// memberPath is the collector list of the nodes or services, or with tag
+// of those holding it, or with filterset of those it selects: the collector
+// applies the same filters, sort and statistics to the three.
+func (s *Service) memberPath(ctx context.Context, tag, filterset, kind string) (string, *TagReference, *FiltersetReference, error) {
+	switch {
+	case tag != "" && filterset != "":
+		return "", nil, nil, fmt.Errorf("pass tag or filterset, not both")
+	case tag != "":
+		found, err := s.lookupTag(ctx, tag)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		return "/tags/" + url.PathEscape(found.TagID) + "/" + kind, &found, nil, nil
+	case filterset != "":
+		if strings.Contains(filterset, "/") {
+			return "", nil, nil, fmt.Errorf("filterset must be one exact filterset name or filterset ID")
+		}
+		if err := validateFilterValue("filterset", filterset); err != nil {
+			return "", nil, nil, err
+		}
+		found, err := s.lookupFilterset(ctx, filterset)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		return "/filtersets/" + strconv.Itoa(found.ID) + "/" + kind, nil, &FiltersetReference{ID: found.ID, Name: found.Name}, nil
 	}
-	found, err := s.lookupTag(ctx, tag)
-	if err != nil {
-		return "", nil, err
-	}
-	return "/tags/" + url.PathEscape(found.TagID) + "/" + kind, &found, nil
+	return "/" + kind, nil, nil, nil
 }

@@ -66,6 +66,14 @@ A tag name several tags hold is refused with their IDs, unless one of them
 has exactly the spelling given. An unknown tag is refused, pointing to
 `list_tags`.
 
+With `filterset`, the MCP resolves the filterset by its exact name or ID,
+`GET /api/filtersets/<filterset>?props=…`, then reads the nodes it selects
+with the same filters, sort and statistics, `GET /api/filtersets/<id>/nodes?…`.
+The members are those the collector computes, which does not apply the logic
+of an included filterset: see [filterset tools](filtersets.md). An unknown
+filterset is refused, pointing to `list_filtersets`. `tag` and `filterset` are
+not combined.
+
 The filters are built by the MCP from the typed inputs; the collector filter
 language is not exposed.
 
@@ -90,6 +98,7 @@ language is not exposed.
 | `country`, `city` | Optional text the country or city of the node location contains, case-insensitive |
 | `silent_for` | Optional duration, in days, hours or minutes such as `7d`, `12h` or `30m`: lists only the nodes whose last contact with the collector is older. Nodes that never reported are left out |
 | `tag` | Optional exact tag name, case-insensitive, or tag ID: only the nodes holding this tag |
+| `filterset` | Optional exact filterset name or ID: only the nodes the filterset selects. Not with `tag` |
 | `limit` | Optional page size, 1 to 200, default 50 |
 | `cursor` | Optional `next_cursor` of a previous call with the same filters |
 
@@ -102,6 +111,7 @@ spaces. A cursor used with other filters is refused.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `tag` | With `tag`, the tag it resolved to: `tag_id`, `name` |
+| `filterset` | With `filterset`, the filterset it resolved to: `id`, `name` |
 | `total` | Nodes matching the filters, as the collector counts them |
 | `count`, `truncated` | Nodes in this page, and whether more remain |
 | `nodes[]` | `node_id`, `nodename`, `cluster_id`, `app`, `env`, `status`, `os`, `agent_version`, `last_comm`, `frozen`, `frozen_at` |
@@ -131,6 +141,7 @@ GET /api/nodes?stats=true&props=<grouping prop>&filter=…&limit=…
 
 With `tag`, the same queries read `/api/tags/<tag_id>/nodes`, as in
 `list_nodes`.
+With `filterset`, they read `/api/filtersets/<id>/nodes`.
 
 With `stats`, the collector counts the rows of each value over the whole
 selection. It groups the values case-insensitively and shows one spelling of
@@ -140,7 +151,7 @@ each, and refuses a count longer than 5 seconds.
 
 | Input | Meaning |
 |---|---|
-| `name` … `tag` | The filters of `list_nodes`, with the same meaning |
+| `name` … `filterset` | The filters of `list_nodes`, with the same meaning |
 | `group_by` | Optional grouping: `cluster_id`, `app`, `env`, `status`, `type`, `os_name`, `os_vendor`, `os_release`, `os_arch`, `agent_version`, `manufacturer`, `model`, `team`, `country` or `city` |
 | `limit` | Optional number of values returned with `group_by`, 1 to 100, default 20 |
 
@@ -150,6 +161,7 @@ each, and refuses a count longer than 5 seconds.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `tag` | With `tag`, the tag it resolved to |
+| `filterset` | With `filterset`, the filterset it resolved to |
 | `total` | Nodes matching the filters |
 | `group_by` | The grouping asked |
 | `groups[]` | With `group_by`: `value`, empty for the nodes without one, and `count`, the most frequent first |

@@ -53,6 +53,8 @@ type ServiceFilters struct {
 	Placement   string
 	// Tag keeps the services holding this tag, by name or tag ID.
 	Tag string
+	// Filterset keeps the services this filterset selects, by name or ID.
+	Filterset string
 }
 
 type ListServicesOptions struct {
@@ -63,14 +65,15 @@ type ListServicesOptions struct {
 }
 
 type ServiceList struct {
-	Provenance Provenance       `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
-	Node       *NodeReference   `json:"node,omitempty" jsonschema:"the node the node filter resolved to; only services with an instance on it are listed"`
-	Tag        *TagReference    `json:"tag,omitempty" jsonschema:"the tag the tag filter resolved to; only the services holding it are listed"`
-	Total      int              `json:"total" jsonschema:"the number of services matching the filters, as the collector counts them"`
-	Count      int              `json:"count" jsonschema:"the number of services returned in this page"`
-	Services   []ServiceSummary `json:"services" jsonschema:"the services sorted by name, then service ID"`
-	NextCursor string           `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
-	Truncated  bool             `json:"truncated" jsonschema:"whether matching services remain after this page"`
+	Provenance Provenance          `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
+	Node       *NodeReference      `json:"node,omitempty" jsonschema:"the node the node filter resolved to; only services with an instance on it are listed"`
+	Tag        *TagReference       `json:"tag,omitempty" jsonschema:"the tag the tag filter resolved to; only the services holding it are listed"`
+	Filterset  *FiltersetReference `json:"filterset,omitempty" jsonschema:"the filterset the filterset filter resolved to; only the services it selects are listed"`
+	Total      int                 `json:"total" jsonschema:"the number of services matching the filters, as the collector counts them"`
+	Count      int                 `json:"count" jsonschema:"the number of services returned in this page"`
+	Services   []ServiceSummary    `json:"services" jsonschema:"the services sorted by name, then service ID"`
+	NextCursor string              `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
+	Truncated  bool                `json:"truncated" jsonschema:"whether matching services remain after this page"`
 }
 
 type NodeReference struct {
@@ -292,14 +295,14 @@ func (s *Service) ListServices(ctx context.Context, options ListServicesOptions)
 	if err := options.ServiceFilters.validate(); err != nil {
 		return ServiceList{}, err
 	}
-	if options.Node != "" && options.Tag != "" {
-		return ServiceList{}, fmt.Errorf("pass node or tag, not both")
+	if options.Node != "" && (options.Tag != "" || options.Filterset != "") {
+		return ServiceList{}, fmt.Errorf("pass node, tag or filterset, not two of them")
 	}
 	limit, err := pageLimit(options.Limit, defaultListServicesLimit, maxListServicesLimit)
 	if err != nil {
 		return ServiceList{}, err
 	}
-	path, tag, err := s.taggedPath(ctx, options.Tag, "services")
+	path, tag, filterset, err := s.memberPath(ctx, options.Tag, options.Filterset, "services")
 	if err != nil {
 		return ServiceList{}, err
 	}
@@ -357,7 +360,7 @@ func (s *Service) ListServices(ctx context.Context, options ListServicesOptions)
 	if total == nil || *total < 0 || len(services) > limit {
 		return ServiceList{}, fmt.Errorf("list services: unexpected collector response")
 	}
-	result := ServiceList{Provenance: s.newProvenance(), Node: node, Tag: tag, Total: *total, Count: len(services), Services: make([]ServiceSummary, 0, len(services))}
+	result := ServiceList{Provenance: s.newProvenance(), Node: node, Tag: tag, Filterset: filterset, Total: *total, Count: len(services), Services: make([]ServiceSummary, 0, len(services))}
 	for _, service := range services {
 		result.Services = append(result.Services, ServiceSummary{
 			SvcID: service.SvcID, Svcname: service.Svcname, ClusterID: service.ClusterID, App: service.SvcApp, Env: service.SvcEnv,

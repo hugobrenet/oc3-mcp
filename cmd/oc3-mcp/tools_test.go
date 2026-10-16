@@ -72,11 +72,25 @@ func TestNodeToolsReadTheCollector(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","nodename":"n1","node_env":"PRD","node_frozen":"F"}],"meta":{"total":1}}`))
 		case "/nodes/n1":
 			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","nodename":"n1","node_env":"PRD","mem_bytes":4096}]}`))
+		case "/filtersets/prd-linux":
+			_, _ = w.Write([]byte(`{"data":[{"id":282,"fset_name":"prd-linux"}]}`))
+		case "/filtersets/282/nodes":
+			if r.URL.Query().Get("filter") != "node_env:eq:PRD" {
+				t.Errorf("filterset filters = %q", r.URL.Query()["filter"])
+			}
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"id-1","nodename":"n1","node_env":"PRD","node_frozen":"F"}],"meta":{"total":187}}`))
 		default:
 			notFound(w, "node missing not found")
 		}
 	})
 
+	result, members := call("list_nodes", map[string]any{"env": "PRD", "filterset": "prd-linux"})
+	if result.IsError || members["total"] != float64(187) || members["filterset"].(map[string]any)["name"] != "prd-linux" {
+		t.Fatalf("list_nodes filterset = %+v", members)
+	}
+	if result, _ := call("list_nodes", map[string]any{"tag": "pci-dss", "filterset": "prd-linux"}); !result.IsError {
+		t.Fatal("list_nodes accepted tag and filterset")
+	}
 	result, list := call("list_nodes", map[string]any{"env": "PRD"})
 	if result.IsError || list["total"] != float64(1) || len(list["nodes"].([]any)) != 1 {
 		t.Fatalf("list_nodes = %+v", list)

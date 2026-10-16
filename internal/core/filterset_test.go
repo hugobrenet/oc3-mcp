@@ -84,3 +84,62 @@ func TestGetFiltersetWithoutCriterionSelectsNothing(t *testing.T) {
 		}
 	}
 }
+
+func TestFiltersetFilterReadsTheNodesAndServicesItSelects(t *testing.T) {
+	collector := &fakeCollector{answer: func(path string, query url.Values) string {
+		switch path {
+		case "/filtersets/prd-linux":
+			return `{"data":[{"id":282,"fset_name":"prd-linux"}]}`
+		case "/filtersets/282/nodes":
+			if query.Get("stats") == "true" {
+				return `{"data":{"os_release":{"9.4":64,"12.7":32}},"meta":{"total":96,"distinct":{"os_release":2}}}`
+			}
+			return `{"data":[{"node_id":"n-1","nodename":"ams-prd-app01"}],"meta":{"total":187}}`
+		case "/filtersets/282/services":
+			if query.Get("stats") == "true" {
+				return `{"data":{"svc_status":{"up":5}},"meta":{"total":5,"distinct":{"svc_status":1}}}`
+			}
+			return `{"data":[{"svc_id":"s-1","svcname":"web"}],"meta":{"total":5}}`
+		}
+		return `{"data":[],"meta":{"total":0}}`
+	}}
+	service := newTestService(collector)
+	nodes, err := service.ListNodes(t.Context(), ListNodesOptions{NodeFilters: NodeFilters{Filterset: "prd-linux", Country: "France"}, Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if collector.requests[1].path != "/filtersets/282/nodes" || collector.requests[1].query.Get("filter") != "loc_country:~France" ||
+		nodes.Filterset == nil || nodes.Filterset.Name != "prd-linux" || nodes.Tag != nil || nodes.Total != 187 || !nodes.Truncated {
+		t.Fatalf("nodes = %+v, requests %+v", nodes, collector.requests)
+	}
+	count, err := service.CountNodes(t.Context(), CountNodesOptions{NodeFilters: NodeFilters{Filterset: "prd-linux"}, GroupBy: "os_release"})
+	if err != nil || count.Filterset == nil || count.Total != 96 || len(count.Groups) != 2 {
+		t.Fatalf("count = %+v, %v", count, err)
+	}
+	services, err := service.ListServices(t.Context(), ListServicesOptions{ServiceFilters: ServiceFilters{Filterset: "prd-linux"}})
+	if err != nil || services.Filterset == nil || services.Total != 5 || services.Services[0].Svcname != "web" {
+		t.Fatalf("services = %+v, %v", services, err)
+	}
+	serviceCount, err := service.CountServices(t.Context(), CountServicesOptions{ServiceFilters: ServiceFilters{Filterset: "prd-linux"}, GroupBy: "status"})
+	if err != nil || serviceCount.Filterset == nil || serviceCount.Groups[0].Value != "up" {
+		t.Fatalf("service count = %+v, %v", serviceCount, err)
+	}
+}
+
+func TestFiltersetFilterRefusesInvalidCombinations(t *testing.T) {
+	for _, options := range []ListServicesOptions{
+		{ServiceFilters: ServiceFilters{Tag: "pci-dss", Filterset: "prd-linux"}},
+		{Node: "dev2n1", ServiceFilters: ServiceFilters{Filterset: "prd-linux"}},
+		{ServiceFilters: ServiceFilters{Filterset: "a/b"}},
+		{ServiceFilters: ServiceFilters{Filterset: " prd-linux"}},
+	} {
+		collector := &fakeCollector{body: `{"data":[],"meta":{"total":0}}`}
+		if _, err := newTestService(collector).ListServices(t.Context(), options); err == nil || len(collector.requests) != 0 {
+			t.Fatalf("options %+v accepted", options)
+		}
+	}
+	collector := &fakeCollector{err: fakeNotFound{}}
+	if _, err := newTestService(collector).CountNodes(t.Context(), CountNodesOptions{NodeFilters: NodeFilters{Filterset: "nosuch"}}); err == nil || !strings.Contains(err.Error(), "list_filtersets") {
+		t.Fatalf("unknown filterset: %v", err)
+	}
+}

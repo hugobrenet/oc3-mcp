@@ -27,6 +27,7 @@ type NodeFiltersInput struct {
 	City         string `json:"city,omitempty" jsonschema:"optional text the city of the node location contains, case-insensitive"`
 	SilentFor    string `json:"silent_for,omitempty" jsonschema:"optional; keeps only the nodes whose last contact with the collector is older than this duration, in days, hours or minutes, such as 7d, 12h or 30m; nodes that never reported are left out"`
 	Tag          string `json:"tag,omitempty" jsonschema:"optional exact tag name, case-insensitive, or tag ID; keeps only the nodes holding this tag, a label the collector users attach, such as pci-dss"`
+	Filterset    string `json:"filterset,omitempty" jsonschema:"optional exact filterset name or filterset ID; keeps only the nodes the filterset selects, as the collector computes it; not with tag"`
 }
 
 func (f NodeFiltersInput) core() core.NodeFilters {
@@ -34,7 +35,7 @@ func (f NodeFiltersInput) core() core.NodeFilters {
 		Name: f.Name, ClusterID: f.ClusterID, App: f.App, Env: f.Env, Status: f.Status, Frozen: f.Frozen, FrozenBefore: f.FrozenBefore,
 		OSName: f.OSName, OSVendor: f.OSVendor, OSRelease: f.OSRelease, AgentVersion: f.AgentVersion,
 		Manufacturer: f.Manufacturer, Model: f.Model, Team: f.Team, Country: f.Country, City: f.City, SilentFor: f.SilentFor,
-		Tag: f.Tag,
+		Tag: f.Tag, Filterset: f.Filterset,
 	}
 }
 
