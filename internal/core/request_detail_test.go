@@ -166,7 +166,7 @@ func TestGetRequestRefusesAnUnknownOrInvalidID(t *testing.T) {
 func TestSensitiveNamesAreWholeWords(t *testing.T) {
 	for name, want := range map[string]bool{
 		"password": true, "admin_password": true, "passwd": true, "Pass": true, "apiKey": true, "API key": true, "secretKey": true,
-		"requestor_email": true, "e-mail": true, "token": true, "private_key": true, "credentials": true,
+		"requestor_email": true, "e-mail": true, "token": true, "private_key": true, "credentials": true, "Authorization": true, "Cookie": true,
 		"private_ip": false, "private_network": false, "bypass": false, "passive": false, "hostname": false, "mailbox_size": false, "tokenizer": false,
 	} {
 		if sensitiveName(name) != want {

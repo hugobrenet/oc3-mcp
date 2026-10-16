@@ -110,8 +110,12 @@ binding; startup must not contact the collector.
   the collector timestamps separately, as the collector gives them.
 - Return only necessary fields. Preserve pagination with opaque cursors, size
   limits and useful bounded errors; do not expose raw upstream payloads.
-  Leave out the configuration text of services and other fields that may hold
-  secrets.
+  Configuration text, such as the YAML definition of a form, is returned
+  bounded, with the values that may be a secret or an email address masked
+  by the shared rules of `internal/core/request_detail.go`. This exposes no
+  more than the collector API serves the same account, but the masking is
+  partial: say so in the tool description, so that the model does not take
+  the text for safe to repeat.
 - A name that matches several items is refused with their identifiers, never
   resolved by choosing one.
 - A `get_*` tool returns the columns of its item, read in one call: for a
