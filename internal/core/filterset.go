@@ -138,15 +138,10 @@ func (s *Service) GetFilterset(ctx context.Context, filterset string) (Filterset
 	if err := validateFilterValue("filterset", filterset); err != nil {
 		return FiltersetDetails{}, err
 	}
-	var found collectorList[collectorFilterset]
-	err := s.client.GetJSON(ctx, "/filtersets/"+url.PathEscape(filterset), url.Values{"props": {strings.Join(filtersetProps, ",")}}, &found)
-	if err != nil && !isNotFound(err) {
-		return FiltersetDetails{}, fmt.Errorf("get filterset %s: %w", filterset, err)
+	row, err := s.lookupFilterset(ctx, filterset)
+	if err != nil {
+		return FiltersetDetails{}, err
 	}
-	if err != nil || len(found.Data) != 1 {
-		return FiltersetDetails{}, fmt.Errorf("get filterset %s: not found in the collector; list the filtersets with list_filtersets", filterset)
-	}
-	row := found.Data[0]
 	path := "/filtersets/" + strconv.Itoa(row.ID)
 	result := FiltersetDetails{Filterset: filtersetOf(row), Criteria: []FiltersetCriterion{}}
 
@@ -237,6 +232,25 @@ func (s *Service) GetFilterset(ctx context.Context, filterset string) (Filterset
 	result.Thresholds, result.Comparisons, result.SysreportGrants = len(usage.Data.Thresholds), len(usage.Data.Comparisons), len(usage.Data.SysreportGrants)
 	result.Provenance = s.newProvenance()
 	return result, nil
+}
+
+// FiltersetReference is the filterset a filterset filter resolved to.
+type FiltersetReference struct {
+	ID   int    `json:"id" jsonschema:"the collector filterset ID"`
+	Name string `json:"name" jsonschema:"the filterset name"`
+}
+
+// lookupFilterset reads one filterset by its exact name or ID.
+func (s *Service) lookupFilterset(ctx context.Context, filterset string) (collectorFilterset, error) {
+	var found collectorList[collectorFilterset]
+	err := s.client.GetJSON(ctx, "/filtersets/"+url.PathEscape(filterset), url.Values{"props": {strings.Join(filtersetProps, ",")}}, &found)
+	if err != nil && !isNotFound(err) {
+		return collectorFilterset{}, fmt.Errorf("get filterset %s: %w", filterset, err)
+	}
+	if err != nil || len(found.Data) != 1 {
+		return collectorFilterset{}, fmt.Errorf("get filterset %s: not found in the collector; list the filtersets with list_filtersets", filterset)
+	}
+	return found.Data[0], nil
 }
 
 func filtersetOf(row collectorFilterset) Filterset {

@@ -31,12 +31,13 @@ type ServiceFiltersInput struct {
 	Frozen      string `json:"frozen,omitempty" jsonschema:"optional freeze state of the service as a whole: frozen (every instance), unfrozen or mixed"`
 	Placement   string `json:"placement,omitempty" jsonschema:"optional placement state: optimal or non-optimal"`
 	Tag         string `json:"tag,omitempty" jsonschema:"optional exact tag name, case-insensitive, or tag ID; keeps only the services holding this tag, a label the collector users attach, such as backup-nightly"`
+	Filterset   string `json:"filterset,omitempty" jsonschema:"optional exact filterset name or filterset ID; keeps only the services the filterset selects, as the collector computes it; not with tag"`
 }
 
 func (f ServiceFiltersInput) core() core.ServiceFilters {
 	return core.ServiceFilters{
 		Name: f.Name, ClusterID: f.ClusterID, App: f.App, Env: f.Env, AvailStatus: f.AvailStatus, Status: f.Status,
-		Topology: f.Topology, Frozen: f.Frozen, Placement: f.Placement, Tag: f.Tag,
+		Topology: f.Topology, Frozen: f.Frozen, Placement: f.Placement, Tag: f.Tag, Filterset: f.Filterset,
 	}
 }
 

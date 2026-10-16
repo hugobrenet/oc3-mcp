@@ -49,6 +49,8 @@ type NodeFilters struct {
 	SilentFor    string
 	// Tag keeps the nodes holding this tag, by name or tag ID.
 	Tag string
+	// Filterset keeps the nodes this filterset selects, by name or ID.
+	Filterset string
 }
 
 type ListNodesOptions struct {
@@ -58,13 +60,14 @@ type ListNodesOptions struct {
 }
 
 type NodeList struct {
-	Provenance Provenance    `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
-	Tag        *TagReference `json:"tag,omitempty" jsonschema:"the tag the tag filter resolved to; only the nodes holding it are listed"`
-	Total      int           `json:"total" jsonschema:"the number of nodes matching the filters, as the collector counts them"`
-	Count      int           `json:"count" jsonschema:"the number of nodes returned in this page"`
-	Nodes      []NodeSummary `json:"nodes" jsonschema:"the nodes sorted by node name, then node ID"`
-	NextCursor string        `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
-	Truncated  bool          `json:"truncated" jsonschema:"whether matching nodes remain after this page"`
+	Provenance Provenance          `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
+	Tag        *TagReference       `json:"tag,omitempty" jsonschema:"the tag the tag filter resolved to; only the nodes holding it are listed"`
+	Filterset  *FiltersetReference `json:"filterset,omitempty" jsonschema:"the filterset the filterset filter resolved to; only the nodes it selects are listed"`
+	Total      int                 `json:"total" jsonschema:"the number of nodes matching the filters, as the collector counts them"`
+	Count      int                 `json:"count" jsonschema:"the number of nodes returned in this page"`
+	Nodes      []NodeSummary       `json:"nodes" jsonschema:"the nodes sorted by node name, then node ID"`
+	NextCursor string              `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
+	Truncated  bool                `json:"truncated" jsonschema:"whether matching nodes remain after this page"`
 }
 
 type NodeSummary struct {
@@ -235,7 +238,7 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 	if err != nil {
 		return NodeList{}, err
 	}
-	path, tag, err := s.taggedPath(ctx, options.Tag, "nodes")
+	path, tag, filterset, err := s.memberPath(ctx, options.Tag, options.Filterset, "nodes")
 	if err != nil {
 		return NodeList{}, err
 	}
@@ -252,7 +255,7 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
 		return NodeList{}, fmt.Errorf("list nodes: unexpected collector response")
 	}
-	result := NodeList{Provenance: s.newProvenance(), Tag: tag, Total: *response.Meta.Total, Count: len(response.Data), Nodes: make([]NodeSummary, 0, len(response.Data))}
+	result := NodeList{Provenance: s.newProvenance(), Tag: tag, Filterset: filterset, Total: *response.Meta.Total, Count: len(response.Data), Nodes: make([]NodeSummary, 0, len(response.Data))}
 	for _, node := range response.Data {
 		result.Nodes = append(result.Nodes, NodeSummary{
 			NodeID: node.NodeID, Nodename: node.Nodename, ClusterID: node.ClusterID, App: node.App, Env: node.NodeEnv,
