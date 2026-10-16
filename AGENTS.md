@@ -110,8 +110,9 @@ binding; startup must not contact the collector.
   the collector timestamps separately, as the collector gives them.
 - Return only necessary fields. Preserve pagination with opaque cursors, size
   limits and useful bounded errors; do not expose raw upstream payloads.
-  Configuration text, such as the YAML definition of a form or the
-  configuration of a service, is returned
+  Configuration text, such as the YAML definition of a form, the
+  configuration of a service or the variables of a compliance ruleset, is
+  returned
   bounded, with the values that may be a secret or an email address masked
   by the shared rules of `internal/core/mask.go`. This exposes no
   more than the collector API serves the same account, but the masking is

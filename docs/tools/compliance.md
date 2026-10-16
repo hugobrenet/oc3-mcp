@@ -6,6 +6,8 @@ tools:
   - count_compliance_runs
   - list_compliance_modulesets
   - get_compliance_moduleset
+  - list_compliance_rulesets
+  - get_compliance_ruleset
 stability: experimental
 ---
 
@@ -23,9 +25,8 @@ Implementation:
   of `internal/core/collector_list.go` and the node and service lookups;
 - MCP definitions: `internal/tools/compliance.go`.
 
-The modulesets are read, with their modules, inclusions, rulesets and
-attachments; changing them, and the rulesets and their variables, is not
-exposed. Visibility is that of the collector account
+The modulesets and the rulesets are read, with their modules, variables,
+inclusions and attachments; changing them is not exposed. Visibility is that of the collector account
 of the caller.
 
 ## Tools
@@ -240,3 +241,106 @@ included moduleset once, at any depth.
 
 The attachments are the direct ones: a moduleset also applies where the
 modulesets including it, in `included_by`, are attached.
+
+### `list_compliance_rulesets`
+
+Returns one page of the compliance rulesets the caller sees, those published
+to one of its groups, every ruleset for a manager, sorted by name, or those of
+one node or service. A ruleset holds the variables the compliance modules
+read; an explicit ruleset applies where it is attached, a contextual one to
+the nodes and services its filterset selects, and a ruleset may include
+others.
+
+#### Collector API
+
+```text
+GET /api/compliance/rulesets?props=id,ruleset_name,ruleset_type,ruleset_public&orderby=ruleset_name,id&filter=…&limit=…&offset=…
+```
+
+The collector has no read giving the rulesets that apply to a node. With
+`node` or `service`, the MCP reads:
+
+- the rulesets attached to it, `GET /api/nodes/<node_id>/compliance/rulesets`
+  or `GET /api/services/<svc_id>/compliance/rulesets`;
+- the contextual rulesets, at most 100, `GET /api/compliance/rulesets?filter=ruleset_type:eq:contextual`,
+  and their filtersets, `GET /api/compliance/rulesets_variables?props=ruleset_id,fset_id&groupby=ruleset_id,fset_id`,
+  one row per ruleset and filterset, the view giving one per variable of the
+  ruleset and of those it includes;
+- whether each filterset selects the node or the service,
+  `GET /api/filtersets/<fset_id>/nodes?filter=node_id:eq:<node_id>&limit=1`, or
+  `…/services?filter=svc_id:eq:<svc_id>`;
+
+then lists those rulesets with `id:in:…`. `applies_by` tells `attached` or
+`filterset`. The rulesets they include, and those of the modulesets attached
+to the node or the service, apply too, and are not listed:
+`get_compliance_ruleset` and `get_compliance_moduleset` give them.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `name` | Optional text the ruleset name contains, case-insensitive |
+| `type` | Optional `explicit` or `contextual` |
+| `node`, `service` | Optional exact node or service, by name or ID: its rulesets. Not both |
+| `limit` | Optional page size, 1 to 200, default 50 |
+| `cursor` | Optional `next_cursor` of a previous call with the same filters |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `node`, `service` | The node or service the filters resolved to |
+| `total` | Rulesets matching, as the collector counts them |
+| `count`, `truncated` | Rulesets in this page, and whether more remain |
+| `rulesets[]` | `id`, `name`, `type`, `public` (whether it may be attached), and with `node` or `service` `applies_by` |
+| `next_cursor` | Opaque cursor of the next page, when `truncated` |
+
+### `get_compliance_ruleset`
+
+Returns one ruleset by its name or ID, with its variables, inclusions,
+filterset and usage.
+
+#### Collector API
+
+```text
+GET /api/compliance/rulesets/<name or id>?props=id,ruleset_name,ruleset_type,ruleset_public
+GET /api/compliance/rulesets/<id>/export
+GET /api/filtersets/<fset_id>/nodes?props=nodename&orderby=nodename,node_id&limit=50, …/services
+GET /api/compliance/rulesets/<id>/usage
+GET /api/compliance/rulesets/<id>/nodes?props=nodename&orderby=nodename,node_id&limit=50
+GET /api/compliance/rulesets/<id>/services?props=svcname&orderby=svcname,svc_id&limit=50[&slave=true]
+```
+
+The export gives the variables, the included rulesets, walked each once at
+any depth, the filterset and the groups; the usage the rulesets including it
+and the modulesets it is attached to. The nodes and services it is attached to
+directly are read from the routes restricted to those the caller sees: the
+usage names them all.
+
+The variable values are configuration text: each is masked by the shared
+rules of `internal/core/mask.go`, whole when the variable names a secret, the
+sensitive keys and email addresses of a JSON value, or the sensitive
+`key = value` lines and the email addresses of a text, then cut to 2 KiB. The
+masking is partial, and the description says so.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `ruleset` | One exact ruleset name, such as `os.linux.base`, or ruleset ID |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `ruleset` | `id`, `name`, `type`, `public` |
+| `filterset` | For a contextual ruleset: `name`, `nodes_count` and `nodes`, `services_count` and `services`, the nodes and services it selects, at most 50 named |
+| `variables_count`, `variables[]`, `variables_truncated` | Its own variables, at most 200: `name`, `class`, `value`, `value_truncated`, `author`, `updated` |
+| `included_rulesets[]` | The rulesets it includes, at any depth: `name`, `type`, `variables` |
+| `publications`, `responsibles` | The groups it is published to, and those responsible for it |
+| `included_by` | The rulesets including it |
+| `modulesets` | The modulesets it is attached to |
+| `nodes_count`, `nodes`, `services_count`, `services` | Nodes and services it is attached to directly, among those the caller sees, at most 50 named |
+| `encapsulated_services_count`, `encapsulated_services` | Services it is attached to directly as their encapsulated service, `slave=true` |
