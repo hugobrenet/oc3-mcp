@@ -53,6 +53,7 @@ var toolKeywords = map[string][]string{
 	"list_node_packages":           {"package", "rpm", "deb", "software", "version", "installed"},
 	"list_nodes":                   {"node list", "servers", "hosts", "machines", "inventory", "frozen", "silent", "stopped reporting"},
 	"list_package_differences":     {"package diff", "version mismatch", "compare", "drift", "inconsistency"},
+	"list_requests":                {"request", "workflow", "ticket", "approval", "pending request", "form submission", "self service", "assigned"},
 	"list_service_actions":         {"action", "start", "stop", "restart", "failed action", "who ran", "operation history"},
 	"list_service_checks":          {"service check", "threshold", "volume usage", "resource check"},
 	"list_service_resources":       {"resource", "filesystem", "ip", "disk", "container", "driver", "resource status"},
