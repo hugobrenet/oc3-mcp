@@ -444,6 +444,18 @@ func TestComplianceToolsReadTheCollector(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`{"data":[{"id":1102,"run_module":"sec.ssh","node_id":"e1d22de4-07ea-47d1-ac46-8bf014d0cbec","nodes.nodename":"n1","svc_id":"","services.svcname":null,
 				"run_action":"check","run_status":1,"run_date":"2026-10-11 10:48:10","run_log":"PermitRootLogin is yes\nERR: PermitRootLogin should be no"}],"meta":{"total":1}}`))
+		case "/compliance/modulesets":
+			_, _ = w.Write([]byte(`{"data":[{"id":3,"modset_name":"base.linux"}],"meta":{"total":1}}`))
+		case "/compliance/modulesets_modules":
+			_, _ = w.Write([]byte(`{"data":[{"id":10,"modset_id":3,"modset_mod_name":"linux.files","autofix":"T"}],"meta":{"total":1}}`))
+		case "/compliance/modulesets/base.linux":
+			_, _ = w.Write([]byte(`{"data":[{"id":3,"modset_name":"base.linux"}]}`))
+		case "/compliance/modulesets/3/export":
+			_, _ = w.Write([]byte(`{"filtersets":[],"rulesets":[],"modulesets":[{"id":3,"modset_name":"base.linux","modules":[{"modset_mod_name":"linux.files","autofix":"T"}],"modulesets":[],"rulesets":[],"publications":["Everybody"],"responsibles":["Infra Unix"]}]}`))
+		case "/compliance/modulesets/3/usage":
+			_, _ = w.Write([]byte(`{"data":{"modulesets":[{"id":1,"modset_name":"app.web"}]}}`))
+		case "/compliance/modulesets/3/nodes", "/compliance/modulesets/3/services":
+			_, _ = w.Write([]byte(`{"data":[],"meta":{"total":0}}`))
 		case "/compliance/logs":
 			if filters := strings.Join(r.URL.Query()["filter"], "|"); filters != `run_module:eq:linux.files|run_action:eq:fix|run_date:lte:2026-09-30 23:59:59` {
 				t.Errorf("filters = %q", filters)
@@ -464,6 +476,19 @@ func TestComplianceToolsReadTheCollector(t *testing.T) {
 	}
 	if result, _ := call("count_compliance_runs", map[string]any{"group_by": "date"}); !result.IsError {
 		t.Fatal("count_compliance_runs accepted group_by date")
+	}
+	result, detail := call("get_compliance_moduleset", map[string]any{"moduleset": "base.linux"})
+	if result.IsError || detail["included_by"].([]any)[0] != "app.web" || detail["responsibles"].([]any)[0] != "Infra Unix" ||
+		detail["moduleset"].(map[string]any)["modules"].([]any)[0].(map[string]any)["name"] != "linux.files" {
+		t.Fatalf("get_compliance_moduleset = %+v", detail)
+	}
+	if result, _ := call("get_compliance_moduleset", map[string]any{}); !result.IsError {
+		t.Fatal("get_compliance_moduleset accepted no moduleset")
+	}
+	result, modulesets := call("list_compliance_modulesets", map[string]any{})
+	items, _ := modulesets["modulesets"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["modules"].([]any)[0].(map[string]any)["autofix"] != true {
+		t.Fatalf("list_compliance_modulesets = %+v", modulesets)
 	}
 	result, list := call("list_compliance_status", map[string]any{"module": "sec.", "status": "nok"})
 	statuses, _ := list["statuses"].([]any)

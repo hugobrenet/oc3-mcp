@@ -4,6 +4,8 @@ tools:
   - list_compliance_status
   - list_compliance_runs
   - count_compliance_runs
+  - list_compliance_modulesets
+  - get_compliance_moduleset
 stability: experimental
 ---
 
@@ -21,8 +23,9 @@ Implementation:
   of `internal/core/collector_list.go` and the node and service lookups;
 - MCP definitions: `internal/tools/compliance.go`.
 
-The administration of the compliance, modulesets, rulesets, variables and
-their publications, is not exposed. Visibility is that of the collector account
+The modulesets are read, with their modules, inclusions, rulesets and
+attachments; changing them, and the rulesets and their variables, is not
+exposed. Visibility is that of the collector account
 of the caller.
 
 ## Tools
@@ -150,3 +153,90 @@ their service group is the empty value.
 | `groups[]` | With `group_by`: `value`, empty for the runs without one, and `count`, the most frequent first |
 | `distinct` | With `group_by`: distinct values among the matching runs |
 | `other`, `truncated` | With `group_by`: matching runs whose value was left out by `limit`, and whether there are any |
+
+### `list_compliance_modulesets`
+
+Returns one page of the compliance modulesets the caller sees, those published
+to one of its groups, every moduleset for a manager, sorted by name, each with
+its own modules and their `autofix` flag. A moduleset groups compliance
+modules the agent checks and fixes on the nodes and service instances it is
+attached to.
+
+#### Collector API
+
+```text
+GET /api/compliance/modulesets?props=id,modset_name,modset_author,modset_updated&orderby=modset_name,id&filter=…&limit=…&offset=…
+GET /api/compliance/modulesets_modules?props=id,modset_id,modset_mod_name,autofix&filter=modset_id:in:<ids of the page>
+```
+
+With `node` or `service`, the MCP first reads the IDs of the modulesets
+attached to it, `GET /api/nodes/<node_id>/compliance/modulesets` or
+`GET /api/services/<svc_id>/compliance/modulesets`; with `module`, those
+holding it, `GET /api/compliance/modulesets_modules?filter=modset_mod_name:…`.
+A service lists the modulesets attached to the service itself, not those of
+its encapsulated service. The modules of a page are read in batches of 1000
+up to their total.
+The list is then filtered with `id:in:…`, at most 1000 IDs. The node and
+service endpoints ignore `filter`.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `name` | Optional text the moduleset name contains, case-insensitive |
+| `module` | Optional exact module, or with a trailing dot a whole family: the modulesets holding it |
+| `node`, `service` | Optional exact node or service, by name or ID: the modulesets attached to it. Not both |
+| `limit` | Optional page size, 1 to 200, default 50 |
+| `cursor` | Optional `next_cursor` of a previous call with the same filters |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `node`, `service` | The node or service the filters resolved to |
+| `total` | Modulesets matching, as the collector counts them |
+| `count`, `truncated` | Modulesets in this page, and whether more remain |
+| `modulesets[]` | `id`, `name`, `author`, `updated`, `modules_count`, `modules[]` (`name`, `autofix`), at most 50, and `modules_truncated` |
+| `next_cursor` | Opaque cursor of the next page, when `truncated` |
+
+### `get_compliance_moduleset`
+
+Returns one moduleset by its name or ID, with its tree and its attachments.
+
+#### Collector API
+
+```text
+GET /api/compliance/modulesets/<name or id>?props=id,modset_name,modset_author,modset_updated
+GET /api/compliance/modulesets/<id>/export
+GET /api/compliance/modulesets/<id>/usage
+GET /api/compliance/modulesets/<id>/nodes?props=nodename&orderby=nodename,node_id&limit=50
+GET /api/compliance/modulesets/<id>/services?props=svcname&orderby=svcname,svc_id&limit=50[&slave=true]
+```
+
+The export is the only read giving the modulesets a moduleset includes and
+the rulesets attached to it: the MCP walks it from the moduleset, each
+included moduleset once, at any depth.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `moduleset` | One exact moduleset name, such as `base.linux`, or moduleset ID |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `moduleset` | `id`, `name`, `author`, `updated` and its own modules, as in `list_compliance_modulesets` |
+| `publications`, `responsibles` | The groups it is published to, and those responsible for it |
+| `included_modulesets[]` | The modulesets it includes, at any depth: `name` and `modules` |
+| `rulesets[]` | The rulesets attached to it or to an included moduleset, and those they include: `name`, `type`, `filterset` of a contextual one, number of `variables`, `attached_to`, the modulesets of the tree it is attached to, and `included_by`, the rulesets including it |
+| `included_by` | The modulesets including it |
+| `nodes_count`, `nodes` | Nodes it is attached to directly, and their names, at most 50 |
+| `services_count`, `services` | Services it is attached to directly, as the service itself, and their names, at most 50 |
+| `encapsulated_services_count`, `encapsulated_services` | Services it is attached to directly as their encapsulated service, run in their containers, `slave=true` |
+
+The attachments are the direct ones: a moduleset also applies where the
+modulesets including it, in `included_by`, are attached.
