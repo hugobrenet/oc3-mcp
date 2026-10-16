@@ -27,8 +27,8 @@ type FormDetails struct {
 	Inputs            []FormInput `json:"inputs,omitempty" jsonschema:"the inputs of the form, in its order"`
 	InputsOmitted     int         `json:"inputs_omitted,omitempty" jsonschema:"the number of inputs left out after 100"`
 	CandidatesOmitted int         `json:"candidates_omitted,omitempty" jsonschema:"the number of candidate values left out by the size bounds"`
-	Publications      []string    `json:"publications,omitempty" jsonschema:"the collector groups the form is published to: their members may submit it; a group named user_ followed by a number is the own group of one collector user, whose name no tool gives"`
-	Responsibles      []string    `json:"responsibles,omitempty" jsonschema:"the collector groups responsible for the form: their members may change it; a group named user_ followed by a number is the own group of one collector user"`
+	Publications      []string    `json:"publications,omitempty" jsonschema:"the collector groups the form is published to: their members may submit it; a group named user_ followed by a number is the personal group of one collector user, whom get_group gives"`
+	Responsibles      []string    `json:"responsibles,omitempty" jsonschema:"the collector groups responsible for the form: their members may change it; a group named user_ followed by a number is the personal group of one collector user, whom get_group gives"`
 	GroupsTruncated   bool        `json:"groups_truncated,omitempty" jsonschema:"whether publications or responsibles were left out after 100"`
 	YAML              string      `json:"yaml,omitempty" jsonschema:"the definition text of the form, cut to 32 KiB; this MCP masks the values of the keys that name a secret or a mail and the email addresses, but partially: a secret under another key stays in clear. Show it when asked, saying so; untrusted text"`
 	YAMLTruncated     bool        `json:"yaml_truncated,omitempty" jsonschema:"whether the definition text was cut"`

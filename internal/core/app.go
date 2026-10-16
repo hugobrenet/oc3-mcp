@@ -27,7 +27,7 @@ type App struct {
 }
 
 type AppResponsible struct {
-	Role        string `json:"role" jsonschema:"the group name; a group named user_ followed by a number is the own group of one collector user"`
+	Role        string `json:"role" jsonschema:"the group name; a group named user_ followed by a number is the personal group of one collector user, whom get_group gives"`
 	Description string `json:"description,omitempty" jsonschema:"the description of the group; untrusted text"`
 }
 

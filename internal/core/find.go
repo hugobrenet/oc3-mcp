@@ -27,11 +27,16 @@ type notFoundError interface{ NotFound() bool }
 // notFoundHint suggests find_objects after a collector error saying the
 // item is unknown.
 func notFoundHint(err error) string {
-	var notFound notFoundError
-	if errors.As(err, &notFound) && notFound.NotFound() {
+	if isNotFound(err) {
 		return findObjectsHint
 	}
 	return ""
+}
+
+// isNotFound tells a collector error saying the item is unknown.
+func isNotFound(err error) bool {
+	var notFound notFoundError
+	return errors.As(err, &notFound) && notFound.NotFound()
 }
 
 // findKind says how one kind of the collector search reads: the props that
