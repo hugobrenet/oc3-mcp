@@ -116,7 +116,9 @@ binding; startup must not contact the collector.
   by the shared rules of `internal/core/mask.go`. This exposes no
   more than the collector API serves the same account, but the masking is
   partial: say so in the tool description, so that the model does not take
-  the text for safe to repeat.
+  the text for safe to repeat. The sysreport of a node is the exception: its
+  files and diffs are returned as the collector serves them, unmasked, and
+  the tool descriptions say they may hold secrets.
 - A name that matches several items is refused with their identifiers, never
   resolved by choosing one.
 - A `get_*` tool returns the columns of its item, read in one call: for a

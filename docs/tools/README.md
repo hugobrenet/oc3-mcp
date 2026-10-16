@@ -23,6 +23,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Find | `find_objects` | [Find tools](find.md) |
 | Requests | `list_requests`, `get_request` | [Request tools](requests.md) |
 | Forms | `list_forms`, `get_form` | [Form tools](forms.md) |
+| Sysreport | `list_node_sysreport_changes`, `get_node_sysreport_diff`, `list_node_sysreport_files`, `get_node_sysreport_file` | [Sysreport tools](sysreport.md) |
 
 ## Conventions
 
