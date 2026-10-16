@@ -48,6 +48,7 @@ var toolKeywords = map[string][]string{
 	"list_collector_events":        {"event", "audit", "collector log", "who changed", "history", "undef"},
 	"list_compliance_status":       {"compliance", "non-compliant", "module", "policy", "security", "fix", "drift"},
 	"list_instances":               {"instance", "instances down", "passive", "failover", "standby", "frozen", "running on node"},
+	"list_forms":                   {"form", "forms catalog", "which form", "request form", "compliance variable", "template"},
 	"list_ips":                     {"ip", "address", "owner", "ownership", "vip", "interface", "mac", "network", "subnet"},
 	"list_node_checks":             {"node check", "threshold", "filesystem usage", "disk full", "inode", "multipath", "monitoring"},
 	"list_node_disks":              {"disk", "lun", "storage", "san", "wwid", "array", "volume"},

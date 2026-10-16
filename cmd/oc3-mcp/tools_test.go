@@ -561,3 +561,20 @@ func TestRequestToolsReadTheCollector(t *testing.T) {
 		t.Fatalf("list_requests = %+v", list)
 	}
 }
+
+func TestFormToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/forms":
+			_, _ = w.Write([]byte(`{"data":[{"id":198,"form_name":"sample-vm-request","form_type":"custo","form_definition":{"Label":"Virtual machine request","Outputs":[{"Dest":"workflow"}]}}],"meta":{"total":1}}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, list := call("list_forms", map[string]any{"type": "custo"})
+	items, _ := list["forms"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["label"] != "Virtual machine request" {
+		t.Fatalf("list_forms = %+v", list)
+	}
+}
