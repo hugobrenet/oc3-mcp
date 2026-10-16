@@ -50,6 +50,7 @@ var toolKeywords = map[string][]string{
 	"list_alerts":                  {"alert", "alarm", "warning", "problem", "issue", "incident", "dashboard"},
 	"list_clusters":                {"cluster", "quorum", "cluster list", "agent version"},
 	"list_collector_events":        {"event", "audit", "collector log", "who changed", "history", "undef"},
+	"list_compliance_runs":         {"compliance history", "since when", "run history", "fix history", "fixed", "failing", "check runs", "last run"},
 	"list_compliance_status":       {"compliance", "non-compliant", "module", "policy", "security", "fix", "drift"},
 	"list_groups":                  {"groups", "teams", "list groups", "organization", "privilege", "role", "user groups", "membership", "belong"},
 	"list_instances":               {"instance", "instances down", "passive", "failover", "standby", "frozen", "running on node"},

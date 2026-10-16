@@ -2,15 +2,17 @@
 domain: compliance
 tools:
   - list_compliance_status
+  - list_compliance_runs
 stability: experimental
 ---
 
 # Compliance Tools
 
-This document describes the tool that reports the compliance status the
-OpenSVC collector holds: the last run of each compliance module on the nodes
-and on the service instances, with its output, which tells why a node or an
-instance is not compliant, without a diagnostic verdict.
+This document describes the tools that report the compliance runs the OpenSVC
+collector holds: the last run of each compliance module on the nodes and on
+the service instances, and the history of the runs, with their output, which
+tells why a node or an instance is not compliant, without a diagnostic
+verdict.
 
 Implementation:
 
@@ -72,3 +74,39 @@ not applicable). `status` is empty for any other exit code. `action` is `check`,
 itself. `log` is the output of the module, cut to 4 KiB; it is untrusted text.
 The ruleset fingerprint is left out. `date` is in collector local time without
 a zone.
+
+### `list_compliance_runs`
+
+Returns one page of the runs of the compliance modules, the most recent first:
+every check, fixable check and fix the collector keeps, where
+`list_compliance_status` holds the last run of each module. Use it for since
+when a module fails on a node, what a fix did, and when a module last ran.
+
+#### Collector API
+
+```text
+GET /api/compliance/logs?props=id,run_module,node_id,nodes.nodename,svc_id,services.svcname,run_action,run_status,run_date,run_log&orderby=-run_date,-id&filter=…&limit=…&offset=…
+```
+
+The node and the service are resolved as for `list_compliance_status`. The
+`/api/nodes/{node_id}/compliance/logs` endpoint ignores `filter`: the MCP reads
+`/api/compliance/logs` with a `node_id` filter instead.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `node`, `service`, `module`, `status`, `since`, `limit`, `cursor` | As for `list_compliance_status` |
+| `action` | Optional action: `check`, `fixable` or `fix` |
+| `until` | Optional latest run date, in collector local time; a day alone is taken to its end, `23:59:59` |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `node`, `service` | The node or service the filters resolved to |
+| `total` | Runs matching the filters, as the collector counts them |
+| `count`, `truncated` | Runs in this page, and whether more remain |
+| `runs[]` | `id`, `module`, `node_id`, `nodename`, `svc_id`, `svcname`, `action`, `status`, `exit_code`, `date`, `log`, as in `list_compliance_status` |
+| `next_cursor` | Opaque cursor of the next page, when `truncated` |

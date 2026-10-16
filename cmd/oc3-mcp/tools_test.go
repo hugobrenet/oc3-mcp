@@ -444,10 +444,24 @@ func TestComplianceToolsReadTheCollector(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`{"data":[{"id":1102,"run_module":"sec.ssh","node_id":"e1d22de4-07ea-47d1-ac46-8bf014d0cbec","nodes.nodename":"n1","svc_id":"","services.svcname":null,
 				"run_action":"check","run_status":1,"run_date":"2026-10-11 10:48:10","run_log":"PermitRootLogin is yes\nERR: PermitRootLogin should be no"}],"meta":{"total":1}}`))
+		case "/compliance/logs":
+			if filters := strings.Join(r.URL.Query()["filter"], "|"); filters != `run_module:eq:linux.files|run_action:eq:fix|run_date:lte:2026-09-30 23:59:59` {
+				t.Errorf("filters = %q", filters)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"id":37,"run_module":"linux.files","node_id":"e1d22de4-07ea-47d1-ac46-8bf014d0cbec","nodes.nodename":"n1","svc_id":"","services.svcname":null,
+				"run_action":"fix","run_status":0,"run_date":"2026-09-28 16:28:10","run_log":"/etc/motd created"}],"meta":{"total":1}}`))
 		default:
 			notFound(w, "missing")
 		}
 	})
+	result, history := call("list_compliance_runs", map[string]any{"module": "linux.files", "action": "fix", "until": "2026-09-30"})
+	runs, _ := history["runs"].([]any)
+	if result.IsError || len(runs) != 1 || runs[0].(map[string]any)["action"] != "fix" || runs[0].(map[string]any)["status"] != "ok" {
+		t.Fatalf("list_compliance_runs = %+v", history)
+	}
+	if result, _ := call("list_compliance_runs", map[string]any{"action": "repair"}); !result.IsError {
+		t.Fatal("list_compliance_runs accepted action repair")
+	}
 	result, list := call("list_compliance_status", map[string]any{"module": "sec.", "status": "nok"})
 	statuses, _ := list["statuses"].([]any)
 	if result.IsError || len(statuses) != 1 || statuses[0].(map[string]any)["status"] != "nok" || statuses[0].(map[string]any)["nodename"] != "n1" {
