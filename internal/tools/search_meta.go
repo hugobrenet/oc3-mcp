@@ -35,6 +35,7 @@ var toolKeywords = map[string][]string{
 	"count_services":               {"how many services", "number", "distribution", "statistics", "services down"},
 	"find_objects":                 {"search", "lookup", "partial name", "unknown name", "what is", "fuzzy", "find"},
 	"get_app":                      {"application", "owner", "ownership", "responsible", "team", "who", "contact"},
+	"get_form":                     {"form details", "form inputs", "fields", "form yaml", "who can submit", "form definition"},
 	"get_node":                     {"node details", "server", "host", "machine", "hardware", "operating system", "warranty", "location", "rack"},
 	"get_node_san_topology":        {"fc", "fibre channel", "hba", "fabric", "switch", "zoning", "storage paths", "wwn", "multipath"},
 	"get_node_stats":               {"performance", "metrics", "cpu", "memory", "load", "usage", "io", "network traffic", "saturation"},

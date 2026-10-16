@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -23,6 +24,7 @@ var formProps = []string{"id", "form_name", "form_type", "form_folder", "form_au
 var formTypes = []string{"obj", "custo", "generic", "folder"}
 
 type ListFormsOptions struct {
+	Text   string
 	Name   string
 	Type   string
 	Folder string
@@ -32,11 +34,13 @@ type ListFormsOptions struct {
 
 type FormList struct {
 	Provenance Provenance `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
-	Total      int        `json:"total" jsonschema:"the number of forms matching the filters, as the collector counts them"`
-	Count      int        `json:"count" jsonschema:"the number of forms returned in this page"`
-	Forms      []Form     `json:"forms" jsonschema:"the forms sorted by folder then name"`
-	NextCursor string     `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
-	Truncated  bool       `json:"truncated" jsonschema:"whether matching forms remain after this page"`
+	Total      int        `json:"total" jsonschema:"the number of forms matching the filters, as the collector counts them, or with text as the MCP counts them among those it read"`
+	// ScanTruncated tells a text search that read only the first forms.
+	ScanTruncated bool   `json:"scan_truncated,omitempty" jsonschema:"with text, whether the MCP read only the first 1000 forms matching the other filters, so that other forms may match the text"`
+	Count         int    `json:"count" jsonschema:"the number of forms returned in this page"`
+	Forms         []Form `json:"forms" jsonschema:"the forms sorted by folder then name"`
+	NextCursor    string `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
+	Truncated     bool   `json:"truncated" jsonschema:"whether matching forms remain after this page"`
 }
 
 type Form struct {
@@ -73,47 +77,10 @@ type collectorForm struct {
 	FormDefinition json.RawMessage `json:"form_definition"`
 }
 
-type collectorFormOutputs struct {
-	Label   string           `json:"Label"`
-	Desc    string           `json:"Desc"`
-	Inputs  []map[string]any `json:"Inputs"`
-	Outputs []struct {
-		Dest string `json:"Dest"`
-		collectorFormNext
-		// Scripts, when present, replace the direct next step: the collector
-		// takes the Success or the Error one by the return code of the script.
-		Scripts *struct {
-			Success *collectorFormNext `json:"Success"`
-			Error   *collectorFormNext `json:"Error"`
-		} `json:"Scripts"`
-	} `json:"Outputs"`
-}
-
-type collectorFormNext struct {
-	NextForms    []any  `json:"NextForms"`
-	NextAssignee string `json:"NextAssignee"`
-}
-
-// next is the next step of a branch; a branch the definition leaves out, n
-// nil, has no form: it closes the request.
-func (n *collectorFormNext) next(condition string) FormNext {
-	step := FormNext{Condition: condition}
-	if n == nil {
-		return step
-	}
-	for _, form := range n.NextForms {
-		if name, ok := form.(string); ok && name != "" && !slices.Contains(step.Forms, name) {
-			step.Forms = append(step.Forms, name)
-		}
-	}
-	step.Assignee = strings.TrimSpace(n.NextAssignee)
-	return step
-}
-
 // ListForms reads one page of the forms the caller may use or see: those
 // published to one of its groups, every form for a manager.
 func (s *Service) ListForms(ctx context.Context, options ListFormsOptions) (FormList, error) {
-	for name, value := range map[string]string{"name": options.Name, "folder": options.Folder} {
+	for name, value := range map[string]string{"text": options.Text, "name": options.Name, "folder": options.Folder} {
 		if err := validateFilterValue(name, value); err != nil {
 			return FormList{}, err
 		}
@@ -135,10 +102,13 @@ func (s *Service) ListForms(ctx context.Context, options ListFormsOptions) (Form
 	if options.Folder != "" {
 		filters = append(filters, filterEquals("form_folder", options.Folder))
 	}
-	fingerprint := listFingerprint(url.Values{"filter": filters})
+	fingerprint := listFingerprint(url.Values{"filter": filters, "text": {strings.ToLower(options.Text)}})
 	offset, err := decodeListCursor(options.Cursor, fingerprint)
 	if err != nil {
 		return FormList{}, err
+	}
+	if options.Text != "" {
+		return s.searchForms(ctx, options.Text, filters, limit, offset, fingerprint)
 	}
 
 	var response collectorList[collectorForm]
@@ -150,42 +120,7 @@ func (s *Service) ListForms(ctx context.Context, options ListFormsOptions) (Form
 	}
 	result := FormList{Provenance: s.newProvenance(), Total: *response.Meta.Total, Count: len(response.Data), Forms: make([]Form, 0, len(response.Data))}
 	for _, row := range response.Data {
-		form := Form{
-			ID: row.ID, Name: row.FormName, Type: row.FormType, Folder: row.FormFolder,
-			Author: strings.TrimSpace(row.FormAuthor), Created: row.FormCreated,
-		}
-		// The collector leaves form_definition out when it cannot read the
-		// YAML: the form is then unknown, not empty.
-		var definition collectorFormOutputs
-		if len(row.FormDefinition) == 0 || string(row.FormDefinition) == "null" || json.Unmarshal(row.FormDefinition, &definition) != nil {
-			form.DefinitionUnavailable = true
-			result.Forms = append(result.Forms, form)
-			continue
-		}
-		form.Label, _ = truncateUTF8(definition.Label, maxRequestLabel)
-		form.Description, _ = truncateUTF8(strings.TrimSpace(definition.Desc), maxFormDescription)
-		inputs := len(definition.Inputs)
-		form.Inputs = &inputs
-		for _, output := range definition.Outputs {
-			if output.Dest != "" && !slices.Contains(form.Outputs, output.Dest) {
-				form.Outputs = append(form.Outputs, output.Dest)
-			}
-			if output.Dest != "workflow" {
-				continue
-			}
-			var steps []FormNext
-			if output.Scripts != nil {
-				steps = []FormNext{output.Scripts.Success.next("on_success"), output.Scripts.Error.next("on_error")}
-			} else {
-				steps = []FormNext{output.collectorFormNext.next("always")}
-			}
-			for _, step := range steps {
-				if !slices.ContainsFunc(form.NextSteps, func(other FormNext) bool { return sameFormNext(other, step) }) {
-					form.NextSteps = append(form.NextSteps, step)
-				}
-			}
-		}
-		result.Forms = append(result.Forms, form)
+		result.Forms = append(result.Forms, formOf(row))
 	}
 	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
 		result.NextCursor = encodeListCursor(next, fingerprint)
@@ -194,6 +129,156 @@ func (s *Service) ListForms(ctx context.Context, options ListFormsOptions) (Form
 	return result, nil
 }
 
+// maxFormTextScan bounds the forms a text search reads.
+const maxFormTextScan = 1000
+
+// searchForms reads the forms matching the collector filters and keeps those
+// whose name, title or description holds the text: the collector filters on
+// the name only, the title and the description living in the definition.
+func (s *Service) searchForms(ctx context.Context, text string, filters []string, limit, offset int, fingerprint string) (FormList, error) {
+	var response collectorList[collectorForm]
+	if err := s.client.GetJSON(ctx, "/forms", pageQuery(formProps, "form_folder,form_name,id", filters, maxFormTextScan, 0), &response); err != nil {
+		return FormList{}, fmt.Errorf("list forms: %w", err)
+	}
+	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > maxFormTextScan {
+		return FormList{}, fmt.Errorf("list forms: unexpected collector response")
+	}
+	needle := strings.ToLower(text)
+	var matching []Form
+	for _, row := range response.Data {
+		form := formOf(row)
+		if strings.Contains(strings.ToLower(form.Name+"\n"+form.Label+"\n"+form.Description), needle) {
+			matching = append(matching, form)
+		}
+	}
+	result := FormList{Provenance: s.newProvenance(), Total: len(matching), ScanTruncated: *response.Meta.Total > len(response.Data)}
+	end := min(offset+limit, len(matching))
+	if offset < len(matching) {
+		result.Forms = matching[offset:end]
+	}
+	if result.Forms == nil {
+		result.Forms = []Form{}
+	}
+	result.Count = len(result.Forms)
+	if end < len(matching) && result.Count > 0 {
+		result.NextCursor = encodeListCursor(end, fingerprint)
+		result.Truncated = true
+	}
+	return result, nil
+}
+
+// formDefinition is a form definition read as the collector reads it: the
+// elements of Inputs and Outputs that are not objects are left out, rather
+// than making the whole definition unreadable.
+type formDefinition struct {
+	label, description string
+	inputs, outputs    []map[string]any
+}
+
+// parseFormDefinition reads the form_definition the collector computes from
+// the YAML. It is absent or null when the collector could not read the YAML.
+func parseFormDefinition(raw json.RawMessage) (formDefinition, bool) {
+	var definition map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if len(raw) == 0 || decoder.Decode(&definition) != nil || definition == nil {
+		return formDefinition{}, false
+	}
+	return formDefinition{
+		label: formText(definition["Label"]), description: formText(definition["Desc"]),
+		inputs: definitionMaps(definition, "Inputs"), outputs: definitionMaps(definition, "Outputs"),
+	}, true
+}
+
+// definitionMaps reads the objects of a list of a definition element, as the
+// defMaps of the collector does.
+func definitionMaps(m map[string]any, key string) []map[string]any {
+	list, _ := m[key].([]any)
+	var maps []map[string]any
+	for _, item := range list {
+		if sub, ok := item.(map[string]any); ok {
+			maps = append(maps, sub)
+		}
+	}
+	return maps
+}
+
+// definitionBool reads a boolean of a definition element as the collector
+// does: historical forms write Mandatory: Yes, which YAML keeps a string.
+func definitionBool(m map[string]any, key string) bool {
+	switch value := m[key].(type) {
+	case bool:
+		return value
+	case string:
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "yes", "true", "on":
+			return true
+		}
+	}
+	return false
+}
+
+// formNextStep is the next step of a branch of a workflow output; a branch
+// the definition leaves out, nil, has no form: it closes the request.
+func formNextStep(branch map[string]any, condition string) FormNext {
+	step := FormNext{Condition: condition}
+	if branch == nil {
+		return step
+	}
+	forms, _ := branch["NextForms"].([]any)
+	for _, form := range forms {
+		if name := formText(form); name != "" && !slices.Contains(step.Forms, name) {
+			step.Forms = append(step.Forms, name)
+		}
+	}
+	step.Assignee = strings.TrimSpace(formText(branch["NextAssignee"]))
+	return step
+}
+
 func sameFormNext(a, b FormNext) bool {
 	return a.Condition == b.Condition && a.Assignee == b.Assignee && slices.Equal(a.Forms, b.Forms)
+}
+
+// formOf reads a collector form and its definition. The collector leaves
+// form_definition out when it cannot read the YAML: the form is then
+// unknown, not empty.
+func formOf(row collectorForm) Form {
+	form := Form{
+		ID: row.ID, Name: row.FormName, Type: row.FormType, Folder: row.FormFolder,
+		Author: strings.TrimSpace(row.FormAuthor), Created: row.FormCreated,
+	}
+	definition, ok := parseFormDefinition(row.FormDefinition)
+	if !ok {
+		form.DefinitionUnavailable = true
+		return form
+	}
+	form.Label, _ = truncateUTF8(definition.label, maxRequestLabel)
+	form.Description, _ = truncateUTF8(strings.TrimSpace(definition.description), maxFormDescription)
+	inputs := len(definition.inputs)
+	form.Inputs = &inputs
+	for _, output := range definition.outputs {
+		dest := formText(output["Dest"])
+		if dest != "" && !slices.Contains(form.Outputs, dest) {
+			form.Outputs = append(form.Outputs, dest)
+		}
+		if dest != "workflow" {
+			continue
+		}
+		// Scripts, when present, replace the direct next step: the collector
+		// takes the Success or the Error one by the return code of the script.
+		var steps []FormNext
+		if scripts, ok := output["Scripts"].(map[string]any); ok {
+			success, _ := scripts["Success"].(map[string]any)
+			failure, _ := scripts["Error"].(map[string]any)
+			steps = []FormNext{formNextStep(success, "on_success"), formNextStep(failure, "on_error")}
+		} else {
+			steps = []FormNext{formNextStep(output, "always")}
+		}
+		for _, step := range steps {
+			if !slices.ContainsFunc(form.NextSteps, func(other FormNext) bool { return sameFormNext(other, step) }) {
+				form.NextSteps = append(form.NextSteps, step)
+			}
+		}
+	}
+	return form
 }

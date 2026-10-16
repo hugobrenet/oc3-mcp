@@ -567,11 +567,19 @@ func TestFormToolsReadTheCollector(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
 		case "/forms":
-			_, _ = w.Write([]byte(`{"data":[{"id":198,"form_name":"sample-vm-request","form_type":"custo","form_definition":{"Label":"Virtual machine request","Outputs":[{"Dest":"workflow"}]}}],"meta":{"total":1}}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":198,"form_name":"sample-vm-request","form_type":"custo","form_yaml":"Label: Virtual machine request\n",
+				"form_definition":{"Label":"Virtual machine request","Inputs":[{"Id":"hostname","Mandatory":true}],"Outputs":[{"Dest":"workflow"}]}}],"meta":{"total":1}}`))
+		case "/forms/198/publications", "/forms/198/responsibles":
+			_, _ = w.Write([]byte(`{"data":[{"role":"Infra Unix"}]}`))
 		default:
 			notFound(w, "missing")
 		}
 	})
+	result, form := call("get_form", map[string]any{"form": "sample-vm-request"})
+	inputs, _ := form["inputs"].([]any)
+	if result.IsError || len(inputs) != 1 || inputs[0].(map[string]any)["mandatory"] != true || form["yaml"] != "Label: Virtual machine request\n" {
+		t.Fatalf("get_form = %+v", form)
+	}
 	result, list := call("list_forms", map[string]any{"type": "custo"})
 	items, _ := list["forms"].([]any)
 	if result.IsError || len(items) != 1 || items[0].(map[string]any)["label"] != "Virtual machine request" {

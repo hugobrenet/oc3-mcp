@@ -36,7 +36,8 @@ func TestListFormsReadsTheirDefinition(t *testing.T) {
 	if strings.Join(user.Outputs, ",") != "compliance variable" || user.NextSteps != nil || user.DefinitionUnavailable {
 		t.Fatalf("user = %+v", user)
 	}
-	if !broken.DefinitionUnavailable || broken.Inputs != nil || !odd.DefinitionUnavailable || odd.Inputs != nil {
+	// Inputs that are not a list hold no input, as the collector reads them.
+	if !broken.DefinitionUnavailable || broken.Inputs != nil || odd.DefinitionUnavailable || odd.Inputs == nil || *odd.Inputs != 0 {
 		t.Fatalf("broken = %+v, odd = %+v", broken, odd)
 	}
 	// Scripts replace the direct next forms, by the outcome of the script.
@@ -57,5 +58,35 @@ func TestListFormsRejectsInvalidInputs(t *testing.T) {
 		if _, err := newTestService(collector).ListForms(t.Context(), options); err == nil || len(collector.requests) != 0 {
 			t.Fatalf("options %+v accepted", options)
 		}
+	}
+}
+
+// text searches the names, titles and descriptions the MCP reads, then
+// pages the forms it keeps.
+func TestListFormsSearchesTheTitlesWithText(t *testing.T) {
+	collector := &fakeCollector{bodies: map[string]string{
+		"/forms": `{"data":[
+			{"id":1,"form_name":"sample-vm-request","form_definition":{"Label":"Virtual machine request"}},
+			{"id":2,"form_name":"sample-firewall-flow","form_definition":{"Label":"Firewall flow opening"}},
+			{"id":3,"form_name":"Amundi_01","form_definition":{"Label":"Add a node SAN disk","Desc":"For a VIRTUAL machine too"}},
+			{"id":4,"form_name":"virtual-ip","form_definition":null}],"meta":{"total":1200}}`,
+	}}
+	forms, err := newTestService(collector).ListForms(t.Context(), ListFormsOptions{Text: "Virtual", Type: "custo", Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := collector.requests[0]
+	if request.query.Get("limit") != "1000" || request.query.Get("offset") != "0" || request.query.Get("filter") != "form_type:eq:custo" {
+		t.Fatalf("request = %+v", request)
+	}
+	if forms.Total != 3 || forms.Count != 2 || !forms.ScanTruncated || !forms.Truncated || forms.Forms[0].Name != "sample-vm-request" || forms.Forms[1].Name != "Amundi_01" {
+		t.Fatalf("forms = %+v", forms)
+	}
+	next, err := newTestService(collector).ListForms(t.Context(), ListFormsOptions{Text: "virtual", Type: "custo", Limit: 2, Cursor: forms.NextCursor})
+	if err != nil || next.Count != 1 || next.Forms[0].Name != "virtual-ip" || next.Truncated {
+		t.Fatalf("next = %+v, %v", next, err)
+	}
+	if _, err := newTestService(collector).ListForms(t.Context(), ListFormsOptions{Text: "other", Type: "custo", Cursor: forms.NextCursor}); err == nil {
+		t.Fatal("a cursor was accepted with another text")
 	}
 }

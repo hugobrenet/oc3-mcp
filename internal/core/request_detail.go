@@ -27,8 +27,8 @@ const (
 
 // sensitiveNamePattern tells, by whole words, the names of the inputs and
 // keys whose value may be a secret or an email address: admin_password,
-// apiKey or requestor_email, not private_ip or bypass.
-var sensitiveNamePattern = regexp.MustCompile(`(?i)(^|[^a-z])(pass(word|wd|phrase)?s?|pwd|secrets?|tokens?|credentials?|private[ _-]?keys?|(api|ssh|secret|access)[ _-]?keys?|e?[ _-]?mails?)([^a-z]|$)`)
+// apiKey, Authorization or requestor_email, not private_ip or bypass.
+var sensitiveNamePattern = regexp.MustCompile(`(?i)(^|[^a-z])(pass(word|wd|phrase)?s?|pwd|secrets?|tokens?|credentials?|private[ _-]?keys?|(api|ssh|secret|access)[ _-]?keys?|authorization|cookies?|e?[ _-]?mails?)([^a-z]|$)`)
 
 // camelCasePattern splits camelCase names into words: apiKey reads api_Key.
 var camelCasePattern = regexp.MustCompile(`([a-z0-9])([A-Z])`)
