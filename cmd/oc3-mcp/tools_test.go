@@ -843,8 +843,7 @@ func TestDetachNodeTagFromTheNodesHoldingIt(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`{"data":[{"tag_id":"t-1","tag_name":"tag-mcp"}]}`))
 		case path == "GET /tags/t-1/nodes":
-			// The second call selects by the tag filter only.
-			if filter := r.URL.Query().Get("filter"); filter != "status:eq:In service" && filter != "" {
+			if filter := r.URL.Query().Get("filter"); filter != "status:eq:In service" {
 				t.Errorf("selection filter = %q", filter)
 			}
 			_, _ = w.Write([]byte(`{"data":[{"node_id":"n-1","nodename":"a"},{"node_id":"n-2","nodename":"b"}],"meta":{"total":2}}`))
@@ -857,11 +856,11 @@ func TestDetachNodeTagFromTheNodesHoldingIt(t *testing.T) {
 			notFound(w, "missing")
 		}
 	})
-	result, change := call("detach_node_tag", map[string]any{"tag": "tag-mcp", "filter_tag": "tag-mcp", "status": "In service", "expected_count": 2})
+	result, change := call("detach_node_tag", map[string]any{"tag": "tag-mcp", "filter_tag": "tag-mcp", "status": "In service"})
 	if result.IsError || change["changed"] != float64(2) || change["filter_tag"].(map[string]any)["name"] != "tag-mcp" || len(deleted) != 2 {
 		t.Fatalf("detach_node_tag = %+v, deleted %v", change, deleted)
 	}
-	if result, _ := call("detach_node_tag", map[string]any{"tag": "tag-mcp", "filter_tag": "tag-mcp", "expected_count": 3}); !result.IsError || len(deleted) != 2 {
-		t.Fatalf("a selection of another size was accepted, deleted %v", deleted)
+	if result, _ := call("detach_node_tag", map[string]any{"tag": "tag-mcp"}); !result.IsError || len(deleted) != 2 {
+		t.Fatalf("a call selecting no node was accepted, deleted %v", deleted)
 	}
 }

@@ -34,13 +34,11 @@ const (
 )
 
 // NodeTagOptions select the nodes of a tag change: Nodes, exact names or
-// IDs, or Filters, with ExpectedCount, the number of nodes they select as
-// the user saw it.
+// IDs, or Filters, at least one.
 type NodeTagOptions struct {
-	Tag           string
-	Nodes         []string
-	Filters       NodeFilters
-	ExpectedCount int
+	Tag     string
+	Nodes   []string
+	Filters NodeFilters
 	// AttachData is the data of the attachment, such as the fields of a
 	// form, when attaching.
 	AttachData *string
@@ -96,10 +94,6 @@ func (s *Service) changeNodeTag(ctx context.Context, options NodeTagOptions, att
 		return NodeTagChange{}, fmt.Errorf("pass the nodes, or at least one filter to select them")
 	case len(options.Nodes) > maxTagNodes:
 		return NodeTagChange{}, fmt.Errorf("pass at most %d nodes; select more nodes with filters", maxTagNodes)
-	case byFilters && options.ExpectedCount <= 0:
-		return NodeTagChange{}, fmt.Errorf("with filters, pass expected_count, the number of nodes count_nodes gives for the same filters, which the user saw")
-	case !byFilters && options.ExpectedCount != 0:
-		return NodeTagChange{}, fmt.Errorf("expected_count goes with filters only")
 	}
 	var filters []string
 	if byFilters {
@@ -120,7 +114,7 @@ func (s *Service) changeNodeTag(ctx context.Context, options NodeTagOptions, att
 			return NodeTagChange{}, err
 		}
 		result.FilterTag, result.Filterset = filterTag, filterset
-		if nodes, err = s.selectNodes(ctx, path, filters, options.ExpectedCount); err != nil {
+		if nodes, err = s.selectNodes(ctx, path, filters); err != nil {
 			return NodeTagChange{}, err
 		}
 	} else if nodes, err = s.resolveNodes(ctx, options.Nodes); err != nil {
@@ -210,9 +204,10 @@ func (s *Service) changeOneNodeTag(ctx context.Context, tag TagReference, node c
 }
 
 // selectNodes reads the nodes the filters select, and refuses a selection
-// that differs in number from the one the user saw, or is too large.
-func (s *Service) selectNodes(ctx context.Context, path string, filters []string, expected int) ([]collectorNode, error) {
+// too large, or that changed while it was read.
+func (s *Service) selectNodes(ctx context.Context, path string, filters []string) ([]collectorNode, error) {
 	var nodes []collectorNode
+	expected := -1
 	for offset := 0; ; offset += tagSelectionPage {
 		var response collectorList[collectorNode]
 		if err := s.client.GetJSON(ctx, path, pageQuery([]string{"node_id", "nodename", "cluster_id"}, "nodename,node_id", filters, tagSelectionPage, offset), &response); err != nil {
@@ -222,8 +217,11 @@ func (s *Service) selectNodes(ctx context.Context, path string, filters []string
 			return nil, fmt.Errorf("select nodes: unexpected collector response")
 		}
 		total := *response.Meta.Total
+		if expected < 0 {
+			expected = total
+		}
 		if total != expected {
-			return nil, fmt.Errorf("the filters select %d nodes, not the expected %d: nothing was changed; count the nodes again with count_nodes and confirm the new number with the user", total, expected)
+			return nil, fmt.Errorf("the selection changed while it was read, %d nodes then %d: nothing was changed", expected, total)
 		}
 		if total > maxTagSelection {
 			return nil, fmt.Errorf("the filters select %d nodes, more than %d: nothing was changed; narrow the filters", total, maxTagSelection)
