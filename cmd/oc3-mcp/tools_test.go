@@ -807,7 +807,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"attach_node_ruleset": true, "detach_node_ruleset": true, "attach_node_moduleset": true, "detach_node_moduleset": true, "queue_node_action": false,
 			"freeze_node": false, "unfreeze_node": true, "drain_node": true, "fix_node_compliance": true, "cancel_node_action": false,
 			"attach_service_tag": false, "detach_service_tag": true,
-			"delete_service": true, "delete_service_instance": true} {
+			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
 				t.Fatalf("%s = %+v", name, tool)
@@ -827,7 +827,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		if !strings.Contains(string(schema), `"loc_city"`) || !strings.Contains(string(schema), `"required":["node"]`) {
 			t.Fatalf("update_node schema = %s", schema)
 		}
-		if len(found) != 19 {
+		if len(found) != 20 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -1049,5 +1049,32 @@ func TestServiceDeleteTools(t *testing.T) {
 	result, _ = call("delete_service", map[string]any{"service": "dup"})
 	if text := result.Content[0].(*mcp.TextContent).Text; !result.IsError || !strings.Contains(text, "s-1 (cluster c1)") || !strings.Contains(text, "s-2 (cluster c2)") || len(deleted) != 1 {
 		t.Fatalf("delete_service of homonyms = %q, deleted %v", text, deleted)
+	}
+}
+
+func TestAckServiceActionTool(t *testing.T) {
+	var body map[string]any
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.EscapedPath() {
+		case "POST /services_actions/7":
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			_, _ = w.Write([]byte(`{"info":"action 7 acknowledged"}`))
+		case "GET /services_actions/7":
+			_, _ = w.Write([]byte(`{"data":[{"id":7,"status":"err","ack":1,"acked_comment":"known issue"}]}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, ack := call("ack_service_action", map[string]any{"action_ids": []int{7}, "comment": "known issue"})
+	if result.IsError || ack["acknowledged"] != float64(1) || body["ack"] != float64(1) || body["acked_comment"] != "known issue" ||
+		ack["actions"].([]any)[0].(map[string]any)["action"].(map[string]any)["acknowledged"] != true {
+		t.Fatalf("ack_service_action = %+v, body %v", ack, body)
+	}
+	if result, _ := call("ack_service_action", map[string]any{"action_ids": []int{7}, "comment": ""}); !result.IsError {
+		t.Fatal("ack_service_action accepted an empty comment")
+	}
+	if result, _ := call("ack_service_action", map[string]any{"comment": "known issue"}); !result.IsError {
+		t.Fatal("ack_service_action accepted a call selecting no action")
 	}
 }

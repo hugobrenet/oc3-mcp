@@ -30,6 +30,7 @@ var coreTools = []string{"count_nodes", "list_nodes", "get_node", "count_service
 // description does not hold, such as synonyms: the model does not see them,
 // they only rank the tool in a search.
 var toolKeywords = map[string][]string{
+	"ack_service_action":           {"acknowledge", "ack failure", "ack error", "clear action errors", "acknowledge failed action"},
 	"attach_node_moduleset":        {"add moduleset", "assign moduleset", "compliance modules", "enable compliance"},
 	"attach_node_ruleset":          {"add ruleset", "assign ruleset", "compliance rules", "apply ruleset"},
 	"attach_node_tag":              {"add tag", "tag nodes", "label nodes", "set tag", "bulk tag", "mass tag"},
@@ -38,6 +39,7 @@ var toolKeywords = map[string][]string{
 	"count_compliance_runs":        {"how many", "number of fixes", "failed checks", "compliance statistics", "per module", "per node", "distribution"},
 	"count_instances":              {"how many instances", "number of instances", "instances per node", "statistics", "distribution"},
 	"count_nodes":                  {"how many nodes", "number", "distribution", "statistics", "fleet", "inventory", "servers", "hosts"},
+	"count_service_actions":        {"how many failures", "number of failed actions", "unacknowledged failures", "action errors count", "failures by node"},
 	"count_services":               {"how many services", "number", "distribution", "statistics", "services down"},
 	"create_node":                  {"add node", "new node", "register node", "declare node", "inventory"},
 	"delete_node":                  {"remove node", "decommission", "purge node", "drop node"},

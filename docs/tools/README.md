@@ -11,7 +11,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Clusters | `list_clusters` | [Cluster tools](clusters.md) |
 | Nodes | `list_nodes`, `count_nodes`, `get_node`, `get_node_san_topology`, `list_node_disks`, `get_node_stats` | [Node tools](nodes.md) |
 | Services | `list_services`, `count_services`, `get_service`, `get_service_status_history`, `list_service_resources`, `get_service_resource_history`, `list_instances`, `count_instances` | [Service tools](services.md) |
-| Service actions | `list_service_actions`, `get_service_action_logs` | [Service action tools](service-actions.md) |
+| Service actions | `list_service_actions`, `count_service_actions`, `get_service_action_logs`, `ack_service_action` | [Service action tools](service-actions.md) |
 | Alerts | `list_alerts` | [Alert tools](alerts.md) |
 | Checks | `list_node_checks`, `list_service_checks` | [Check tools](checks.md) |
 | Packages | `list_node_packages`, `list_package_differences` | [Package tools](packages.md) |
