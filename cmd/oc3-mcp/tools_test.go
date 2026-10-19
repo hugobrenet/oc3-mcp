@@ -823,6 +823,16 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				t.Fatalf("%s schema = %s", name, schema)
 			}
 		}
+		// So have the ruleset or moduleset changed and its filter.
+		for name, kinds := range map[string][2]string{
+			"attach_node_ruleset": {"ruleset", "moduleset"}, "detach_node_ruleset": {"ruleset", "moduleset"},
+			"attach_node_moduleset": {"moduleset", "ruleset"}, "detach_node_moduleset": {"moduleset", "ruleset"},
+		} {
+			schema, _ := json.Marshal(found[name].InputSchema)
+			if strings.Count(string(schema), `"`+kinds[0]+`":{`) != 1 || !strings.Contains(string(schema), `"filter_`+kinds[0]+`":{`) || !strings.Contains(string(schema), `"`+kinds[1]+`":{`) {
+				t.Fatalf("%s schema = %s", name, schema)
+			}
+		}
 		schema, _ := json.Marshal(found["update_node"].InputSchema)
 		if !strings.Contains(string(schema), `"loc_city"`) || !strings.Contains(string(schema), `"required":["node"]`) {
 			t.Fatalf("update_node schema = %s", schema)
@@ -909,6 +919,73 @@ func TestNodeComplianceToolsChangeTheSelectedNodes(t *testing.T) {
 	}
 	if strings.Join(changes, ",") != "POST /nodes/n-1/compliance/rulesets/12,DELETE /nodes/n-2/compliance/modulesets/7" {
 		t.Fatalf("changes = %v", changes)
+	}
+}
+
+// The ruleset and moduleset filters read the nodes they are attached to,
+// with the other filters: to list, count and change them.
+func TestNodeFiltersByRulesetAndModuleset(t *testing.T) {
+	var mutex sync.Mutex
+	var deleted []string
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		query := r.URL.Query()
+		switch path := r.Method + " " + r.URL.EscapedPath(); {
+		case path == "GET /compliance/rulesets/os.linux.base":
+			_, _ = w.Write([]byte(`{"data":[{"id":12,"ruleset_name":"os.linux.base","ruleset_type":"explicit"}]}`))
+		case path == "GET /compliance/rulesets/ctx.dev2":
+			_, _ = w.Write([]byte(`{"data":[{"id":13,"ruleset_name":"ctx.dev2","ruleset_type":"contextual"}]}`))
+		case path == "GET /compliance/modulesets/base.linux":
+			_, _ = w.Write([]byte(`{"data":[{"id":7,"modset_name":"base.linux"}]}`))
+		case path == "GET /compliance/rulesets/12/nodes":
+			if filter := query.Get("filter"); filter != "node_env:eq:PRD" {
+				t.Errorf("list filter = %q", filter)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"n-1","nodename":"a"}],"meta":{"total":1}}`))
+		case path == "GET /compliance/modulesets/7/nodes" && query.Get("stats") == "true":
+			if query.Get("props") != "status" {
+				t.Errorf("count props = %q", query.Get("props"))
+			}
+			_, _ = w.Write([]byte(`{"data":{"status":{"In service":2,"Commissioning":1}},"meta":{"total":3,"distinct":{"status":2},"other":{"status":0}}}`))
+		case path == "GET /compliance/modulesets/7/nodes":
+			if filter := query.Get("filter"); filter != "status:eq:In service" {
+				t.Errorf("selection filter = %q", filter)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"n-1","nodename":"a"},{"node_id":"n-2","nodename":"b"}],"meta":{"total":2}}`))
+		case strings.HasPrefix(path, "DELETE /nodes/"):
+			mutex.Lock()
+			deleted = append(deleted, path)
+			mutex.Unlock()
+			_, _ = w.Write([]byte(`{"info":"moduleset detached"}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, list := call("list_nodes", map[string]any{"ruleset": "os.linux.base", "env": "PRD"})
+	if result.IsError || list["total"] != float64(1) || list["ruleset"].(map[string]any)["id"] != float64(12) {
+		t.Fatalf("list_nodes = %+v", list)
+	}
+	result, count := call("count_nodes", map[string]any{"moduleset": "base.linux", "group_by": "status"})
+	if result.IsError || count["total"] != float64(3) || count["moduleset"].(map[string]any)["name"] != "base.linux" {
+		t.Fatalf("count_nodes = %+v", count)
+	}
+	result, change := call("detach_node_moduleset", map[string]any{"moduleset": "base.linux", "filter_moduleset": "base.linux", "status": "In service"})
+	if result.IsError || change["changed"] != float64(2) || change["filter_moduleset"].(map[string]any)["id"] != float64(7) || len(deleted) != 2 {
+		t.Fatalf("detach_node_moduleset = %+v, deleted %v", change, deleted)
+	}
+	// A contextual ruleset is attached to no node, and two membership
+	// filters are refused, before any change.
+	for _, arguments := range []map[string]any{
+		{"ruleset": "ctx.dev2"},
+		{"ruleset": "os.linux.base", "moduleset": "base.linux"},
+		{"tag": "pci-dss", "moduleset": "base.linux"},
+	} {
+		if result, _ := call("list_nodes", arguments); !result.IsError {
+			t.Fatalf("list_nodes %v was accepted", arguments)
+		}
+	}
+	if result, _ := call("detach_node_ruleset", map[string]any{"ruleset": "os.linux.base", "filter_ruleset": "ctx.dev2"}); !result.IsError || len(deleted) != 2 {
+		t.Fatalf("a contextual ruleset filter was accepted, deleted %v", deleted)
 	}
 }
 

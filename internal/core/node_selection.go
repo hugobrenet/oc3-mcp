@@ -41,13 +41,15 @@ type NodeSelection struct {
 
 // NodeChangeSummary is the outcome of a change on the selected nodes.
 type NodeChangeSummary struct {
-	Filterset *FiltersetReference `json:"filterset,omitempty" jsonschema:"the filterset the filterset filter resolved to"`
-	FilterTag *TagReference       `json:"filter_tag,omitempty" jsonschema:"the tag the tag filter resolved to"`
-	Selected  int                 `json:"selected" jsonschema:"the number of nodes selected"`
-	Changed   int                 `json:"changed" jsonschema:"the number of nodes changed"`
-	Unchanged int                 `json:"unchanged" jsonschema:"the number of nodes already as asked"`
-	Refused   int                 `json:"refused" jsonschema:"the number of nodes the collector refused the change for"`
-	Nodes     []NodeChangeOutcome `json:"nodes" jsonschema:"the outcome on each node, sorted by node name"`
+	Filterset       *FiltersetReference           `json:"filterset,omitempty" jsonschema:"the filterset the filterset filter resolved to"`
+	FilterTag       *TagReference                 `json:"filter_tag,omitempty" jsonschema:"the tag the tag filter resolved to"`
+	FilterRuleset   *ComplianceRulesetReference   `json:"filter_ruleset,omitempty" jsonschema:"the ruleset the ruleset filter resolved to"`
+	FilterModuleset *ComplianceModulesetReference `json:"filter_moduleset,omitempty" jsonschema:"the moduleset the moduleset filter resolved to"`
+	Selected        int                           `json:"selected" jsonschema:"the number of nodes selected"`
+	Changed         int                           `json:"changed" jsonschema:"the number of nodes changed"`
+	Unchanged       int                           `json:"unchanged" jsonschema:"the number of nodes already as asked"`
+	Refused         int                           `json:"refused" jsonschema:"the number of nodes the collector refused the change for"`
+	Nodes           []NodeChangeOutcome           `json:"nodes" jsonschema:"the outcome on each node, sorted by node name"`
 }
 
 type NodeChangeOutcome struct {
@@ -113,11 +115,12 @@ func (s *Service) changeSelectedNodes(ctx context.Context, selection NodeSelecti
 	var summary NodeChangeSummary
 	var nodes []collectorNode
 	if len(selection.Nodes) == 0 {
-		path, filterTag, filterset, err := s.memberPath(ctx, selection.Filters.Tag, selection.Filters.Filterset, "nodes")
+		path, membership, err := s.nodeMemberPath(ctx, selection.Filters)
 		if err != nil {
 			return NodeChangeSummary{}, err
 		}
-		summary.FilterTag, summary.Filterset = filterTag, filterset
+		summary.FilterTag, summary.Filterset = membership.Tag, membership.Filterset
+		summary.FilterRuleset, summary.FilterModuleset = membership.Ruleset, membership.Moduleset
 		if nodes, err = s.selectNodes(ctx, path, filters); err != nil {
 			return NodeChangeSummary{}, err
 		}

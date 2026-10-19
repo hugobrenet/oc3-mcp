@@ -105,11 +105,29 @@ func (input NodeSelectionInput) selection() core.NodeSelection {
 type NodeRulesetInput struct {
 	Ruleset string `json:"ruleset" jsonschema:"one exact compliance ruleset name or ruleset ID"`
 	NodeSelectionInput
+	// FilterRuleset is the ruleset filter of list_nodes, whose name ruleset
+	// is the ruleset changed here.
+	FilterRuleset string `json:"filter_ruleset,omitempty" jsonschema:"optional exact explicit ruleset name or ruleset ID; keeps only the nodes it is attached to, the ruleset filter of list_nodes and count_nodes; to detach a ruleset from every node holding it, pass the same ruleset; not with tag, filterset or moduleset"`
+}
+
+func (input NodeRulesetInput) selection() core.NodeSelection {
+	selection := input.NodeSelectionInput.selection()
+	selection.Filters.Ruleset = input.FilterRuleset
+	return selection
 }
 
 type NodeModulesetInput struct {
 	Moduleset string `json:"moduleset" jsonschema:"one exact compliance moduleset name or moduleset ID"`
 	NodeSelectionInput
+	// FilterModuleset is the moduleset filter of list_nodes, whose name
+	// moduleset is the moduleset changed here.
+	FilterModuleset string `json:"filter_moduleset,omitempty" jsonschema:"optional exact moduleset name or moduleset ID; keeps only the nodes it is attached to directly, the moduleset filter of list_nodes and count_nodes; to detach a moduleset from every node holding it, pass the same moduleset; not with tag, filterset or ruleset"`
+}
+
+func (input NodeModulesetInput) selection() core.NodeSelection {
+	selection := input.NodeSelectionInput.selection()
+	selection.Filters.Moduleset = input.FilterModuleset
+	return selection
 }
 
 type NodeRulesetOutput = core.NodeRulesetChange
@@ -135,13 +153,19 @@ const nodeActionFollowUp = "The collector queues it on each node; the agent runs
 
 type NodeModulesetOutput = core.NodeModulesetChange
 
-// nodeComplianceSelection tells how a compliance change selects its nodes.
-const nodeComplianceSelection = "Pass the nodes, at most 50 exact names or IDs, or at least one of the filters of list_nodes and count_nodes, to select up to 1000 nodes; a larger selection is refused, and nothing is changed. " +
-	"An unknown or ambiguous node name refuses the whole call, before anything is changed. The MCP sends one request per node: the change is not atomic, and the result gives the outcome on each node, with the reason of each refusal. " +
+// nodeComplianceSelection tells how a change of a ruleset or a moduleset,
+// the kind, selects its nodes.
+func nodeComplianceSelection(kind string) string {
+	return "Pass the nodes, at most 50 exact names or IDs, or at least one of the filters of list_nodes and count_nodes, the " + kind + " filter given here as filter_" + kind + ", to select up to 1000 nodes; a larger selection is refused, and nothing is changed. " +
+		nodeComplianceRefusals
+}
+
+// nodeComplianceRefusals tells how a compliance change goes on the nodes.
+const nodeComplianceRefusals = "An unknown or ambiguous node name refuses the whole call, before anything is changed. The MCP sends one request per node: the change is not atomic, and the result gives the outcome on each node, with the reason of each refusal. " +
 	"Requires to be responsible for the nodes; the collector attaches only what is published to the group responsible for the node, or to Everybody."
 
 // nodeTagSelection tells how a tag change selects its nodes.
-const nodeTagSelection = "Pass the nodes, at most 50 exact names or IDs, or at least one of the filters of list_nodes and count_nodes, the tag filter given here as filter_tag, to select up to 1000 nodes; a larger selection is refused, and nothing is changed." +
+const nodeTagSelection = "Pass the nodes, at most 50 exact names or IDs, or at least one of the filters of list_nodes and count_nodes, the tag filter given here as filter_tag, to select up to 1000 nodes; a larger selection is refused, and nothing is changed. " +
 	"An unknown or ambiguous node name refuses the whole call, before anything is changed. The MCP sends one request per node: the change is not atomic, and the result gives the outcome on each node, with the reason of each refusal, such as a tag the collector holds incompatible with the other tags of the node. " +
 	"Requires to be responsible for the nodes."
 
@@ -241,7 +265,7 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 		if err := addTool(
 			registrar,
 			&mcp.Tool{
-				Name: declared.name, Title: declared.title, Description: declared.description + nodeComplianceSelection,
+				Name: declared.name, Title: declared.title, Description: declared.description + nodeComplianceSelection("ruleset"),
 				// An attachment is destructive too: it makes the agents
 				// run modules, which may change the nodes, as an autofix.
 				Annotations: actionAnnotations(true, true),
@@ -273,7 +297,7 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 		if err := addTool(
 			registrar,
 			&mcp.Tool{
-				Name: declared.name, Title: declared.title, Description: declared.description + nodeComplianceSelection,
+				Name: declared.name, Title: declared.title, Description: declared.description + nodeComplianceSelection("moduleset"),
 				// An attachment is destructive too: it makes the agents
 				// run modules, which may change the nodes, as an autofix.
 				Annotations: actionAnnotations(true, true),

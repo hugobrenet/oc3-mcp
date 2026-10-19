@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -51,6 +52,20 @@ type NodeFilters struct {
 	Tag string
 	// Filterset keeps the nodes this filterset selects, by name or ID.
 	Filterset string
+	// Ruleset keeps the nodes an explicit ruleset is attached to, by name
+	// or ID.
+	Ruleset string
+	// Moduleset keeps the nodes a moduleset is attached to, by name or ID.
+	Moduleset string
+}
+
+// NodeMembership are the tag, filterset, ruleset or moduleset a node filter
+// resolved to: at most one.
+type NodeMembership struct {
+	Tag       *TagReference                 `json:"tag,omitempty" jsonschema:"the tag the tag filter resolved to; only the nodes holding it are kept"`
+	Filterset *FiltersetReference           `json:"filterset,omitempty" jsonschema:"the filterset the filterset filter resolved to; only the nodes it selects are kept"`
+	Ruleset   *ComplianceRulesetReference   `json:"ruleset,omitempty" jsonschema:"the ruleset the ruleset filter resolved to; only the nodes it is attached to are kept"`
+	Moduleset *ComplianceModulesetReference `json:"moduleset,omitempty" jsonschema:"the moduleset the moduleset filter resolved to; only the nodes it is attached to are kept"`
 }
 
 type ListNodesOptions struct {
@@ -60,14 +75,13 @@ type ListNodesOptions struct {
 }
 
 type NodeList struct {
-	Provenance Provenance          `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
-	Tag        *TagReference       `json:"tag,omitempty" jsonschema:"the tag the tag filter resolved to; only the nodes holding it are listed"`
-	Filterset  *FiltersetReference `json:"filterset,omitempty" jsonschema:"the filterset the filterset filter resolved to; only the nodes it selects are listed"`
-	Total      int                 `json:"total" jsonschema:"the number of nodes matching the filters, as the collector counts them"`
-	Count      int                 `json:"count" jsonschema:"the number of nodes returned in this page"`
-	Nodes      []NodeSummary       `json:"nodes" jsonschema:"the nodes sorted by node name, then node ID"`
-	NextCursor string              `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
-	Truncated  bool                `json:"truncated" jsonschema:"whether matching nodes remain after this page"`
+	Provenance Provenance `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
+	NodeMembership
+	Total      int           `json:"total" jsonschema:"the number of nodes matching the filters, as the collector counts them"`
+	Count      int           `json:"count" jsonschema:"the number of nodes returned in this page"`
+	Nodes      []NodeSummary `json:"nodes" jsonschema:"the nodes sorted by node name, then node ID"`
+	NextCursor string        `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
+	Truncated  bool          `json:"truncated" jsonschema:"whether matching nodes remain after this page"`
 }
 
 type NodeSummary struct {
@@ -238,7 +252,7 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 	if err != nil {
 		return NodeList{}, err
 	}
-	path, tag, filterset, err := s.memberPath(ctx, options.Tag, options.Filterset, "nodes")
+	path, membership, err := s.nodeMemberPath(ctx, options.NodeFilters)
 	if err != nil {
 		return NodeList{}, err
 	}
@@ -255,7 +269,7 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
 		return NodeList{}, fmt.Errorf("list nodes: unexpected collector response")
 	}
-	result := NodeList{Provenance: s.newProvenance(), Tag: tag, Filterset: filterset, Total: *response.Meta.Total, Count: len(response.Data), Nodes: make([]NodeSummary, 0, len(response.Data))}
+	result := NodeList{Provenance: s.newProvenance(), NodeMembership: membership, Total: *response.Meta.Total, Count: len(response.Data), Nodes: make([]NodeSummary, 0, len(response.Data))}
 	for _, node := range response.Data {
 		result.Nodes = append(result.Nodes, NodeSummary{
 			NodeID: node.NodeID, Nodename: node.Nodename, ClusterID: node.ClusterID, App: node.App, Env: node.NodeEnv,
@@ -268,6 +282,48 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 		result.Truncated = true
 	}
 	return result, nil
+}
+
+// nodeMemberPath is the collector list of the nodes, or with a tag,
+// filterset, ruleset or moduleset filter, the list of its nodes, which
+// takes the other filters too.
+func (s *Service) nodeMemberPath(ctx context.Context, f NodeFilters) (string, NodeMembership, error) {
+	set := 0
+	for _, value := range []string{f.Tag, f.Filterset, f.Ruleset, f.Moduleset} {
+		if value != "" {
+			set++
+		}
+	}
+	if set > 1 {
+		return "", NodeMembership{}, fmt.Errorf("pass at most one of tag, filterset, ruleset and moduleset")
+	}
+	switch {
+	case f.Ruleset != "":
+		if err := checkComplianceName("ruleset", f.Ruleset); err != nil {
+			return "", NodeMembership{}, err
+		}
+		ruleset, err := s.lookupRuleset(ctx, f.Ruleset)
+		if err != nil {
+			return "", NodeMembership{}, err
+		}
+		// The collector lists the nodes a ruleset is attached to: a
+		// contextual ruleset applies through its filterset instead.
+		if ruleset.Type != "explicit" {
+			return "", NodeMembership{}, fmt.Errorf("ruleset %s is %s: it applies to the nodes its filterset selects, and is attached to none; filter by that filterset, which get_compliance_ruleset gives", ruleset.Name, ruleset.Type)
+		}
+		return "/compliance/rulesets/" + strconv.Itoa(ruleset.ID) + "/nodes", NodeMembership{Ruleset: &ruleset}, nil
+	case f.Moduleset != "":
+		if err := checkComplianceName("moduleset", f.Moduleset); err != nil {
+			return "", NodeMembership{}, err
+		}
+		moduleset, err := s.lookupModuleset(ctx, f.Moduleset)
+		if err != nil {
+			return "", NodeMembership{}, err
+		}
+		return "/compliance/modulesets/" + strconv.Itoa(moduleset.ID) + "/nodes", NodeMembership{Moduleset: &moduleset}, nil
+	}
+	path, tag, filterset, err := s.memberPath(ctx, f.Tag, f.Filterset, "nodes")
+	return path, NodeMembership{Tag: tag, Filterset: filterset}, err
 }
 
 // silentForPattern is a duration of the collector relative dates: a number

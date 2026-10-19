@@ -58,7 +58,7 @@ func RegisterComplianceModulesetTools(registrar *Registrar, service *core.Servic
 			Description: "Read one compliance moduleset of the OpenSVC collector by its name or ID: its modules, the modulesets it includes, its rulesets, and the nodes and services it is attached to directly. " +
 				"It also gives its publication and responsible groups and the modulesets including it. " +
 				modulesetDescription +
-				"The modulesets including it, in included_by, carry their own attachments: it also applies where they are attached. At most 50 nodes and 50 services are named. Use list_compliance_runs with module for the runs of its modules.",
+				"The modulesets including it, in included_by, carry their own attachments: it also applies where they are attached. At most 50 nodes and 50 services are named; list_nodes and count_nodes with moduleset read all the nodes. Use list_compliance_runs with module for the runs of its modules.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input GetComplianceModulesetInput) (*mcp.CallToolResult, GetComplianceModulesetOutput, error) {
