@@ -805,7 +805,8 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		// creation or the attachment of a tag.
 		for name, destructive := range map[string]bool{"create_node": false, "update_node": true, "delete_node": true, "attach_node_tag": false, "detach_node_tag": true,
 			"attach_node_ruleset": true, "detach_node_ruleset": true, "attach_node_moduleset": true, "detach_node_moduleset": true, "queue_node_action": false,
-			"freeze_node": false, "unfreeze_node": true, "drain_node": true, "fix_node_compliance": true, "cancel_node_action": false} {
+			"freeze_node": false, "unfreeze_node": true, "drain_node": true, "fix_node_compliance": true, "cancel_node_action": false,
+			"attach_service_tag": false, "detach_service_tag": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
 				t.Fatalf("%s = %+v", name, tool)
@@ -815,7 +816,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			}
 		}
 		// The tag changed and the tag filter have their own names.
-		for _, name := range []string{"attach_node_tag", "detach_node_tag"} {
+		for _, name := range []string{"attach_node_tag", "detach_node_tag", "attach_service_tag", "detach_service_tag"} {
 			schema, _ := json.Marshal(found[name].InputSchema)
 			if strings.Count(string(schema), `"tag":{`) != 1 || !strings.Contains(string(schema), `"filter_tag":{`) || !strings.Contains(string(schema), `"status":{`) {
 				t.Fatalf("%s schema = %s", name, schema)
@@ -825,7 +826,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		if !strings.Contains(string(schema), `"loc_city"`) || !strings.Contains(string(schema), `"required":["node"]`) {
 			t.Fatalf("update_node schema = %s", schema)
 		}
-		if len(found) != 15 {
+		if len(found) != 17 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -966,5 +967,37 @@ func TestNodeChangingActionTools(t *testing.T) {
 	result, cancelled := call("cancel_node_action", map[string]any{"action_ids": []int{903}})
 	if result.IsError || cancelled["cancelled"] != float64(1) || cancelled["actions"].([]any)[0].(map[string]any)["command"] != "thaw --local" {
 		t.Fatalf("cancel_node_action = %+v", cancelled)
+	}
+}
+
+func TestServiceTagTools(t *testing.T) {
+	var mutex sync.Mutex
+	var changed []string
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch path := r.Method + " " + r.URL.EscapedPath(); {
+		case path == "GET /tags":
+			_, _ = w.Write([]byte(`{"data":[{"tag_id":"t-1","tag_name":"tag-mcp"}]}`))
+		case path == "GET /tags/t-1/services":
+			if filter := r.URL.Query().Get("filter"); filter != "svc_app:eq:DATA" {
+				t.Errorf("selection filter = %q", filter)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s-1","svcname":"prd/svc/ora-hr"}],"meta":{"total":1}}`))
+		case strings.HasPrefix(path, "POST /tags/t-1/services/"), strings.HasPrefix(path, "DELETE /tags/t-1/services/"):
+			mutex.Lock()
+			changed = append(changed, path)
+			mutex.Unlock()
+			_, _ = w.Write([]byte(`{"info":"tag detached"}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, change := call("detach_service_tag", map[string]any{"tag": "tag-mcp", "filter_tag": "tag-mcp", "app": "DATA"})
+	if result.IsError || change["changed"] != float64(1) || change["services"].([]any)[0].(map[string]any)["svcname"] != "prd/svc/ora-hr" ||
+		strings.Join(changed, ",") != "DELETE /tags/t-1/services/s-1" {
+		t.Fatalf("detach_service_tag = %+v, changed %v", change, changed)
+	}
+	if result, _ := call("attach_service_tag", map[string]any{"tag": "tag-mcp"}); !result.IsError {
+		t.Fatal("attach_service_tag accepted a call selecting no service")
 	}
 }

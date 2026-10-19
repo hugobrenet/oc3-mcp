@@ -261,7 +261,7 @@ the caller is not responsible for with 403.
 | `tag` | One exact tag name, case-insensitive, or tag ID |
 | `nodes` | Optional, see [selection](#selection) |
 | filters | Optional, see [selection](#selection) |
-| `attach_data` | `attach_node_tag` only: optional data of the attachment, as JSON text, at most 4096 bytes |
+| `attach_data` | `attach_node_tag` only: optional data of the attachment, JSON text of 1 to 4096 bytes; left out, the data of an attachment already there is kept |
 
 #### Output
 
