@@ -17,7 +17,7 @@ func setValidEnv(t *testing.T) {
 	t.Setenv("OPENSVC_MCP_COLLECTOR_CA_FILE", "")
 	for _, name := range []string{"OPENSVC_MCP_TLS_CERT_FILE", "OPENSVC_MCP_TLS_KEY_FILE", "OPENSVC_MCP_LISTEN_ADDR", "OPENSVC_MCP_OAUTH_RESOURCE_URL",
 		"OPENSVC_MCP_OAUTH_ISSUER", "OPENSVC_MCP_OAUTH_RESOURCE_NAME", "OPENSVC_MCP_OAUTH_CA_FILE", "OPENSVC_MCP_AUTH_CONFIG_FILE",
-		"OPENSVC_MCP_COLLECTOR_AUTH_PROFILE", "OPENSVC_MCP_COLLECTOR_AUDIENCE", "OPENSVC_MCP_MAX_CONCURRENT_CALLS", "OPENSVC_MCP_MAX_CALLS_PER_MINUTE"} {
+		"OPENSVC_MCP_COLLECTOR_AUTH_PROFILE", "OPENSVC_MCP_COLLECTOR_AUDIENCE", "OPENSVC_MCP_MAX_CONCURRENT_CALLS", "OPENSVC_MCP_MAX_CALLS_PER_MINUTE", "OPENSVC_MCP_ACTIONS"} {
 		t.Setenv(name, "")
 	}
 }
@@ -261,4 +261,22 @@ func TestLoadDelegatedCAFile(t *testing.T) {
 			t.Fatal("CA accepted without the socket")
 		}
 	})
+}
+
+func TestLoadActions(t *testing.T) {
+	for value, want := range map[string]bool{"": false, "disabled": false, "enabled": true, " enabled ": true} {
+		setValidEnv(t)
+		t.Setenv("OPENSVC_MCP_ACTIONS", value)
+		cfg, err := Load()
+		if err != nil || cfg.Actions != want {
+			t.Fatalf("OPENSVC_MCP_ACTIONS=%q gave %v, %v; want %v", value, cfg.Actions, err, want)
+		}
+	}
+	for _, value := range []string{"true", "yes", "Enabled"} {
+		setValidEnv(t)
+		t.Setenv("OPENSVC_MCP_ACTIONS", value)
+		if _, err := Load(); err == nil {
+			t.Fatalf("OPENSVC_MCP_ACTIONS=%q accepted", value)
+		}
+	}
 }

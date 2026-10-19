@@ -27,6 +27,7 @@ OAuth.
 | OPENSVC_MCP_COLLECTOR_AUDIENCE | empty | The audience requested for the collector: the client ID the collector trusts |
 | OPENSVC_MCP_MAX_CONCURRENT_CALLS | 10 | Tool calls in progress of one identity on HTTPS; 0 disables the limit. See [call limits](#call-limits) |
 | OPENSVC_MCP_MAX_CALLS_PER_MINUTE | 120 | Tool calls per minute of one identity on HTTPS, with a burst of 30; 0 disables the limit |
+| OPENSVC_MCP_ACTIONS | disabled | `enabled` registers the [node action tools](tools/node-actions.md), which change the collector state, on both listeners; `disabled` leaves them out |
 
 The three token exchange settings go together. Without them, the HTTPS
 listener serves the tool list but refuses the tool calls. The configuration is

@@ -47,7 +47,7 @@ func TestSocketVerifiesTokensWithTheProviderOfTheCollector(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := newHandler(api, delegator)
+	handler, err := newHandler(api, delegator, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -20,15 +20,47 @@ type fakeCollector struct {
 }
 
 type fakeRequest struct {
-	path  string
-	query url.Values
+	method string
+	path   string
+	query  url.Values
+	body   map[string]any
 }
 
 func (f *fakeCollector) GetJSON(_ context.Context, path string, query url.Values, output any) error {
-	f.requests = append(f.requests, fakeRequest{path: path, query: query})
+	f.requests = append(f.requests, fakeRequest{method: "GET", path: path, query: query})
 	if f.err != nil {
 		return f.err
 	}
+	if f.answer != nil {
+		return json.Unmarshal([]byte(f.answer(path, query)), output)
+	}
+	if body, ok := f.bodies[path]; ok {
+		return json.Unmarshal([]byte(body), output)
+	}
+	return json.Unmarshal([]byte(f.body), output)
+}
+
+func (f *fakeCollector) PostJSON(_ context.Context, path string, input any, output any) error {
+	payload, _ := json.Marshal(input)
+	var body map[string]any
+	_ = json.Unmarshal(payload, &body)
+	f.requests = append(f.requests, fakeRequest{method: "POST", path: path, body: body})
+	if f.err != nil {
+		return f.err
+	}
+	return f.reply(path, nil, output)
+}
+
+func (f *fakeCollector) DeleteJSON(_ context.Context, path string, output any) error {
+	f.requests = append(f.requests, fakeRequest{method: "DELETE", path: path})
+	if f.err != nil {
+		return f.err
+	}
+	return f.reply(path, nil, output)
+}
+
+// reply answers a request of the given path as GetJSON does.
+func (f *fakeCollector) reply(path string, query url.Values, output any) error {
 	if f.answer != nil {
 		return json.Unmarshal([]byte(f.answer(path, query)), output)
 	}

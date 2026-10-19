@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -110,6 +111,22 @@ func (t bearerTransport) RoundTrip(request *http.Request) (*http.Response, error
 // GetJSON reads a bounded JSON response. path is relative to the base URL,
 // starts with "/" and has its segments already escaped by the caller.
 func (c *Client) GetJSON(ctx context.Context, path string, query url.Values, output any) error {
+	return c.do(ctx, http.MethodGet, path, query, nil, output)
+}
+
+// PostJSON sends input as a JSON body and reads the bounded JSON response.
+// It changes the collector state: only the action tools call it.
+func (c *Client) PostJSON(ctx context.Context, path string, input any, output any) error {
+	return c.do(ctx, http.MethodPost, path, nil, input, output)
+}
+
+// DeleteJSON sends a DELETE request and reads the bounded JSON response.
+// It changes the collector state: only the action tools call it.
+func (c *Client) DeleteJSON(ctx context.Context, path string, output any) error {
+	return c.do(ctx, http.MethodDelete, path, nil, nil, output)
+}
+
+func (c *Client) do(ctx context.Context, method, path string, query url.Values, input any, output any) error {
 	if !strings.HasPrefix(path, "/") || strings.ContainsAny(path, "?#") {
 		return fmt.Errorf("OpenSVC collector path %q is invalid", path)
 	}
@@ -118,11 +135,22 @@ func (c *Client) GetJSON(ctx context.Context, path string, query url.Values, out
 		return fmt.Errorf("build OpenSVC collector URL: %w", err)
 	}
 	endpoint.RawQuery = query.Encode()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
+	var body io.Reader
+	if input != nil {
+		payload, err := json.Marshal(input)
+		if err != nil {
+			return fmt.Errorf("encode OpenSVC collector %s %s request: %w", method, path, err)
+		}
+		body = bytes.NewReader(payload)
+	}
+	request, err := http.NewRequestWithContext(ctx, method, endpoint.String(), body)
 	if err != nil {
-		return fmt.Errorf("create OpenSVC collector GET request: %w", err)
+		return fmt.Errorf("create OpenSVC collector %s request: %w", method, err)
 	}
 	request.Header.Set("Accept", "application/json")
+	if input != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
 
 	response, err := c.httpClient.Do(request)
 	if err != nil {
@@ -130,7 +158,7 @@ func (c *Client) GetJSON(ctx context.Context, path string, query url.Values, out
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return newAPIError(http.MethodGet, path, response)
+		return newAPIError(method, path, response)
 	}
 	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {

@@ -21,12 +21,19 @@ type toolCaller func(name string, arguments map[string]any) (*mcp.CallToolResult
 // collectorHandler, and returns a function calling its tools.
 func newToolCaller(t *testing.T, collectorHandler http.HandlerFunc) toolCaller {
 	t.Helper()
+	return newToolCallerWithActions(t, false, collectorHandler)
+}
+
+// newToolCallerWithActions serves the tools, with the action tools when
+// actions is set.
+func newToolCallerWithActions(t *testing.T, actions bool, collectorHandler http.HandlerFunc) toolCaller {
+	t.Helper()
 	collector := testutil.NewCollector(t, collectorHandler)
 	api, err := newCollectorClient(config.Config{CollectorURL: collector.URL, CollectorCAFile: collector.CAFile})
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := newHandler(api, testDelegator(t))
+	handler, err := newHandler(api, testDelegator(t), actions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -717,5 +724,98 @@ func TestStorageToolsReadTheCollector(t *testing.T) {
 	}
 	if result, _ := call("list_san_switch_ports", map[string]any{"type": "X-Port"}); !result.IsError {
 		t.Fatal("list_san_switch_ports accepted type X-Port")
+	}
+}
+
+func TestNodeActionToolsChangeTheCollector(t *testing.T) {
+	var posted map[string]any
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.EscapedPath() {
+		case "GET /nodes":
+			_, _ = w.Write([]byte(`{"data":[],"meta":{"total":0}}`))
+		case "GET /apps/DATA":
+			_, _ = w.Write([]byte(`{"id":3,"app":"DATA"}`))
+		case "POST /nodes":
+			_ = json.NewDecoder(r.Body).Decode(&posted)
+			_, _ = w.Write([]byte(`{"node_id":"n-9","nodename":"lab01","app":"DATA","team_responsible":"user_170"}`))
+		case "GET /nodes/lab01":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"n-9","nodename":"lab01"}]}`))
+		case "GET /nodes/n-9":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"n-9","nodename":"lab01","status":""}]}`))
+		case "POST /nodes/n-9":
+			_, _ = w.Write([]byte(`{"node_id":"n-9","nodename":"lab01","status":"In service"}`))
+		case "DELETE /nodes/n-9":
+			_, _ = w.Write([]byte(`{"info":"delete node lab01"}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, created := call("create_node", map[string]any{"nodename": "lab01", "app": "DATA"})
+	if result.IsError || created["node"].(map[string]any)["node_id"] != "n-9" || posted["nodename"] != "lab01" || posted["node_id"] != nil {
+		t.Fatalf("create_node = %+v, posted %v", created, posted)
+	}
+	result, update := call("update_node", map[string]any{"node": "lab01", "status": "In service"})
+	changes, _ := update["changes"].([]any)
+	if result.IsError || len(changes) != 1 || changes[0].(map[string]any)["after"] != "In service" {
+		t.Fatalf("update_node = %+v", update)
+	}
+	result, deletion := call("delete_node", map[string]any{"node": "lab01"})
+	if result.IsError || deletion["deleted"] != true {
+		t.Fatalf("delete_node = %+v", deletion)
+	}
+}
+
+func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
+	for _, actions := range []bool{false, true} {
+		handler, err := newHandler(nil, testDelegator(t), actions)
+		if err != nil {
+			t.Fatal(err)
+		}
+		server := httptest.NewServer(handler)
+		t.Cleanup(server.Close)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		t.Cleanup(cancel)
+		session, err := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "v0.1.0"}, nil).Connect(ctx, &mcp.StreamableClientTransport{
+			Endpoint: server.URL + "/mcp", HTTPClient: bearerClient(testutil.Token),
+		}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = session.Close() })
+		tools, err := session.ListTools(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := map[string]*mcp.Tool{}
+		for _, tool := range tools.Tools {
+			if !tool.Annotations.ReadOnlyHint {
+				found[tool.Name] = tool
+			}
+		}
+		if !actions {
+			if len(found) != 0 {
+				t.Fatalf("without actions, action tools %v", found)
+			}
+			continue
+		}
+		// The agent asks to confirm a destructive tool: the update and the
+		// deletion, not the creation.
+		for name, destructive := range map[string]bool{"create_node": false, "update_node": true, "delete_node": true} {
+			tool := found[name]
+			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
+				t.Fatalf("%s = %+v", name, tool)
+			}
+			if keywords, ok := tool.Meta["opensvc/keywords"].([]any); !ok || len(keywords) == 0 {
+				t.Fatalf("tool %s has no search keywords", name)
+			}
+		}
+		schema, _ := json.Marshal(found["update_node"].InputSchema)
+		if !strings.Contains(string(schema), `"loc_city"`) || !strings.Contains(string(schema), `"required":["node"]`) {
+			t.Fatalf("update_node schema = %s", schema)
+		}
+		if len(found) != 3 {
+			t.Fatalf("action tools = %v", found)
+		}
 	}
 }

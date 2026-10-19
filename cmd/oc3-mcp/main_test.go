@@ -62,7 +62,7 @@ func testDelegator(t *testing.T) *auth.Delegator {
 
 func newTestServer(t *testing.T, collector *client.Client) *httptest.Server {
 	t.Helper()
-	handler, err := newHandler(collector, testDelegator(t))
+	handler, err := newHandler(collector, testDelegator(t), false)
 	if err != nil {
 		t.Fatal(err)
 	}

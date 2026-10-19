@@ -1,7 +1,8 @@
 # oc3-mcp
 
-A Go Model Context Protocol server providing AI agents with typed, read-only
-tools for the OpenSVC collector API.
+A Go Model Context Protocol server providing AI agents with typed tools for
+the OpenSVC collector API: tools that read the collector and, when enabled,
+action tools that create, update and delete nodes.
 
 ## Status
 

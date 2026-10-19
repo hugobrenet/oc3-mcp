@@ -9,8 +9,11 @@ conversation storage belong here. It is the neighbour of `om3-mcp`, which
 serves the OpenSVC daemon API: keep the same structure, conventions and tool
 contracts, so that a change in one is easy to carry to the other.
 
-The collector is the only resource server. Tools are read-only. Add an action
-tool only at user direction.
+The collector is the only resource server. Most tools read it. Action tools,
+which change the collector state, are registered only when
+`OPENSVC_MCP_ACTIONS=enabled`, on both listeners. Add an action tool only at
+user direction, one tool per action, targeting one exact item, never a
+selector.
 
 Module and binary: `github.com/opensvc/oc3-mcp` and `oc3-mcp`.
 Use Go, the standard library, `github.com/modelcontextprotocol/go-sdk`,
@@ -104,7 +107,14 @@ binding; startup must not contact the collector.
 - Register every tool through `Registrar`, not direct `mcp.AddTool` calls.
   Keep stable snake_case names, `list_*` for bounded pages and `get_*` for one
   exact item, concise metadata, typed input/output schemas and accurate
-  annotations. A read-only tool is never destructive.
+  annotations. A read-only tool is never destructive. A tool that changes
+  the collector state sets `readOnlyHint: false`; `destructiveHint: true`
+  marks one that overwrites or deletes data, which the OpenSVC AI agent asks
+  the user to confirm before it runs. Annotations are client hints, never
+  authorization controls: the collector decides the access.
+- An action tool checks what the collector would accept silently, such as an
+  app or a group it does not know, before it sends anything, and returns the
+  values the collector holds after the change.
 - Every successful result includes `core.Provenance`: `source` and UTC
   `observed_at`. Collection time does not prove fresh collector data; preserve
   the collector timestamps separately, as the collector gives them.
