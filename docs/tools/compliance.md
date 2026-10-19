@@ -236,7 +236,7 @@ included moduleset once, at any depth.
 | `rulesets[]` | The rulesets attached to it or to an included moduleset, and those they include: `name`, `type`, `filterset` of a contextual one, number of `variables`, `attached_to`, the modulesets of the tree it is attached to, and `included_by`, the rulesets including it |
 | `included_by` | The modulesets including it |
 | `nodes_count`, `nodes` | Nodes it is attached to directly, and their names, at most 50; `list_nodes` with `moduleset` reads them all |
-| `services_count`, `services` | Services it is attached to directly, as the service itself, and their names, at most 50 |
+| `services_count`, `services` | Services it is attached to directly, as the service itself, and their names, at most 50; `list_services` with `moduleset` reads them all |
 | `encapsulated_services_count`, `encapsulated_services` | Services it is attached to directly as their encapsulated service, run in their containers, `slave=true` |
 
 The attachments are the direct ones: a moduleset also applies where the
@@ -342,5 +342,5 @@ masking is partial, and the description says so.
 | `publications`, `responsibles` | The groups it is published to, and those responsible for it |
 | `included_by` | The rulesets including it |
 | `modulesets` | The modulesets it is attached to |
-| `nodes_count`, `nodes`, `services_count`, `services` | Nodes and services it is attached to directly, among those the caller sees, at most 50 named; `list_nodes` with `ruleset` reads all the nodes |
+| `nodes_count`, `nodes`, `services_count`, `services` | Nodes and services it is attached to directly, among those the caller sees, at most 50 named; `list_nodes` and `list_services` with `ruleset` read them all |
 | `encapsulated_services_count`, `encapsulated_services` | Services it is attached to directly as their encapsulated service, `slave=true` |

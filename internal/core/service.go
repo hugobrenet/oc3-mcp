@@ -55,7 +55,40 @@ type ServiceFilters struct {
 	Tag string
 	// Filterset keeps the services this filterset selects, by name or ID.
 	Filterset string
+	// Ruleset keeps the services an explicit ruleset is attached to, by
+	// name or ID.
+	Ruleset string
+	// Moduleset keeps the services a moduleset is attached to, by name or
+	// ID.
+	Moduleset string
 }
+
+// ServiceMembership are the tag, filterset, ruleset or moduleset a service
+// filter resolved to: at most one.
+type ServiceMembership struct {
+	Tag       *TagReference                 `json:"tag,omitempty" jsonschema:"the tag the tag filter resolved to; only the services holding it are kept"`
+	Filterset *FiltersetReference           `json:"filterset,omitempty" jsonschema:"the filterset the filterset filter resolved to; only the services it selects are kept"`
+	Ruleset   *ComplianceRulesetReference   `json:"ruleset,omitempty" jsonschema:"the ruleset the ruleset filter resolved to; only the services it is attached to are kept"`
+	Moduleset *ComplianceModulesetReference `json:"moduleset,omitempty" jsonschema:"the moduleset the moduleset filter resolved to; only the services it is attached to are kept"`
+}
+
+// serviceMemberPath is the collector list of the services, or with a tag,
+// filterset, ruleset or moduleset filter, the list of its services, which
+// takes the other filters too. The attachments listed are those of the
+// services themselves, not of their encapsulated services.
+func (s *Service) serviceMemberPath(ctx context.Context, f ServiceFilters) (string, ServiceMembership, error) {
+	path, found, err := s.memberPath(ctx, "services", f.Tag, f.Filterset, f.Ruleset, f.Moduleset)
+	return path, ServiceMembership(found), err
+}
+
+// member tells whether a tag, filterset, ruleset or moduleset filter is set.
+func (f ServiceFilters) member() bool {
+	return f.Tag != "" || f.Filterset != "" || f.Ruleset != "" || f.Moduleset != ""
+}
+
+// errNodeWithMember refuses the node filter with a member filter: the
+// services of a node are read from its instances.
+var errNodeWithMember = fmt.Errorf("pass node or one of tag, filterset, ruleset and moduleset, not both")
 
 type ListServicesOptions struct {
 	ServiceFilters
@@ -65,15 +98,14 @@ type ListServicesOptions struct {
 }
 
 type ServiceList struct {
-	Provenance Provenance          `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
-	Node       *NodeReference      `json:"node,omitempty" jsonschema:"the node the node filter resolved to; only services with an instance on it are listed"`
-	Tag        *TagReference       `json:"tag,omitempty" jsonschema:"the tag the tag filter resolved to; only the services holding it are listed"`
-	Filterset  *FiltersetReference `json:"filterset,omitempty" jsonschema:"the filterset the filterset filter resolved to; only the services it selects are listed"`
-	Total      int                 `json:"total" jsonschema:"the number of services matching the filters, as the collector counts them"`
-	Count      int                 `json:"count" jsonschema:"the number of services returned in this page"`
-	Services   []ServiceSummary    `json:"services" jsonschema:"the services sorted by name, then service ID"`
-	NextCursor string              `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
-	Truncated  bool                `json:"truncated" jsonschema:"whether matching services remain after this page"`
+	Provenance Provenance     `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
+	Node       *NodeReference `json:"node,omitempty" jsonschema:"the node the node filter resolved to; only services with an instance on it are listed"`
+	ServiceMembership
+	Total      int              `json:"total" jsonschema:"the number of services matching the filters, as the collector counts them"`
+	Count      int              `json:"count" jsonschema:"the number of services returned in this page"`
+	Services   []ServiceSummary `json:"services" jsonschema:"the services sorted by name, then service ID"`
+	NextCursor string           `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
+	Truncated  bool             `json:"truncated" jsonschema:"whether matching services remain after this page"`
 }
 
 type NodeReference struct {
@@ -295,14 +327,14 @@ func (s *Service) ListServices(ctx context.Context, options ListServicesOptions)
 	if err := options.ServiceFilters.validate(); err != nil {
 		return ServiceList{}, err
 	}
-	if options.Node != "" && (options.Tag != "" || options.Filterset != "") {
-		return ServiceList{}, fmt.Errorf("pass node, tag or filterset, not two of them")
+	if options.Node != "" && options.ServiceFilters.member() {
+		return ServiceList{}, errNodeWithMember
 	}
 	limit, err := pageLimit(options.Limit, defaultListServicesLimit, maxListServicesLimit)
 	if err != nil {
 		return ServiceList{}, err
 	}
-	path, tag, filterset, err := s.memberPath(ctx, options.Tag, options.Filterset, "services")
+	path, members, err := s.serviceMemberPath(ctx, options.ServiceFilters)
 	if err != nil {
 		return ServiceList{}, err
 	}
@@ -360,7 +392,7 @@ func (s *Service) ListServices(ctx context.Context, options ListServicesOptions)
 	if total == nil || *total < 0 || len(services) > limit {
 		return ServiceList{}, fmt.Errorf("list services: unexpected collector response")
 	}
-	result := ServiceList{Provenance: s.newProvenance(), Node: node, Tag: tag, Filterset: filterset, Total: *total, Count: len(services), Services: make([]ServiceSummary, 0, len(services))}
+	result := ServiceList{Provenance: s.newProvenance(), Node: node, ServiceMembership: members, Total: *total, Count: len(services), Services: make([]ServiceSummary, 0, len(services))}
 	for _, service := range services {
 		result.Services = append(result.Services, ServiceSummary{
 			SvcID: service.SvcID, Svcname: service.Svcname, ClusterID: service.ClusterID, App: service.SvcApp, Env: service.SvcEnv,

@@ -15,7 +15,7 @@ type ServiceTagInput struct {
 	ServiceFiltersInput
 	// FilterTag is the tag filter of list_services, whose name tag is the
 	// tag changed here.
-	FilterTag string `json:"filter_tag,omitempty" jsonschema:"optional exact tag name or tag ID; keeps only the services holding this tag, the tag filter of list_services; to detach a tag from every service holding it, pass the same tag; not with filterset or node"`
+	FilterTag string `json:"filter_tag,omitempty" jsonschema:"optional exact tag name or tag ID; keeps only the services holding this tag, the tag filter of list_services; to detach a tag from every service holding it, pass the same tag; not with filterset, ruleset, moduleset or node"`
 	Node      string `json:"node,omitempty" jsonschema:"optional exact node name or node ID; keeps only the services with an instance on that node"`
 }
 

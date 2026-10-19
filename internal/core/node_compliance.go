@@ -113,12 +113,18 @@ func (s *Service) changeNodeModuleset(ctx context.Context, options NodeModuleset
 }
 
 // changeOneNodeCompliance attaches or detaches a ruleset or a moduleset,
-// whose path is item, on one node. The collector refuses with 409 an
-// attachment already there and a detachment of what is not attached: they
-// change nothing.
+// whose path is item, on one node.
 func (s *Service) changeOneNodeCompliance(ctx context.Context, node collectorNode, item string, attach bool) NodeChangeOutcome {
 	outcome := NodeChangeOutcome{NodeID: node.NodeID, Nodename: node.Nodename}
-	path := "/nodes/" + url.PathEscape(node.NodeID) + item
+	outcome.Outcome, outcome.Reason = s.changeCompliance(ctx, "/nodes/"+url.PathEscape(node.NodeID)+item, attach)
+	return outcome
+}
+
+// changeCompliance attaches or detaches the ruleset or moduleset of path,
+// on a node or a service, and gives the outcome and the reason of a
+// refusal. The collector refuses with 409 an attachment already there and a
+// detachment of what is not attached: they change nothing.
+func (s *Service) changeCompliance(ctx context.Context, path string, attach bool) (string, string) {
 	var response struct {
 		Info string `json:"info"`
 	}
@@ -134,17 +140,15 @@ func (s *Service) changeOneNodeCompliance(ctx context.Context, node collectorNod
 	}
 	switch {
 	case err == nil && attach:
-		outcome.Outcome = ChangeAttached
+		return ChangeAttached, ""
 	case err == nil:
-		outcome.Outcome = ChangeDetached
+		return ChangeDetached, ""
 	case attach && strings.Contains(text, "already attached"):
-		outcome.Outcome = ChangeAlreadyAttached
+		return ChangeAlreadyAttached, ""
 	case !attach && strings.Contains(text, "not attached"):
-		outcome.Outcome = ChangeAlreadyDetached
-	default:
-		outcome.Outcome, outcome.Reason = ChangeRefused, err.Error()
+		return ChangeAlreadyDetached, ""
 	}
-	return outcome
+	return ChangeRefused, err.Error()
 }
 
 // lookupRuleset reads one ruleset the caller sees, by its name or ID.

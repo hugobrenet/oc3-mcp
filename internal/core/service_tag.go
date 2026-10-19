@@ -20,14 +20,16 @@ type ServiceSelection struct {
 
 // ServiceChangeSummary is the outcome of a change on the selected services.
 type ServiceChangeSummary struct {
-	Node      *NodeReference         `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
-	Filterset *FiltersetReference    `json:"filterset,omitempty" jsonschema:"the filterset the filterset filter resolved to"`
-	FilterTag *TagReference          `json:"filter_tag,omitempty" jsonschema:"the tag the tag filter resolved to"`
-	Selected  int                    `json:"selected" jsonschema:"the number of services selected"`
-	Changed   int                    `json:"changed" jsonschema:"the number of services changed"`
-	Unchanged int                    `json:"unchanged" jsonschema:"the number of services already as asked"`
-	Refused   int                    `json:"refused" jsonschema:"the number of services the collector refused the change for"`
-	Services  []ServiceChangeOutcome `json:"services" jsonschema:"the outcome on each service, sorted by service name"`
+	Node            *NodeReference                `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
+	Filterset       *FiltersetReference           `json:"filterset,omitempty" jsonschema:"the filterset the filterset filter resolved to"`
+	FilterTag       *TagReference                 `json:"filter_tag,omitempty" jsonschema:"the tag the tag filter resolved to"`
+	FilterRuleset   *ComplianceRulesetReference   `json:"filter_ruleset,omitempty" jsonschema:"the ruleset the ruleset filter resolved to"`
+	FilterModuleset *ComplianceModulesetReference `json:"filter_moduleset,omitempty" jsonschema:"the moduleset the moduleset filter resolved to"`
+	Selected        int                           `json:"selected" jsonschema:"the number of services selected"`
+	Changed         int                           `json:"changed" jsonschema:"the number of services changed"`
+	Unchanged       int                           `json:"unchanged" jsonschema:"the number of services already as asked"`
+	Refused         int                           `json:"refused" jsonschema:"the number of services the collector refused the change for"`
+	Services        []ServiceChangeOutcome        `json:"services" jsonschema:"the outcome on each service, sorted by service name"`
 }
 
 type ServiceChangeOutcome struct {
@@ -123,8 +125,8 @@ func checkServiceSelection(selection ServiceSelection) error {
 		return fmt.Errorf("pass the services, or at least one filter to select them")
 	case len(selection.Services) > maxSelectionNodes:
 		return fmt.Errorf("pass at most %d services; select more services with filters", maxSelectionNodes)
-	case selection.Node != "" && (selection.Filters.Tag != "" || selection.Filters.Filterset != ""):
-		return fmt.Errorf("pass node, tag or filterset, not two of them")
+	case selection.Node != "" && selection.Filters.member():
+		return errNodeWithMember
 	}
 	return selection.Filters.validate()
 }
@@ -147,11 +149,12 @@ func (s *Service) changeSelectedServices(ctx context.Context, selection ServiceS
 		filters := append([]string{filterEquals("node_id", node.NodeID)}, selection.Filters.collectorFilters("services.")...)
 		services, err = s.selectServices(ctx, "/services_instances", "services.", filters)
 	default:
-		path, filterTag, filterset, pathErr := s.memberPath(ctx, selection.Filters.Tag, selection.Filters.Filterset, "services")
+		path, members, pathErr := s.serviceMemberPath(ctx, selection.Filters)
 		if pathErr != nil {
 			return ServiceChangeSummary{}, pathErr
 		}
-		summary.FilterTag, summary.Filterset = filterTag, filterset
+		summary.FilterTag, summary.Filterset = members.Tag, members.Filterset
+		summary.FilterRuleset, summary.FilterModuleset = members.Ruleset, members.Moduleset
 		services, err = s.selectServices(ctx, path, "", selection.Filters.collectorFilters(""))
 	}
 	if err != nil {

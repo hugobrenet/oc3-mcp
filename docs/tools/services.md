@@ -84,9 +84,28 @@ With `filterset`, the MCP resolves the filterset by its exact name or ID,
 with the same filters, sort and statistics, `GET /api/filtersets/<id>/services?…`.
 The members are those the collector computes, which does not apply the logic
 of an included filterset: see [filterset tools](filtersets.md). An unknown
-filterset is refused, pointing to `list_filtersets`. `tag` and `filterset` are
-not combined.
-`node`, `tag` and `filterset` are not combined.
+filterset is refused, pointing to `list_filtersets`.
+
+With `ruleset` or `moduleset`, the MCP resolves the compliance ruleset or
+moduleset by its exact name or ID, among those published to the caller, then
+reads the services it is attached to with the same filters, sort and
+statistics:
+
+```text
+GET /api/compliance/rulesets/<ruleset>?props=id,ruleset_name,ruleset_type
+GET /api/compliance/rulesets/<id>/services?…
+GET /api/compliance/modulesets/<moduleset>?props=id,modset_name
+GET /api/compliance/modulesets/<id>/services?…
+```
+
+These are the services it is attached to directly, as the services
+themselves: not their encapsulated services, which the collector lists apart
+with `slave=true`, not read here, nor those a moduleset including it brings.
+A contextual ruleset is attached to no service, as it applies to the
+services its filterset selects: it is refused, pointing to its filterset.
+
+At most one of `tag`, `filterset`, `ruleset` and `moduleset`, and `node`
+with none of them: the services of a node are read from its instances.
 
 The filters are built by the MCP from the typed inputs; the collector filter
 language is not exposed.
@@ -105,7 +124,9 @@ language is not exposed.
 | `frozen` | Optional freeze state of the service as a whole: `frozen` (every instance), `unfrozen` or `mixed` |
 | `placement` | Optional placement state: `optimal` or `non-optimal` |
 | `tag` | Optional exact tag name, case-insensitive, or tag ID: only the services holding this tag |
-| `filterset` | Optional exact filterset name or ID: only the services the filterset selects. Not with `tag` |
+| `filterset` | Optional exact filterset name or ID: only the services the filterset selects |
+| `ruleset` | Optional exact explicit compliance ruleset name or ID: only the services it is attached to |
+| `moduleset` | Optional exact compliance moduleset name or ID: only the services it is attached to directly |
 | `node` | Optional exact node name or node ID: only the services with an instance on it. A name several nodes hold is refused with their node IDs |
 | `limit` | Optional page size, 1 to 200, default 50 |
 | `cursor` | Optional `next_cursor` of a previous call with the same filters |
@@ -118,6 +139,8 @@ language is not exposed.
 | `node` | With `node`, the node it resolved to: `node_id`, `nodename`, `cluster_id` |
 | `tag` | With `tag`, the tag it resolved to: `tag_id`, `name` |
 | `filterset` | With `filterset`, the filterset it resolved to: `id`, `name` |
+| `ruleset` | With `ruleset`, the ruleset it resolved to: `id`, `name`, `type` |
+| `moduleset` | With `moduleset`, the moduleset it resolved to: `id`, `name` |
 | `total` | Services matching the filters, as the collector counts them |
 | `count`, `truncated` | Services in this page, and whether more remain |
 | `services[]` | `svc_id`, `svcname`, `cluster_id`, `app`, `env`, `topology`, `status` (the aggregated overall status), `availstatus`, `frozen` (`frozen`, `unfrozen`, `mixed` or `n/a`), `placement`, `provisioned`, `nodes` (the nodes of the configuration), `status_updated` |
@@ -143,7 +166,9 @@ GET /api/services?stats=true&props=<grouping prop>&filter=…&limit=…
 
 With `tag`, the same queries read `/api/tags/<tag_id>/services`, as in
 `list_services`.
-With `filterset`, they read `/api/filtersets/<id>/services`.
+With `filterset`, they read `/api/filtersets/<id>/services`, and with
+`ruleset` or `moduleset`, `/api/compliance/rulesets/<id>/services` or
+`/api/compliance/modulesets/<id>/services`.
 
 With `stats`, the collector counts the rows of each value over the whole
 selection. It groups the values case-insensitively and shows one spelling of
@@ -153,7 +178,7 @@ each, and refuses a count longer than 5 seconds.
 
 | Input | Meaning |
 |---|---|
-| `name` … `filterset` | The filters of `list_services` except `node`, with the same meaning, `status` included |
+| `name` … `moduleset` | The filters of `list_services` except `node`, with the same meaning, `status` included |
 | `group_by` | Optional grouping: `cluster_id`, `app`, `env`, `topology`, `status`, `availstatus`, `frozen`, `placement` or `provisioned` |
 | `limit` | Optional number of values returned with `group_by`, 1 to 100, default 20 |
 
@@ -164,6 +189,7 @@ each, and refuses a count longer than 5 seconds.
 | `provenance` | Collector API source and MCP collection time |
 | `tag` | With `tag`, the tag it resolved to |
 | `filterset` | With `filterset`, the filterset it resolved to |
+| `ruleset`, `moduleset` | With `ruleset` or `moduleset`, the ruleset or moduleset it resolved to |
 | `total` | Services matching the filters |
 | `group_by` | The grouping asked |
 | `groups[]` | With `group_by`: `value`, empty for the services without one, and `count`, the most frequent first |
