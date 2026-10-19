@@ -209,7 +209,12 @@ type NodeActionQueueing struct {
 	Provenance Provenance `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Action     string     `json:"action" jsonschema:"the action queued"`
 	NodeChangeSummary
+	FollowUp string `json:"follow_up,omitempty" jsonschema:"the call that tells whether the queued actions ran, and their result"`
 }
+
+// actionCommandFilters are the command filters list_node_actions finds the
+// queued actions by: the collector names some of them otherwise.
+var actionCommandFilters = map[string]string{"thaw": "thaw", "compliance_fix": "compliance fix", "compliance_check": "compliance check"}
 
 // QueueNodeAction posts an agent action on the selected nodes, one request
 // per node. Each agent runs it when it reads its queue: the result tells
@@ -265,7 +270,23 @@ func (s *Service) queueNodeAction(ctx context.Context, options NodeActionOptions
 	if err != nil {
 		return NodeActionQueueing{}, err
 	}
-	return NodeActionQueueing{Provenance: s.newProvenance(), Action: options.Action, NodeChangeSummary: summary}, nil
+	result := NodeActionQueueing{Provenance: s.newProvenance(), Action: options.Action, NodeChangeSummary: summary}
+	if summary.Changed > 0 {
+		command := options.Action
+		if filter, ok := actionCommandFilters[command]; ok {
+			command = filter
+		}
+		node := ""
+		if summary.Changed == 1 {
+			for _, outcome := range summary.Nodes {
+				if outcome.Outcome == ChangeQueued {
+					node = fmt.Sprintf(" node %q,", outcome.Nodename)
+				}
+			}
+		}
+		result.FollowUp = fmt.Sprintf("list_node_actions with%s command %q: an action is done when its status is done, with its exit code and output", node, command)
+	}
+	return result, nil
 }
 
 // userNamesByID reads the names of the users with these IDs in one

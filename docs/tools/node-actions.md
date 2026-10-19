@@ -387,7 +387,18 @@ queues an ssh command running `nodemgr`, the command of the former agent.
 
 As the tag tools, the outcome on each node being `queued`, with
 `action_id`, the ID `list_node_actions` follows, `queued_for` and, when not
-`feed`, a `warning`, or `refused`.
+`feed`, a `warning`, or `refused`. When an action was queued, `follow_up`
+names the call that follows it: `list_node_actions`, with the node when one
+was queued, and the command as the collector names it, such as `thaw` for
+`unfreeze_node` or `compliance fix` for `fix_node_compliance`.
+
+The OpenSVC AI agent shows the model, at the next turn, the tools it called
+in the recent turns, not those a search only found: a question such as
+"give me the result" after an action searched the tools again, a model
+request of about 7 s on dev5. `follow_up` gives the model the name of the
+tool and its arguments, for a precise search, or a direct call where the
+client shows the tool; carrying the tools found to the next turns is for
+the agent to do.
 
 ### `freeze_node`, `unfreeze_node`, `drain_node` and `fix_node_compliance`
 

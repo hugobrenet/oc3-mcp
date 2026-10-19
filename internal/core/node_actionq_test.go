@@ -120,7 +120,7 @@ func TestRunNodeActionTakesOnlyTheChangingActions(t *testing.T) {
 		return `{"data":[{"node_id":"n-1","nodename":"lab01"}],"meta":{"total":1}}`
 	}}
 	queued, err := newTestService(collector).RunNodeAction(t.Context(), NodeActionOptions{Action: "drain", NodeSelection: NodeSelection{Nodes: []string{"lab01"}}})
-	if err != nil || queued.Changed != 1 || queued.Nodes[0].ActionID != 902 {
+	if err != nil || queued.Changed != 1 || queued.Nodes[0].ActionID != 902 || queued.FollowUp != `list_node_actions with node "lab01", command "drain": an action is done when its status is done, with its exit code and output` {
 		t.Fatalf("queued = %+v, %v", queued, err)
 	}
 	// reboot and shutdown are actions of the former agent: om3 answers them
