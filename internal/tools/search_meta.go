@@ -34,6 +34,8 @@ var toolKeywords = map[string][]string{
 	"count_instances":              {"how many instances", "number of instances", "instances per node", "statistics", "distribution"},
 	"count_nodes":                  {"how many nodes", "number", "distribution", "statistics", "fleet", "inventory", "servers", "hosts"},
 	"count_services":               {"how many services", "number", "distribution", "statistics", "services down"},
+	"create_node":                  {"add node", "new node", "register node", "declare node", "inventory"},
+	"delete_node":                  {"remove node", "decommission", "purge node", "drop node"},
 	"find_objects":                 {"search", "lookup", "partial name", "unknown name", "what is", "fuzzy", "find"},
 	"get_app":                      {"application", "owner", "ownership", "responsible", "team", "who", "contact"},
 	"get_compliance_moduleset":     {"moduleset details", "compliance policy", "included modulesets", "moduleset rulesets", "where used", "autofix"},
@@ -80,6 +82,7 @@ var toolKeywords = map[string][]string{
 	"list_storage_quotas":          {"storage quota", "quota", "allocation", "reserved space", "app storage"},
 	"list_tags":                    {"tag", "label", "labels", "attribute", "classification", "metadata", "attached tags"},
 	"list_users":                   {"user", "users", "people", "person", "who", "member", "members", "contact", "team members", "group members", "who is in"},
+	"update_node":                  {"modify node", "change node", "set app", "set status", "edit node", "node owner", "node location"},
 }
 
 // searchMeta is the _meta of a tool for the tool search. Every tool has

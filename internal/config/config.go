@@ -52,6 +52,9 @@ type Config struct {
 	// https://collector.example.com/api.
 	CollectorURL    string
 	CollectorCAFile string
+	// Actions registers the tools that change the collector state, on both
+	// listeners. They are left out unless OPENSVC_MCP_ACTIONS is enabled.
+	Actions bool
 }
 
 func (c Config) HTTPSEnabled() bool { return c.TLSCertFile != "" }
@@ -151,6 +154,13 @@ func Load() (Config, error) {
 		cfg.DelegatedIssuer, cfg.DelegatedAudience = delegatedIssuer, delegatedAudience
 	} else if delegatedIssuer != "" || delegatedAudience != "" {
 		return Config{}, fmt.Errorf("OPENSVC_MCP_DELEGATED_ISSUER and OPENSVC_MCP_DELEGATED_AUDIENCE require OPENSVC_MCP_DELEGATED_SOCKET")
+	}
+	switch actions := strings.TrimSpace(os.Getenv("OPENSVC_MCP_ACTIONS")); actions {
+	case "", "disabled":
+	case "enabled":
+		cfg.Actions = true
+	default:
+		return Config{}, fmt.Errorf("OPENSVC_MCP_ACTIONS must be enabled or disabled")
 	}
 	if !cfg.HTTPSEnabled() && cfg.DelegatedSocket == "" {
 		return Config{}, fmt.Errorf("configure the HTTPS listener (OPENSVC_MCP_TLS_CERT_FILE and OPENSVC_MCP_TLS_KEY_FILE), OPENSVC_MCP_DELEGATED_SOCKET, or both")

@@ -69,6 +69,10 @@ func (notFoundCollector) GetJSON(context.Context, string, url.Values, any) error
 	return fakeNotFound{}
 }
 
+func (notFoundCollector) PostJSON(context.Context, string, any, any) error { return fakeNotFound{} }
+
+func (notFoundCollector) DeleteJSON(context.Context, string, any) error { return fakeNotFound{} }
+
 // An exact lookup that finds nothing suggests find_objects, whether the
 // collector answers 404 or an empty list.
 func TestLookupsSuggestFindObjects(t *testing.T) {

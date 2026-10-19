@@ -73,7 +73,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		handler, err := newHandler(collector, delegator)
+		handler, err := newHandler(collector, delegator, cfg.Actions)
 		if err != nil {
 			return err
 		}
@@ -154,7 +154,7 @@ func newMCPHandler(cfg config.Config, collector *client.Client) (http.Handler, e
 		route = exchangeToolCalls(cfg.Exchange, cfg.ExchangeProfile, cfg.CollectorAudience)
 	}
 	limiter := mcpauth.NewCallLimiter(cfg.MaxConcurrentCalls, cfg.MaxCallsPerMinute)
-	handler, err := newToolsHandler(collector, limitToolCalls(limiter), route)
+	handler, err := newToolsHandler(collector, cfg.Actions, limitToolCalls(limiter), route)
 	if err != nil {
 		return nil, err
 	}
@@ -185,8 +185,8 @@ func newDelegator(cfg config.Config) (*auth.Delegator, error) {
 // newHandler serves the Unix socket. Every route but /health requires the
 // OpenID Connect access token of the caller, verified by delegator before it
 // reaches the collector, which decides the access.
-func newHandler(collector *client.Client, delegator *auth.Delegator) (http.Handler, error) {
-	handler, err := newToolsHandler(collector)
+func newHandler(collector *client.Client, delegator *auth.Delegator, actions bool) (http.Handler, error) {
+	handler, err := newToolsHandler(collector, actions)
 	if err != nil {
 		return nil, err
 	}
@@ -197,9 +197,10 @@ func newHandler(collector *client.Client, delegator *auth.Delegator) (http.Handl
 	return withRequestID(http.MaxBytesHandler(mux, maxMCPBodyBytes)), nil
 }
 
-// newToolsHandler serves the collector tools as stateless Streamable HTTP.
-// The audit line wraps route, which prepares the credential of each tool call.
-func newToolsHandler(collector *client.Client, route ...mcp.Middleware) (http.Handler, error) {
+// newToolsHandler serves the collector tools as stateless Streamable HTTP,
+// with the action tools when actions is set. The audit line wraps route,
+// which prepares the credential of each tool call.
+func newToolsHandler(collector *client.Client, actions bool, route ...mcp.Middleware) (http.Handler, error) {
 	service := core.New(collector)
 	server := mcp.NewServer(&mcp.Implementation{Name: serverName, Version: serverVersion}, &mcp.ServerOptions{
 		Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{}},
@@ -213,6 +214,11 @@ func newToolsHandler(collector *client.Client, route ...mcp.Middleware) (http.Ha
 		tools.RegisterClusterTools, tools.RegisterNodeTools, tools.RegisterServiceTools, tools.RegisterServiceActionTools, tools.RegisterAlertTools, tools.RegisterCheckTools, tools.RegisterPackageTools, tools.RegisterCollectorEventTools, tools.RegisterComplianceTools, tools.RegisterComplianceModulesetTools, tools.RegisterComplianceRulesetTools, tools.RegisterFiltersetTools, tools.RegisterStorageTools, tools.RegisterIPTools, tools.RegisterTagTools, tools.RegisterAppTools, tools.RegisterFindTools, tools.RegisterRequestTools, tools.RegisterFormTools, tools.RegisterSysreportTools, tools.RegisterGroupTools,
 	} {
 		if err := register(registrar, service); err != nil {
+			return nil, err
+		}
+	}
+	if actions {
+		if err := tools.RegisterNodeActionTools(registrar, service); err != nil {
 			return nil, err
 		}
 	}
