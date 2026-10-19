@@ -237,7 +237,10 @@ every node.
 | `country`, `city` | Text the location contains |
 | `silent_for` | Nodes silent for longer than a duration, such as `7d` |
 | `filter_tag` | Nodes holding a tag |
-| `filterset` | Nodes a filterset selects; not with `filter_tag` |
+| `filterset` | Nodes a filterset selects |
+| `ruleset`, `moduleset` | Nodes an explicit ruleset or a moduleset is attached to directly |
+
+At most one of `filter_tag`, `filterset`, `ruleset` and `moduleset`.
 
 #### Collector API
 
@@ -286,14 +289,20 @@ through the modulesets including it.
 
 The nodes are selected as for the tags, see [selection](#selection), by
 `nodes` or by filters; here the tag filter of `list_nodes` keeps its name,
-`tag`. One request per node, four at a time, not atomic.
+`tag`, and the ruleset or moduleset filter is `filter_ruleset` or
+`filter_moduleset`, as `ruleset` or `moduleset` names the one changed: to
+detach a ruleset or a moduleset from every node it is attached to, pass the
+same name to both, with no other filter. A contextual ruleset is refused as a
+filter: to detach one attached, pass its nodes. One request per node, four at
+a time, not atomic.
 
 #### Collector API
 
 ```text
 GET    /api/compliance/rulesets/<ruleset>?props=id,ruleset_name,ruleset_type
 GET    /api/compliance/modulesets/<moduleset>?props=id,modset_name
-GET    /api/nodes, /api/tags/<tag_id>/nodes or /api/filtersets/<id>/nodes?props=node_id,nodename,cluster_id&filter=…
+GET    /api/nodes, /api/tags/<tag_id>/nodes, /api/filtersets/<id>/nodes,
+       /api/compliance/rulesets/<id>/nodes or /api/compliance/modulesets/<id>/nodes?props=node_id,nodename,cluster_id&filter=…
 POST   /api/nodes/<node_id>/compliance/rulesets/<id>     attach
 DELETE /api/nodes/<node_id>/compliance/rulesets/<id>     detach
 POST   /api/nodes/<node_id>/compliance/modulesets/<id>   attach
@@ -319,7 +328,7 @@ change, and detaches one.
 |---|---|
 | `ruleset` or `moduleset` | One exact name or ID |
 | `nodes` | Optional, see [selection](#selection) |
-| filters | Optional, those of `list_nodes`, with `tag`; see [selection](#selection) |
+| filters | Optional, those of `list_nodes`, with `tag`, and `filter_ruleset` or `filter_moduleset` for the filter of the kind changed; see [selection](#selection) |
 
 #### Output
 
@@ -327,7 +336,8 @@ change, and detaches one.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `ruleset` or `moduleset` | `id`, `name`, and for a ruleset `type` |
-| `filter_tag`, `filterset`, `selected`, `changed`, `unchanged`, `refused`, `nodes[]` | As for the tags |
+| `filter_tag`, `filterset`, `filter_ruleset`, `filter_moduleset` | The filter of the selection, resolved |
+| `selected`, `changed`, `unchanged`, `refused`, `nodes[]` | As for the tags |
 
 ### `queue_node_action`
 

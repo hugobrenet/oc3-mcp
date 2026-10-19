@@ -73,15 +73,10 @@ func (s *Service) changeNodeRuleset(ctx context.Context, options NodeRulesetOpti
 	if err != nil {
 		return NodeRulesetChange{}, err
 	}
-	var found collectorList[collectorRuleset]
-	err = s.client.GetJSON(ctx, "/compliance/rulesets/"+url.PathEscape(options.Ruleset), url.Values{"props": {"id,ruleset_name,ruleset_type"}}, &found)
-	if err != nil && !isNotFound(err) {
-		return NodeRulesetChange{}, fmt.Errorf("get ruleset %s: %w", options.Ruleset, err)
+	ruleset, err := s.lookupRuleset(ctx, options.Ruleset)
+	if err != nil {
+		return NodeRulesetChange{}, err
 	}
-	if err != nil || len(found.Data) != 1 {
-		return NodeRulesetChange{}, fmt.Errorf("get ruleset %s: not found in the collector, or not published to the caller; list the rulesets with list_compliance_rulesets", options.Ruleset)
-	}
-	ruleset := ComplianceRulesetReference{ID: found.Data[0].ID, Name: found.Data[0].Name, Type: found.Data[0].Type}
 	if attach && ruleset.Type != "explicit" {
 		return NodeRulesetChange{}, fmt.Errorf("ruleset %s is %s: it applies to the nodes its filterset selects, and is not attached; nothing was changed; get_compliance_ruleset gives its filterset", ruleset.Name, ruleset.Type)
 	}
@@ -103,15 +98,10 @@ func (s *Service) changeNodeModuleset(ctx context.Context, options NodeModuleset
 	if err != nil {
 		return NodeModulesetChange{}, err
 	}
-	var found collectorList[collectorModuleset]
-	err = s.client.GetJSON(ctx, "/compliance/modulesets/"+url.PathEscape(options.Moduleset), url.Values{"props": {"id,modset_name"}}, &found)
-	if err != nil && !isNotFound(err) {
-		return NodeModulesetChange{}, fmt.Errorf("get moduleset %s: %w", options.Moduleset, err)
+	moduleset, err := s.lookupModuleset(ctx, options.Moduleset)
+	if err != nil {
+		return NodeModulesetChange{}, err
 	}
-	if err != nil || len(found.Data) != 1 {
-		return NodeModulesetChange{}, fmt.Errorf("get moduleset %s: not found in the collector, or not published to the caller; list the modulesets with list_compliance_modulesets", options.Moduleset)
-	}
-	moduleset := ComplianceModulesetReference{ID: found.Data[0].ID, Name: found.Data[0].Name}
 	path := "/compliance/modulesets/" + strconv.Itoa(moduleset.ID)
 	summary, err := s.changeSelectedNodes(ctx, options.NodeSelection, filters, func(ctx context.Context, node collectorNode) NodeChangeOutcome {
 		return s.changeOneNodeCompliance(ctx, node, path, attach)
@@ -155,6 +145,32 @@ func (s *Service) changeOneNodeCompliance(ctx context.Context, node collectorNod
 		outcome.Outcome, outcome.Reason = ChangeRefused, err.Error()
 	}
 	return outcome
+}
+
+// lookupRuleset reads one ruleset the caller sees, by its name or ID.
+func (s *Service) lookupRuleset(ctx context.Context, ruleset string) (ComplianceRulesetReference, error) {
+	var found collectorList[collectorRuleset]
+	err := s.client.GetJSON(ctx, "/compliance/rulesets/"+url.PathEscape(ruleset), url.Values{"props": {"id,ruleset_name,ruleset_type"}}, &found)
+	if err != nil && !isNotFound(err) {
+		return ComplianceRulesetReference{}, fmt.Errorf("get ruleset %s: %w", ruleset, err)
+	}
+	if err != nil || len(found.Data) != 1 {
+		return ComplianceRulesetReference{}, fmt.Errorf("get ruleset %s: not found in the collector, or not published to the caller; list the rulesets with list_compliance_rulesets", ruleset)
+	}
+	return ComplianceRulesetReference{ID: found.Data[0].ID, Name: found.Data[0].Name, Type: found.Data[0].Type}, nil
+}
+
+// lookupModuleset reads one moduleset the caller sees, by its name or ID.
+func (s *Service) lookupModuleset(ctx context.Context, moduleset string) (ComplianceModulesetReference, error) {
+	var found collectorList[collectorModuleset]
+	err := s.client.GetJSON(ctx, "/compliance/modulesets/"+url.PathEscape(moduleset), url.Values{"props": {"id,modset_name"}}, &found)
+	if err != nil && !isNotFound(err) {
+		return ComplianceModulesetReference{}, fmt.Errorf("get moduleset %s: %w", moduleset, err)
+	}
+	if err != nil || len(found.Data) != 1 {
+		return ComplianceModulesetReference{}, fmt.Errorf("get moduleset %s: not found in the collector, or not published to the caller; list the modulesets with list_compliance_modulesets", moduleset)
+	}
+	return ComplianceModulesetReference{ID: found.Data[0].ID, Name: found.Data[0].Name}, nil
 }
 
 func checkComplianceName(kind, name string) error {

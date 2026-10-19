@@ -27,7 +27,9 @@ type NodeFiltersInput struct {
 	City         string `json:"city,omitempty" jsonschema:"optional text the city of the node location contains, case-insensitive"`
 	SilentFor    string `json:"silent_for,omitempty" jsonschema:"optional; keeps only the nodes whose last contact with the collector is older than this duration, in days, hours or minutes, such as 7d, 12h or 30m; nodes that never reported are left out"`
 	Tag          string `json:"tag,omitempty" jsonschema:"optional exact tag name, case-insensitive, or tag ID; keeps only the nodes holding this tag, a label the collector users attach, such as pci-dss"`
-	Filterset    string `json:"filterset,omitempty" jsonschema:"optional exact filterset name or filterset ID; keeps only the nodes the filterset selects, as the collector computes it; not with tag"`
+	Filterset    string `json:"filterset,omitempty" jsonschema:"optional exact filterset name or filterset ID; keeps only the nodes the filterset selects, as the collector computes it; not with tag, ruleset or moduleset"`
+	Ruleset      string `json:"ruleset,omitempty" jsonschema:"optional exact explicit compliance ruleset name or ruleset ID; keeps only the nodes it is attached to; a contextual ruleset applies through its filterset, the filter to pass instead; not with tag, filterset or moduleset"`
+	Moduleset    string `json:"moduleset,omitempty" jsonschema:"optional exact compliance moduleset name or moduleset ID; keeps only the nodes it is attached to directly, not those a moduleset including it brings; not with tag, filterset or ruleset"`
 }
 
 func (f NodeFiltersInput) core() core.NodeFilters {
@@ -35,7 +37,7 @@ func (f NodeFiltersInput) core() core.NodeFilters {
 		Name: f.Name, ClusterID: f.ClusterID, App: f.App, Env: f.Env, Status: f.Status, Frozen: f.Frozen, FrozenBefore: f.FrozenBefore,
 		OSName: f.OSName, OSVendor: f.OSVendor, OSRelease: f.OSRelease, AgentVersion: f.AgentVersion,
 		Manufacturer: f.Manufacturer, Model: f.Model, Team: f.Team, Country: f.Country, City: f.City, SilentFor: f.SilentFor,
-		Tag: f.Tag, Filterset: f.Filterset,
+		Tag: f.Tag, Filterset: f.Filterset, Ruleset: f.Ruleset, Moduleset: f.Moduleset,
 	}
 }
 
@@ -96,7 +98,7 @@ func RegisterNodeTools(registrar *Registrar, service *core.Service) error {
 			Title: "List collector nodes",
 			Description: "List the nodes the OpenSVC collector knows, sorted by name: node ID, cluster ID, app, environment, status, operating system, agent version, last contact with the collector, freeze flag and freeze date. " +
 				"status is the node status the collector Nodes page shows, a property set by the collector users with values each organization chooses, not reported by the node daemon. " +
-				"Filter by name, tag, cluster, app, environment, status, operating system name, vendor and release, agent version, hardware manufacturer and model, responsible team, country, city, frozen state or freeze date, and by silent_for to find the nodes that stopped reporting; use the cursor to continue a page. " +
+				"Filter by name, tag, compliance ruleset or moduleset attached, cluster, app, environment, status, operating system name, vendor and release, agent version, hardware manufacturer and model, responsible team, country, city, frozen state or freeze date, and by silent_for to find the nodes that stopped reporting; use the cursor to continue a page. " +
 				"To count nodes, or to break them down by a property, use count_nodes instead of reading every page. " +
 				"frozen_at is empty when the collector does not store the freeze date of the node. " +
 				"last_comm tells when the node daemon last reported: use silent_for for the nodes that stopped reporting. " +

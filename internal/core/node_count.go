@@ -43,15 +43,14 @@ type CountNodesOptions struct {
 }
 
 type NodeCount struct {
-	Provenance Provenance          `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
-	Tag        *TagReference       `json:"tag,omitempty" jsonschema:"the tag the tag filter resolved to; only the nodes holding it are counted"`
-	Filterset  *FiltersetReference `json:"filterset,omitempty" jsonschema:"the filterset the filterset filter resolved to; only the nodes it selects are counted"`
-	Total      int                 `json:"total" jsonschema:"the number of nodes matching the filters, as the collector counts them"`
-	GroupBy    string              `json:"group_by,omitempty" jsonschema:"the grouping asked"`
-	Groups     []CountGroup        `json:"groups,omitempty" jsonschema:"with group_by, the most frequent values first, and the number of matching nodes with each"`
-	Distinct   int                 `json:"distinct,omitempty" jsonschema:"with group_by, the number of distinct values among the matching nodes"`
-	Other      int                 `json:"other,omitempty" jsonschema:"with group_by, the number of matching nodes whose value is not in groups, left out by limit"`
-	Truncated  bool                `json:"truncated" jsonschema:"whether values were left out by limit"`
+	Provenance Provenance `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
+	NodeMembership
+	Total     int          `json:"total" jsonschema:"the number of nodes matching the filters, as the collector counts them"`
+	GroupBy   string       `json:"group_by,omitempty" jsonschema:"the grouping asked"`
+	Groups    []CountGroup `json:"groups,omitempty" jsonschema:"with group_by, the most frequent values first, and the number of matching nodes with each"`
+	Distinct  int          `json:"distinct,omitempty" jsonschema:"with group_by, the number of distinct values among the matching nodes"`
+	Other     int          `json:"other,omitempty" jsonschema:"with group_by, the number of matching nodes whose value is not in groups, left out by limit"`
+	Truncated bool         `json:"truncated" jsonschema:"whether values were left out by limit"`
 }
 
 // CountNodes counts the nodes matching the filters and, with a grouping, the
@@ -72,7 +71,7 @@ func (s *Service) CountNodes(ctx context.Context, options CountNodesOptions) (No
 	if err != nil {
 		return NodeCount{}, err
 	}
-	path, tag, filterset, err := s.memberPath(ctx, options.Tag, options.Filterset, "nodes")
+	path, membership, err := s.nodeMemberPath(ctx, options.NodeFilters)
 	if err != nil {
 		return NodeCount{}, err
 	}
@@ -81,7 +80,7 @@ func (s *Service) CountNodes(ctx context.Context, options CountNodesOptions) (No
 		return NodeCount{}, fmt.Errorf("count nodes: %w", err)
 	}
 	return NodeCount{
-		Provenance: s.newProvenance(), Tag: tag, Filterset: filterset, Total: total, GroupBy: options.GroupBy, Groups: groups,
+		Provenance: s.newProvenance(), NodeMembership: membership, Total: total, GroupBy: options.GroupBy, Groups: groups,
 		Distinct: distinct, Other: other, Truncated: other > 0,
 	}, nil
 }
