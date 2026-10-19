@@ -27,7 +27,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Filtersets | `list_filtersets`, `get_filterset` | [Filterset tools](filtersets.md) |
 | Groups and users | `list_groups`, `get_group`, `list_users` | [Group and user tools](groups.md) |
 | Storage | `list_storage_arrays`, `list_storage_quotas`, `list_san_switch_ports` | [Storage tools](storage.md) |
-| Node actions | `create_node`, `update_node`, `delete_node`, `attach_node_tag`, `detach_node_tag`, `attach_node_ruleset`, `detach_node_ruleset`, `attach_node_moduleset`, `detach_node_moduleset`, `queue_node_action` | [Node action tools](node-actions.md) |
+| Node actions | `create_node`, `update_node`, `delete_node`, `attach_node_tag`, `detach_node_tag`, `attach_node_ruleset`, `detach_node_ruleset`, `attach_node_moduleset`, `detach_node_moduleset`, `queue_node_action`, `freeze_node`, `unfreeze_node`, `drain_node`, `fix_node_compliance`, `cancel_node_action` | [Node action tools](node-actions.md) |
 | Node action queue | `list_node_actions` | [Node action tools](node-actions.md#list_node_actions) |
 
 ## Conventions
@@ -36,8 +36,9 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
   The [node action tools](node-actions.md), which change the collector
   state, are registered only when `OPENSVC_MCP_ACTIONS=enabled`; they set
   `readOnlyHint: false`, and `destructiveHint: true` for the update, the
-  deletion, the detachments and the compliance attachments, which the
-  OpenSVC AI agent asks the user to confirm.
+  deletion, the detachments, the compliance attachments and the agent
+  actions that change the nodes, which the OpenSVC AI agent asks the user to
+  confirm.
 - Each tool carries in its `_meta` the keys the tool search of an AI client
   reads, such as the OpenSVC AI agent: `opensvc/keywords`, the words a
   question may use for the tool that its description does not hold, and

@@ -11,6 +11,11 @@ tools:
   - attach_node_moduleset
   - detach_node_moduleset
   - queue_node_action
+  - freeze_node
+  - unfreeze_node
+  - drain_node
+  - fix_node_compliance
+  - cancel_node_action
   - list_node_actions
 stability: experimental
 ---
@@ -41,6 +46,10 @@ Implementation:
 | `detach_node_tag` | destructive, idempotent | Responsible for each node |
 | `attach_node_ruleset`, `detach_node_ruleset`, `attach_node_moduleset`, `detach_node_moduleset` | destructive, idempotent | Responsible for each node |
 | `queue_node_action` | not read-only, not destructive, not idempotent | NodeExec, CompExec for `compliance_check`, and responsible for each node |
+| `freeze_node` | not read-only, not destructive, idempotent | NodeExec, and responsible for each node |
+| `unfreeze_node`, `drain_node` | destructive, idempotent | NodeExec, and responsible for each node |
+| `fix_node_compliance` | destructive, idempotent | CompExec, and responsible for each node |
+| `cancel_node_action` | not read-only, not destructive, idempotent | NodeExec or CompExec, and responsible for the node of each action |
 
 The OpenSVC AI agent asks the user to confirm a destructive tool before it
 runs: the update, the deletion, the detachments and the compliance
@@ -350,9 +359,8 @@ else on it:
 | `compliance_check` | runs a compliance check on every module attached to the node, without fixing |
 
 The collector also accepts `pushpatch`, `updatecomp` and `updatepkg`, which
-the om3 agent does not have, and the actions that change the node, such as
-`reboot`, `shutdown`, `drain`, `compliance_fix`, `freeze` and `thaw`: the
-tool does not queue them.
+the om3 agent does not have, and the actions that change the node, which
+have their own tools.
 
 The nodes are selected as for the tags, see [selection](#selection), with
 `tag` as the tag filter. One request per node, four at a time:
@@ -380,6 +388,70 @@ queues an ssh command running `nodemgr`, the command of the former agent.
 As the tag tools, the outcome on each node being `queued`, with
 `action_id`, the ID `list_node_actions` follows, `queued_for` and, when not
 `feed`, a `warning`, or `refused`.
+
+### `freeze_node`, `unfreeze_node`, `drain_node` and `fix_node_compliance`
+
+One tool per agent action that changes the node, so that the title the
+agent confirms names the action, and the description tells its cost:
+
+| Tool | Collector action | The om3 agent runs | Effect |
+|---|---|---|---|
+| `freeze_node` | `freeze` | `om node freeze` | the daemon stops the automatic starts and failovers on the node; running instances keep running |
+| `unfreeze_node` | `thaw` | `om node unfreeze` | the daemon resumes them, which may start, fail over or restart instances: destructive |
+| `drain_node` | `drain` | `om node drain` | freezes the node and stops every instance on it: destructive |
+| `fix_node_compliance` | `compliance_fix` | `om node compliance fix` | every module attached changes the node to its rulesets: destructive |
+
+They queue the action as `queue_node_action` does, with the same selection,
+`queued_for` and warning, through `PUT /api/actions`.
+
+`om node freeze` and `om node unfreeze` act at once: an action done with exit
+code 0 is the node frozen or unfrozen, as on dev2n1, where both ran within
+15 s of their queuing. `om node drain` hands an orchestration to the daemon,
+whose target is `drained`, and returns: an action done with exit code 0 is
+the drain accepted, not the node empty. On dev5n2, the command returned in
+71 ms with the orchestration ID; within 3 s the node was frozen and the
+standby instance of a service stopped. The node stays frozen after the
+drain: `unfreeze_node` gives it back to the automatic actions, and on dev5n2
+the standby instance was up again within 3 s. The description of
+`drain_node` sends the model to `get_node`, for the frozen state, and to
+`list_instances`, for the instances stopped or moved.
+
+The collector also accepts `reboot`, `schedule_reboot`, `unschedule_reboot`
+and `shutdown`, the actions of the former agent: the om3 agent answers
+`om node reboot` with `unknown command "reboot" for "om node"` and exit code
+1, so that the action ends done and failed, and the node is not rebooted.
+No tool queues them.
+
+### `cancel_node_action`
+
+Cancels actions of the queue that no agent has taken yet.
+
+```text
+GET  /api/actions/<id>?props=id,status,command,nodes.nodename
+POST /api/actions   {"id": <id>, "status": "C"}
+```
+
+The collector cancels an action of any status but done, and answers a
+refusal with 200 and an `error`, not an HTTP error. It also cancels a sent
+or running action, which its agent goes on running: the MCP cancels only a
+waiting, notified or queued action, and refuses the others, with the reason.
+A cancelled action can be queued again by the collector, `status` back to
+waiting; no tool does it.
+
+The agent may read its queue between the check of the status and the
+cancellation, at its ping: the collector then cancels an action the agent
+runs, and the result says cancelled. The API has no guard against it; the
+description tells the model to check with `list_node_actions`.
+
+| Input | Meaning |
+|---|---|
+| `action_ids` | 1 to 50 action IDs, as `list_node_actions` and the action tools give them |
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `cancelled`, `refused` | Actions cancelled, and not |
+| `actions[]` | `id`, `nodename`, `command`, `outcome` (`cancelled`, `already_cancelled`, `refused`) and `reason` |
 
 ### `list_node_actions`
 

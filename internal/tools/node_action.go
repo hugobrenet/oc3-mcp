@@ -121,6 +121,18 @@ type QueueNodeActionInput struct {
 
 type QueueNodeActionOutput = core.NodeActionQueueing
 
+type CancelNodeActionInput struct {
+	ActionIDs []int `json:"action_ids" jsonschema:"the IDs of the actions to cancel, 1 to 50, as list_node_actions and the action tools give them"`
+}
+
+type CancelNodeActionOutput = core.NodeActionCancellation
+
+// nodeActionFollowUp tells how an action queued on nodes runs and how to
+// follow it.
+const nodeActionFollowUp = "The collector queues it on each node; the agent runs it when it reads its queue. Returns as soon as each action is queued, with its action_id: follow it with list_node_actions, and cancel it before an agent takes it with cancel_node_action. " +
+	"Only an action queued for feed reaches an om3 agent: a warning tells the nodes queued for pull or push, whose action may never run. " +
+	"Pass the nodes, at most 50 exact names or IDs, or at least one of the filters of list_nodes and count_nodes, to select up to 1000 nodes; a larger selection is refused, and nothing is queued. An unknown or ambiguous node name refuses the whole call, before anything is queued. "
+
 type NodeModulesetOutput = core.NodeModulesetChange
 
 // nodeComplianceSelection tells how a compliance change selects its nodes.
@@ -299,6 +311,59 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 			result, err := service.QueueNodeAction(ctx, core.NodeActionOptions{Action: input.Action, NodeSelection: input.selection()})
 			if err != nil {
 				return nil, QueueNodeActionOutput{}, err
+			}
+			return nil, result, nil
+		},
+	); err != nil {
+		return err
+	}
+	for _, declared := range []struct {
+		name, title, action, description string
+		destructive                      bool
+	}{
+		{"freeze_node", "Freeze node", "freeze", "Freeze one or several nodes: the agent of each runs om node freeze, and the daemon stops the automatic starts and failovers of the instances of the node, until it is unfrozen. Running instances keep running. ", false},
+		{"unfreeze_node", "Unfreeze node", "thaw", "Unfreeze one or several nodes: the collector queues the action thaw, the agent of each runs om node unfreeze, and the daemon resumes the automatic actions of the node, which may then start, fail over or restart instances there to reach their placement. ", true},
+		{"drain_node", "Drain node", "drain", "Drain one or several nodes: the agent of each runs om node drain, which freezes the node and stops every instance running on it, so that its services stop or fail over to other nodes. " +
+			"om node drain hands the drain to the daemon and returns: an action done with exit code 0 means the drain was accepted, not that the node is empty; get_node tells whether the node is frozen, and list_instances which instances stopped or moved. " +
+			"The node stays frozen after the drain: unfreeze_node gives it back to the automatic actions, to end a maintenance. ", true},
+		{"fix_node_compliance", "Fix node compliance", "compliance_fix", "Fix the compliance of one or several nodes: the agent of each runs om node compliance fix, and every module attached to the node changes the node to the values of its rulesets, such as files, packages or settings. ", true},
+	} {
+		declared := declared
+		privilege := "Requires the NodeExec privilege and to be responsible for the nodes."
+		if declared.action == "compliance_fix" {
+			privilege = "Requires the CompExec privilege and to be responsible for the nodes."
+		}
+		if err := addTool(
+			registrar,
+			&mcp.Tool{
+				Name: declared.name, Title: declared.title, Description: declared.description + nodeActionFollowUp + privilege,
+				Annotations: actionAnnotations(declared.destructive, true),
+			},
+			func(ctx context.Context, _ *mcp.CallToolRequest, input NodeSelectionInput) (*mcp.CallToolResult, QueueNodeActionOutput, error) {
+				result, err := service.RunNodeAction(ctx, core.NodeActionOptions{Action: declared.action, NodeSelection: input.selection()})
+				if err != nil {
+					return nil, QueueNodeActionOutput{}, err
+				}
+				return nil, result, nil
+			},
+		); err != nil {
+			return err
+		}
+	}
+	if err := addTool(
+		registrar,
+		&mcp.Tool{
+			Name:  "cancel_node_action",
+			Title: "Cancel node action",
+			Description: "Cancel actions of the OpenSVC collector queue that no agent has taken yet: waiting, notified or queued. An action sent to its agent, running or done is refused: a cancellation would not stop it. " +
+				"An agent may take an action between the check and the cancellation, and run it though the result says cancelled: check list_node_actions. " +
+				"Use it for an action queued by mistake, or one queued for pull or push that an om3 agent never reads. Requires the NodeExec or CompExec privilege and to be responsible for the node of each action.",
+			Annotations: actionAnnotations(false, true),
+		},
+		func(ctx context.Context, _ *mcp.CallToolRequest, input CancelNodeActionInput) (*mcp.CallToolResult, CancelNodeActionOutput, error) {
+			result, err := service.CancelNodeActions(ctx, input.ActionIDs)
+			if err != nil {
+				return nil, CancelNodeActionOutput{}, err
 			}
 			return nil, result, nil
 		},
