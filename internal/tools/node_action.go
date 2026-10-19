@@ -107,7 +107,7 @@ type NodeRulesetInput struct {
 	NodeSelectionInput
 	// FilterRuleset is the ruleset filter of list_nodes, whose name ruleset
 	// is the ruleset changed here.
-	FilterRuleset string `json:"filter_ruleset,omitempty" jsonschema:"optional exact explicit ruleset name or ruleset ID; keeps only the nodes it is attached to, the ruleset filter of list_nodes and count_nodes; to detach a ruleset from every node holding it, pass the same ruleset; not with tag, filterset or moduleset"`
+	FilterRuleset string `json:"filter_ruleset,omitempty" jsonschema:"optional exact explicit ruleset name or ruleset ID; keeps only the nodes it is attached to, the ruleset filter of list_nodes and count_nodes; to detach a ruleset from every node holding it, pass the same ruleset; a contextual one is refused here: pass its nodes; not with tag, filterset or moduleset"`
 }
 
 func (input NodeRulesetInput) selection() core.NodeSelection {
@@ -392,6 +392,9 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 			return nil, result, nil
 		},
 	); err != nil {
+		return err
+	}
+	if err := registerServiceComplianceTools(registrar, service); err != nil {
 		return err
 	}
 	if err := registerServiceTagTools(registrar, service); err != nil {

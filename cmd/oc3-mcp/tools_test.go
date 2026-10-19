@@ -807,6 +807,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"attach_node_ruleset": true, "detach_node_ruleset": true, "attach_node_moduleset": true, "detach_node_moduleset": true, "queue_node_action": false,
 			"freeze_node": false, "unfreeze_node": true, "drain_node": true, "fix_node_compliance": true, "cancel_node_action": false,
 			"attach_service_tag": false, "detach_service_tag": true,
+			"attach_service_ruleset": true, "detach_service_ruleset": true, "attach_service_moduleset": true, "detach_service_moduleset": true,
 			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
@@ -827,6 +828,8 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		for name, kinds := range map[string][2]string{
 			"attach_node_ruleset": {"ruleset", "moduleset"}, "detach_node_ruleset": {"ruleset", "moduleset"},
 			"attach_node_moduleset": {"moduleset", "ruleset"}, "detach_node_moduleset": {"moduleset", "ruleset"},
+			"attach_service_ruleset": {"ruleset", "moduleset"}, "detach_service_ruleset": {"ruleset", "moduleset"},
+			"attach_service_moduleset": {"moduleset", "ruleset"}, "detach_service_moduleset": {"moduleset", "ruleset"},
 		} {
 			schema, _ := json.Marshal(found[name].InputSchema)
 			if strings.Count(string(schema), `"`+kinds[0]+`":{`) != 1 || !strings.Contains(string(schema), `"filter_`+kinds[0]+`":{`) || !strings.Contains(string(schema), `"`+kinds[1]+`":{`) {
@@ -837,7 +840,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		if !strings.Contains(string(schema), `"loc_city"`) || !strings.Contains(string(schema), `"required":["node"]`) {
 			t.Fatalf("update_node schema = %s", schema)
 		}
-		if len(found) != 20 {
+		if len(found) != 24 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -986,6 +989,60 @@ func TestNodeFiltersByRulesetAndModuleset(t *testing.T) {
 	}
 	if result, _ := call("detach_node_ruleset", map[string]any{"ruleset": "os.linux.base", "filter_ruleset": "ctx.dev2"}); !result.IsError || len(deleted) != 2 {
 		t.Fatalf("a contextual ruleset filter was accepted, deleted %v", deleted)
+	}
+}
+
+// The ruleset and moduleset filters of the services read those they are
+// attached to: to list, count and change them.
+func TestServiceFiltersByRulesetAndModuleset(t *testing.T) {
+	var mutex sync.Mutex
+	var deleted []string
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		query := r.URL.Query()
+		switch path := r.Method + " " + r.URL.EscapedPath(); {
+		case path == "GET /compliance/rulesets/os.linux.base":
+			_, _ = w.Write([]byte(`{"data":[{"id":12,"ruleset_name":"os.linux.base","ruleset_type":"explicit"}]}`))
+		case path == "GET /compliance/modulesets/base.linux":
+			_, _ = w.Write([]byte(`{"data":[{"id":7,"modset_name":"base.linux"}]}`))
+		case path == "GET /compliance/modulesets/7/services":
+			if filter := query.Get("filter"); filter != "svc_env:eq:PRD" {
+				t.Errorf("list filter = %q", filter)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s-1","svcname":"web"}],"meta":{"total":1}}`))
+		case path == "GET /compliance/rulesets/12/services" && query.Get("stats") == "true":
+			_, _ = w.Write([]byte(`{"data":{"svc_app":{"WEB":2}},"meta":{"total":2,"distinct":{"svc_app":1},"other":{"svc_app":0}}}`))
+		case path == "GET /compliance/rulesets/12/services":
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s-1","svcname":"web"},{"svc_id":"s-2","svcname":"db"}],"meta":{"total":2}}`))
+		case strings.HasPrefix(path, "DELETE /services/"):
+			mutex.Lock()
+			deleted = append(deleted, path)
+			mutex.Unlock()
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"info":"ruleset 12 detached"}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, list := call("list_services", map[string]any{"moduleset": "base.linux", "env": "PRD"})
+	if result.IsError || list["total"] != float64(1) || list["moduleset"].(map[string]any)["id"] != float64(7) {
+		t.Fatalf("list_services = %+v", list)
+	}
+	result, count := call("count_services", map[string]any{"ruleset": "os.linux.base", "group_by": "app"})
+	if result.IsError || count["total"] != float64(2) || count["ruleset"].(map[string]any)["name"] != "os.linux.base" {
+		t.Fatalf("count_services = %+v", count)
+	}
+	result, change := call("detach_service_ruleset", map[string]any{"ruleset": "os.linux.base", "filter_ruleset": "os.linux.base"})
+	if result.IsError || change["changed"] != float64(2) || change["filter_ruleset"].(map[string]any)["id"] != float64(12) ||
+		strings.Join(deleted, ",") == "" || !strings.Contains(strings.Join(deleted, ","), "/services/s-2/compliance/rulesets/12") {
+		t.Fatalf("detach_service_ruleset = %+v, deleted %v", change, deleted)
+	}
+	// The node filter reads the instances: it goes with no member filter.
+	if result, _ := call("list_services", map[string]any{"node": "n-1", "ruleset": "os.linux.base"}); !result.IsError {
+		t.Fatal("node with ruleset was accepted")
+	}
+	if result, _ := call("detach_service_moduleset", map[string]any{"moduleset": "base.linux"}); !result.IsError || len(deleted) != 2 {
+		t.Fatalf("a call selecting no service was accepted, deleted %v", deleted)
 	}
 }
 

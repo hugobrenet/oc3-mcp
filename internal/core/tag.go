@@ -188,31 +188,73 @@ func (s *Service) lookupTag(ctx context.Context, tag string) (TagReference, erro
 	}
 }
 
-// memberPath is the collector list of the nodes or services, or with tag
-// of those holding it, or with filterset of those it selects: the collector
-// applies the same filters, sort and statistics to the three.
-func (s *Service) memberPath(ctx context.Context, tag, filterset, kind string) (string, *TagReference, *FiltersetReference, error) {
+// membership is the tag, filterset, ruleset or moduleset a filter of the
+// nodes or services resolved to: at most one. NodeMembership and
+// ServiceMembership are copies of it, converted from it, which differ only
+// by their tags: a field changes in the three at once, or the conversion no
+// longer compiles.
+type membership struct {
+	Tag       *TagReference
+	Filterset *FiltersetReference
+	Ruleset   *ComplianceRulesetReference
+	Moduleset *ComplianceModulesetReference
+}
+
+// memberPath is the collector list of the nodes or services, the kind, or
+// with tag of those holding it, with filterset of those it selects, with
+// ruleset or moduleset of those it is attached to: the collector applies the
+// same filters, sort and statistics to each.
+func (s *Service) memberPath(ctx context.Context, kind, tag, filterset, ruleset, moduleset string) (string, membership, error) {
+	set := 0
+	for _, value := range []string{tag, filterset, ruleset, moduleset} {
+		if value != "" {
+			set++
+		}
+	}
 	switch {
-	case tag != "" && filterset != "":
-		return "", nil, nil, fmt.Errorf("pass tag or filterset, not both")
+	case set > 1:
+		return "", membership{}, fmt.Errorf("pass at most one of tag, filterset, ruleset and moduleset")
 	case tag != "":
 		found, err := s.lookupTag(ctx, tag)
 		if err != nil {
-			return "", nil, nil, err
+			return "", membership{}, err
 		}
-		return "/tags/" + url.PathEscape(found.TagID) + "/" + kind, &found, nil, nil
+		return "/tags/" + url.PathEscape(found.TagID) + "/" + kind, membership{Tag: &found}, nil
 	case filterset != "":
 		if strings.Contains(filterset, "/") {
-			return "", nil, nil, fmt.Errorf("filterset must be one exact filterset name or filterset ID")
+			return "", membership{}, fmt.Errorf("filterset must be one exact filterset name or filterset ID")
 		}
 		if err := validateFilterValue("filterset", filterset); err != nil {
-			return "", nil, nil, err
+			return "", membership{}, err
 		}
 		found, err := s.lookupFilterset(ctx, filterset)
 		if err != nil {
-			return "", nil, nil, err
+			return "", membership{}, err
 		}
-		return "/filtersets/" + strconv.Itoa(found.ID) + "/" + kind, nil, &FiltersetReference{ID: found.ID, Name: found.Name}, nil
+		return "/filtersets/" + strconv.Itoa(found.ID) + "/" + kind, membership{Filterset: &FiltersetReference{ID: found.ID, Name: found.Name}}, nil
+	case ruleset != "":
+		if err := checkComplianceName("ruleset", ruleset); err != nil {
+			return "", membership{}, err
+		}
+		found, err := s.lookupRuleset(ctx, ruleset)
+		if err != nil {
+			return "", membership{}, err
+		}
+		// The collector lists what a ruleset is attached to: a contextual
+		// ruleset applies through its filterset instead.
+		if found.Type != "explicit" {
+			return "", membership{}, fmt.Errorf("ruleset %s is %s: it applies to the %s its filterset selects, and is attached to none; filter by that filterset, which get_compliance_ruleset gives", found.Name, found.Type, kind)
+		}
+		return "/compliance/rulesets/" + strconv.Itoa(found.ID) + "/" + kind, membership{Ruleset: &found}, nil
+	case moduleset != "":
+		if err := checkComplianceName("moduleset", moduleset); err != nil {
+			return "", membership{}, err
+		}
+		found, err := s.lookupModuleset(ctx, moduleset)
+		if err != nil {
+			return "", membership{}, err
+		}
+		return "/compliance/modulesets/" + strconv.Itoa(found.ID) + "/" + kind, membership{Moduleset: &found}, nil
 	}
-	return "/" + kind, nil, nil, nil
+	return "/" + kind, membership{}, nil
 }

@@ -35,10 +35,10 @@ The services are given one of two ways, as the nodes of the
   holding it; a name given twice is changed once.
 - at least one of the filters of `list_services`: `name`, `cluster_id`,
   `app`, `env`, `availstatus`, `status`, `topology`, `frozen`, `placement`,
-  `filterset`, `filter_tag` for its tag filter, as `tag` names the tag
-  changed, and `node`, the services with an instance on a node, read from
-  `/api/services_instances`. `node` goes with neither `filter_tag` nor
-  `filterset`. The MCP reads the selection, and refuses one of more than
+  `filterset`, `ruleset`, `moduleset`, `filter_tag` for its tag filter, as
+  `tag` names the tag changed, and `node`, the services with an instance on
+  a node, read from `/api/services_instances`. At most one of `filter_tag`,
+  `filterset`, `ruleset` and `moduleset`, and `node` with none of them. The MCP reads the selection, and refuses one of more than
   1000 services, or one that changed while it was read, before any change.
 
 The MCP sends one request per service, four at a time: the change is not
@@ -48,7 +48,8 @@ atomic.
 
 ```text
 GET    /api/tags?props=tag_id,tag_name&filter=tag_name:eq:<tag>
-GET    /api/services, /api/tags/<tag_id>/services or /api/filtersets/<id>/services?props=svc_id,svcname,cluster_id&filter=…
+GET    /api/services, /api/tags/<tag_id>/services, /api/filtersets/<id>/services,
+       /api/compliance/rulesets/<id>/services or /api/compliance/modulesets/<id>/services?props=svc_id,svcname,cluster_id&filter=…
 GET    /api/services_instances?props=svc_id,services.svcname,services.cluster_id&filter=node_id:eq:<node_id>&filter=services.…
 POST   /api/tags/<tag_id>/services/<svc_id>   {"tag_attach_data": …}   attach
 DELETE /api/tags/<tag_id>/services/<svc_id>                            detach
@@ -76,7 +77,7 @@ not responsible for with 403, and logs each change.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `tag` | `tag_id`, `name` |
-| `node`, `filter_tag`, `filterset` | The node, tag or filterset filter, resolved |
+| `node`, `filter_tag`, `filterset`, `filter_ruleset`, `filter_moduleset` | The filter of the selection, resolved |
 | `selected` | Services selected |
 | `changed`, `unchanged`, `refused` | Services changed, already as asked, refused by the collector |
 | `services[]` | `svc_id`, `svcname`, `cluster_id`, `outcome` (`attached`, `already_attached`, `detached`, `already_detached`, `refused`, `not_attempted`) and `reason` of a refusal, sorted by service name |

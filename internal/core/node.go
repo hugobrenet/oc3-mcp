@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -288,42 +287,8 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 // filterset, ruleset or moduleset filter, the list of its nodes, which
 // takes the other filters too.
 func (s *Service) nodeMemberPath(ctx context.Context, f NodeFilters) (string, NodeMembership, error) {
-	set := 0
-	for _, value := range []string{f.Tag, f.Filterset, f.Ruleset, f.Moduleset} {
-		if value != "" {
-			set++
-		}
-	}
-	if set > 1 {
-		return "", NodeMembership{}, fmt.Errorf("pass at most one of tag, filterset, ruleset and moduleset")
-	}
-	switch {
-	case f.Ruleset != "":
-		if err := checkComplianceName("ruleset", f.Ruleset); err != nil {
-			return "", NodeMembership{}, err
-		}
-		ruleset, err := s.lookupRuleset(ctx, f.Ruleset)
-		if err != nil {
-			return "", NodeMembership{}, err
-		}
-		// The collector lists the nodes a ruleset is attached to: a
-		// contextual ruleset applies through its filterset instead.
-		if ruleset.Type != "explicit" {
-			return "", NodeMembership{}, fmt.Errorf("ruleset %s is %s: it applies to the nodes its filterset selects, and is attached to none; filter by that filterset, which get_compliance_ruleset gives", ruleset.Name, ruleset.Type)
-		}
-		return "/compliance/rulesets/" + strconv.Itoa(ruleset.ID) + "/nodes", NodeMembership{Ruleset: &ruleset}, nil
-	case f.Moduleset != "":
-		if err := checkComplianceName("moduleset", f.Moduleset); err != nil {
-			return "", NodeMembership{}, err
-		}
-		moduleset, err := s.lookupModuleset(ctx, f.Moduleset)
-		if err != nil {
-			return "", NodeMembership{}, err
-		}
-		return "/compliance/modulesets/" + strconv.Itoa(moduleset.ID) + "/nodes", NodeMembership{Moduleset: &moduleset}, nil
-	}
-	path, tag, filterset, err := s.memberPath(ctx, f.Tag, f.Filterset, "nodes")
-	return path, NodeMembership{Tag: tag, Filterset: filterset}, err
+	path, found, err := s.memberPath(ctx, "nodes", f.Tag, f.Filterset, f.Ruleset, f.Moduleset)
+	return path, NodeMembership(found), err
 }
 
 // silentForPattern is a duration of the collector relative dates: a number
