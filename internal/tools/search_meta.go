@@ -30,12 +30,14 @@ var coreTools = []string{"count_nodes", "list_nodes", "get_node", "count_service
 // description does not hold, such as synonyms: the model does not see them,
 // they only rank the tool in a search.
 var toolKeywords = map[string][]string{
+	"attach_node_tag":              {"add tag", "tag nodes", "label nodes", "set tag", "bulk tag", "mass tag"},
 	"count_compliance_runs":        {"how many", "number of fixes", "failed checks", "compliance statistics", "per module", "per node", "distribution"},
 	"count_instances":              {"how many instances", "number of instances", "instances per node", "statistics", "distribution"},
 	"count_nodes":                  {"how many nodes", "number", "distribution", "statistics", "fleet", "inventory", "servers", "hosts"},
 	"count_services":               {"how many services", "number", "distribution", "statistics", "services down"},
 	"create_node":                  {"add node", "new node", "register node", "declare node", "inventory"},
 	"delete_node":                  {"remove node", "decommission", "purge node", "drop node"},
+	"detach_node_tag":              {"remove tag", "untag", "untag nodes", "unset tag", "bulk untag"},
 	"find_objects":                 {"search", "lookup", "partial name", "unknown name", "what is", "fuzzy", "find"},
 	"get_app":                      {"application", "owner", "ownership", "responsible", "team", "who", "contact"},
 	"get_compliance_moduleset":     {"moduleset details", "compliance policy", "included modulesets", "moduleset rulesets", "where used", "autofix"},

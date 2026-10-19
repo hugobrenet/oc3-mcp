@@ -4,18 +4,20 @@ tools:
   - create_node
   - update_node
   - delete_node
+  - attach_node_tag
+  - detach_node_tag
 stability: experimental
 ---
 
 # Node Action Tools
 
 This document describes the tools that create, update and delete the nodes
-of the OpenSVC collector inventory. They change the collector state, and are
+of the OpenSVC collector inventory, and attach tags to them or detach them. They change the collector state, and are
 registered only when `OPENSVC_MCP_ACTIONS=enabled` ([configuration](../configuration.md)).
 
 Implementation:
 
-- business logic: `internal/core/node_action.go`;
+- business logic: `internal/core/node_action.go` and `internal/core/node_tag.go`;
 - MCP definitions: `internal/tools/node_action.go`.
 
 | Tool | Annotations | Collector privilege |
@@ -23,9 +25,11 @@ Implementation:
 | `create_node` | not read-only, not destructive | Manager |
 | `update_node` | destructive, idempotent | NodeManager, and responsible for the node |
 | `delete_node` | destructive, idempotent | NodeManager, and responsible for the node |
+| `attach_node_tag` | not read-only, not destructive, idempotent | Responsible for each node |
+| `detach_node_tag` | destructive, idempotent | Responsible for each node |
 
 The OpenSVC AI agent asks the user to confirm a destructive tool before it
-runs: the update and the deletion. The collector decides the access, and
+runs: the update, the deletion and the detachment of a tag. The collector decides the access, and
 records each change in its log: `node.add`, `node.change`, `node.delete`.
 
 ## Properties
@@ -168,3 +172,80 @@ and statistics history are not deleted.
 | `provenance` | Collector API source and MCP collection time |
 | `node` | `node_id`, `nodename`, `cluster_id` of the deleted node |
 | `deleted` | `true` |
+
+### `attach_node_tag` and `detach_node_tag`
+
+Attach one tag to nodes, or detach it from them. The collector has no bulk
+route: the MCP sends one request per node, four at a time, and a change is
+not atomic. On dev2, 403 nodes took 3.5 s to attach and 2.8 s to detach.
+
+#### Selection
+
+The nodes are given one of two ways:
+
+- `nodes`: at most 50 exact node names or node IDs, read in one request
+  (`filter=nodename:in:…`, `filter=node_id:in:…`). An unknown, invisible or
+  ambiguous name refuses the whole call before any change; a name given
+  twice is changed once.
+- filters, those of `list_nodes` and `count_nodes`, with `expected_count`.
+  The model first counts the nodes with `count_nodes` with the same filters,
+  tells the user the number, and passes it: the MCP reads the selection, at
+  most 1000 nodes, and refuses a selection of another size, before any
+  change. The confirmation of the agent shows the filters and the number,
+  not 403 names. The number guards against a selection that changed since
+  the user saw it, not against one that changed with the same size.
+
+The tag filter of `list_nodes` is `filter_tag` here, as `tag` names the tag
+changed: to detach a tag from every node holding it, pass the same tag as
+`tag` and `filter_tag`. At least one filter is required: no call changes
+every node.
+
+| Filter | Meaning |
+|---|---|
+| `name` | Text the node name contains |
+| `cluster_id` | Exact cluster ID |
+| `app`, `env`, `status` | Exact app, node environment, node status |
+| `frozen`, `frozen_before` | Frozen nodes, frozen at or before a date |
+| `os_name`, `os_vendor` | Text the operating system name or vendor contains |
+| `os_release`, `agent_version` | Exact release or version; ending with a dot, a family |
+| `manufacturer`, `model` | Text the hardware manufacturer or model contains |
+| `team` | Text the responsible team contains |
+| `country`, `city` | Text the location contains |
+| `silent_for` | Nodes silent for longer than a duration, such as `7d` |
+| `filter_tag` | Nodes holding a tag |
+| `filterset` | Nodes a filterset selects; not with `filter_tag` |
+
+#### Collector API
+
+```text
+GET    /api/tags?props=tag_id,tag_name&filter=tag_name:eq:<tag>
+GET    /api/nodes, /api/tags/<tag_id>/nodes or /api/filtersets/<id>/nodes?props=node_id,nodename,cluster_id&filter=…&limit=200&offset=…
+POST   /api/tags/<tag_id>/nodes/<node_id>   {"tag_attach_data": …}   attach
+DELETE /api/tags/<tag_id>/nodes/<node_id>                            detach
+```
+
+The collector takes the tag by its ID, not its name, and the node by its ID.
+It answers an attachment already there, or a detachment of a tag the node
+does not hold, with 200 and an info saying so; it refuses a tag incompatible
+with the other tags of the node, by their exclusions, with 409, and a node
+the caller is not responsible for with 403.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `tag` | One exact tag name, case-insensitive, or tag ID |
+| `nodes` | Optional, see [selection](#selection) |
+| filters, `expected_count` | Optional, see [selection](#selection) |
+| `attach_data` | `attach_node_tag` only: optional data of the attachment, as JSON text, at most 4096 bytes |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `tag` | `tag_id`, `name` |
+| `filter_tag`, `filterset` | The tag or filterset filter, resolved |
+| `selected` | Nodes selected |
+| `changed`, `unchanged`, `refused` | Nodes changed, already as asked, refused by the collector |
+| `nodes[]` | `node_id`, `nodename`, `outcome` (`attached`, `already_attached`, `detached`, `already_detached`, `refused`, `not_attempted` when the call ended before) and `reason` of a refusal, sorted by node name |

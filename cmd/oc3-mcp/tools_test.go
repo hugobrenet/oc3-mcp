@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -799,9 +800,10 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			}
 			continue
 		}
-		// The agent asks to confirm a destructive tool: the update and the
-		// deletion, not the creation.
-		for name, destructive := range map[string]bool{"create_node": false, "update_node": true, "delete_node": true} {
+		// The agent asks to confirm a destructive tool: the update, the
+		// deletion and the detachment of a tag, not the creation or the
+		// attachment.
+		for name, destructive := range map[string]bool{"create_node": false, "update_node": true, "delete_node": true, "attach_node_tag": false, "detach_node_tag": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
 				t.Fatalf("%s = %+v", name, tool)
@@ -810,12 +812,56 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				t.Fatalf("tool %s has no search keywords", name)
 			}
 		}
+		// The tag changed and the tag filter have their own names.
+		for _, name := range []string{"attach_node_tag", "detach_node_tag"} {
+			schema, _ := json.Marshal(found[name].InputSchema)
+			if strings.Count(string(schema), `"tag":{`) != 1 || !strings.Contains(string(schema), `"filter_tag":{`) || !strings.Contains(string(schema), `"status":{`) {
+				t.Fatalf("%s schema = %s", name, schema)
+			}
+		}
 		schema, _ := json.Marshal(found["update_node"].InputSchema)
 		if !strings.Contains(string(schema), `"loc_city"`) || !strings.Contains(string(schema), `"required":["node"]`) {
 			t.Fatalf("update_node schema = %s", schema)
 		}
-		if len(found) != 3 {
+		if len(found) != 5 {
 			t.Fatalf("action tools = %v", found)
 		}
+	}
+}
+
+// The tag changed and the tag filter of the selection are two inputs: a
+// tag is detached from the nodes holding it, read from the tag members.
+func TestDetachNodeTagFromTheNodesHoldingIt(t *testing.T) {
+	var mutex sync.Mutex
+	var deleted []string
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch path := r.Method + " " + r.URL.EscapedPath(); {
+		case path == "GET /tags":
+			if filter := r.URL.Query().Get("filter"); filter != "tag_name:eq:tag-mcp" {
+				t.Errorf("tag filter = %q", filter)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"tag_id":"t-1","tag_name":"tag-mcp"}]}`))
+		case path == "GET /tags/t-1/nodes":
+			// The second call selects by the tag filter only.
+			if filter := r.URL.Query().Get("filter"); filter != "status:eq:In service" && filter != "" {
+				t.Errorf("selection filter = %q", filter)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"n-1","nodename":"a"},{"node_id":"n-2","nodename":"b"}],"meta":{"total":2}}`))
+		case strings.HasPrefix(path, "DELETE /tags/t-1/nodes/"):
+			mutex.Lock()
+			deleted = append(deleted, strings.TrimPrefix(path, "DELETE /tags/t-1/nodes/"))
+			mutex.Unlock()
+			_, _ = w.Write([]byte(`{"info":"tag detached"}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, change := call("detach_node_tag", map[string]any{"tag": "tag-mcp", "filter_tag": "tag-mcp", "status": "In service", "expected_count": 2})
+	if result.IsError || change["changed"] != float64(2) || change["filter_tag"].(map[string]any)["name"] != "tag-mcp" || len(deleted) != 2 {
+		t.Fatalf("detach_node_tag = %+v, deleted %v", change, deleted)
+	}
+	if result, _ := call("detach_node_tag", map[string]any{"tag": "tag-mcp", "filter_tag": "tag-mcp", "expected_count": 3}); !result.IsError || len(deleted) != 2 {
+		t.Fatalf("a selection of another size was accepted, deleted %v", deleted)
 	}
 }
