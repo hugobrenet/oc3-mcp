@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -81,25 +82,33 @@ func (s *Service) changeOneNodeTag(ctx context.Context, tag TagReference, node c
 	} else {
 		err = s.client.DeleteJSON(ctx, path, &response)
 	}
-	info := strings.ToLower(response.Info)
-	switch {
-	case err != nil:
-		outcome.Outcome, outcome.Reason = ChangeRefused, err.Error()
-	case attach && strings.Contains(info, "already attached"):
-		outcome.Outcome = ChangeAlreadyAttached
-	case attach:
-		outcome.Outcome = ChangeAttached
-	case strings.Contains(info, "already detached"):
-		outcome.Outcome = ChangeAlreadyDetached
-	default:
-		outcome.Outcome = ChangeDetached
-	}
+	outcome.Outcome, outcome.Reason = tagOutcome(err, response.Info, attach)
 	return outcome
 }
 
+// tagOutcome reads the outcome of an attachment or a detachment of a tag,
+// on a node or a service: the collector answers one that changes nothing
+// with 200 and an info saying so.
+func tagOutcome(err error, info string, attach bool) (outcome, reason string) {
+	info = strings.ToLower(info)
+	switch {
+	case err != nil:
+		return ChangeRefused, err.Error()
+	case attach && strings.Contains(info, "already attached"):
+		return ChangeAlreadyAttached, ""
+	case attach:
+		return ChangeAttached, ""
+	case strings.Contains(info, "already detached"):
+		return ChangeAlreadyDetached, ""
+	}
+	return ChangeDetached, ""
+}
+
+// validateTagAttachData checks the data of an attachment, free JSON text:
+// an empty one would clear the data of an attachment already there.
 func validateTagAttachData(data string) error {
-	if len(data) > 4096 || !utf8.ValidString(data) {
-		return fmt.Errorf("attach_data must be at most 4096 bytes of text")
+	if data == "" || len(data) > 4096 || !utf8.ValidString(data) || !json.Valid([]byte(data)) {
+		return fmt.Errorf("attach_data must be 1 to 4096 bytes of JSON text; leave it out to keep the data of an attachment already there")
 	}
 	return nil
 }

@@ -370,6 +370,9 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 	); err != nil {
 		return err
 	}
+	if err := registerServiceTagTools(registrar, service); err != nil {
+		return err
+	}
 	return addTool(
 		registrar,
 		&mcp.Tool{

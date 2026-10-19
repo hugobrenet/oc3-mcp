@@ -29,6 +29,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Storage | `list_storage_arrays`, `list_storage_quotas`, `list_san_switch_ports` | [Storage tools](storage.md) |
 | Node actions | `create_node`, `update_node`, `delete_node`, `attach_node_tag`, `detach_node_tag`, `attach_node_ruleset`, `detach_node_ruleset`, `attach_node_moduleset`, `detach_node_moduleset`, `queue_node_action`, `freeze_node`, `unfreeze_node`, `drain_node`, `fix_node_compliance`, `cancel_node_action` | [Node action tools](node-actions.md) |
 | Node action queue | `list_node_actions` | [Node action tools](node-actions.md#list_node_actions) |
+| Service tags | `attach_service_tag`, `detach_service_tag` | [Service tag tools](service-tags.md) |
 
 ## Conventions
 

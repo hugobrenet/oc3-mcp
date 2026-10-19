@@ -60,6 +60,35 @@ type NodeChangeOutcome struct {
 	Warning   string `json:"warning,omitempty" jsonschema:"with queued, why the action may never run, such as a node queued for pull, which an om3 agent never reads; tell the user"`
 }
 
+// forEachSelected runs change on the count items selected, a few at a time,
+// and skipped on those left when ctx ends: the collector has no bulk route.
+func forEachSelected(ctx context.Context, count int, change func(int), skipped func(int)) {
+	work := make(chan int)
+	var wait sync.WaitGroup
+	for range min(selectionWorkers, count) {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			for index := range work {
+				if ctx.Err() != nil {
+					skipped(index)
+					continue
+				}
+				change(index)
+			}
+		}()
+	}
+	for index := range count {
+		if ctx.Err() != nil {
+			skipped(index)
+			continue
+		}
+		work <- index
+	}
+	close(work)
+	wait.Wait()
+}
+
 // checkSelection validates a selection without reading the collector, and
 // gives the collector filters of a selection by filters.
 func checkSelection(selection NodeSelection) ([]string, error) {
@@ -100,30 +129,11 @@ func (s *Service) changeSelectedNodes(ctx context.Context, selection NodeSelecti
 	}
 
 	outcomes := make([]NodeChangeOutcome, len(nodes))
-	work := make(chan int)
-	var wait sync.WaitGroup
-	for range min(selectionWorkers, len(nodes)) {
-		wait.Add(1)
-		go func() {
-			defer wait.Done()
-			for index := range work {
-				if ctx.Err() != nil {
-					outcomes[index] = NodeChangeOutcome{NodeID: nodes[index].NodeID, Nodename: nodes[index].Nodename, Outcome: ChangeNotAttempted}
-					continue
-				}
-				outcomes[index] = change(ctx, nodes[index])
-			}
-		}()
-	}
-	for index := range nodes {
-		if ctx.Err() != nil {
-			outcomes[index] = NodeChangeOutcome{NodeID: nodes[index].NodeID, Nodename: nodes[index].Nodename, Outcome: ChangeNotAttempted}
-			continue
-		}
-		work <- index
-	}
-	close(work)
-	wait.Wait()
+	forEachSelected(ctx, len(nodes), func(index int) {
+		outcomes[index] = change(ctx, nodes[index])
+	}, func(index int) {
+		outcomes[index] = NodeChangeOutcome{NodeID: nodes[index].NodeID, Nodename: nodes[index].Nodename, Outcome: ChangeNotAttempted}
+	})
 
 	sort.SliceStable(outcomes, func(i, j int) bool {
 		if outcomes[i].Nodename != outcomes[j].Nodename {

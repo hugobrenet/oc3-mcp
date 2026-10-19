@@ -158,3 +158,30 @@ func TestResolveNodesReadsEveryPage(t *testing.T) {
 		t.Fatalf("homonym on the second page: %v", err)
 	}
 }
+
+func TestValidateTagAttachData(t *testing.T) {
+	for data, ok := range map[string]bool{`{"hostname":"web1"}`: true, `"text"`: true, "": false, "not json": false, `{"a":` + strings.Repeat("1", 4096) + `}`: false} {
+		if err := validateTagAttachData(data); (err == nil) != ok {
+			t.Errorf("validateTagAttachData(%.40q) = %v, want ok %v", data, err, ok)
+		}
+	}
+}
+
+func TestTagOutcome(t *testing.T) {
+	for _, test := range []struct {
+		err             error
+		info            string
+		attach          bool
+		outcome, reason string
+	}{
+		{nil, "node 'n-1' tag 'x' attached", true, ChangeAttached, ""},
+		{nil, "tag 'x' already attached to node 'n-1'", true, ChangeAlreadyAttached, ""},
+		{nil, "tag detached", false, ChangeDetached, ""},
+		{nil, "tag already detached", false, ChangeAlreadyDetached, ""},
+		{errString("HTTP 409 Conflict: not compatible"), "", true, ChangeRefused, "HTTP 409 Conflict: not compatible"},
+	} {
+		if outcome, reason := tagOutcome(test.err, test.info, test.attach); outcome != test.outcome || reason != test.reason {
+			t.Errorf("tagOutcome(%v, %q, %v) = %s, %q", test.err, test.info, test.attach, outcome, reason)
+		}
+	}
+}
