@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"sync"
 	"time"
 )
 
@@ -17,6 +18,9 @@ type fakeCollector struct {
 	answer   func(path string, query url.Values) string
 	err      error
 	requests []fakeRequest
+	// mutex guards requests: the tag changes call the collector from
+	// several goroutines.
+	mutex sync.Mutex
 }
 
 type fakeRequest struct {
@@ -27,7 +31,7 @@ type fakeRequest struct {
 }
 
 func (f *fakeCollector) GetJSON(_ context.Context, path string, query url.Values, output any) error {
-	f.requests = append(f.requests, fakeRequest{method: "GET", path: path, query: query})
+	f.record(fakeRequest{method: "GET", path: path, query: query})
 	if f.err != nil {
 		return f.err
 	}
@@ -44,7 +48,7 @@ func (f *fakeCollector) PostJSON(_ context.Context, path string, input any, outp
 	payload, _ := json.Marshal(input)
 	var body map[string]any
 	_ = json.Unmarshal(payload, &body)
-	f.requests = append(f.requests, fakeRequest{method: "POST", path: path, body: body})
+	f.record(fakeRequest{method: "POST", path: path, body: body})
 	if f.err != nil {
 		return f.err
 	}
@@ -52,11 +56,17 @@ func (f *fakeCollector) PostJSON(_ context.Context, path string, input any, outp
 }
 
 func (f *fakeCollector) DeleteJSON(_ context.Context, path string, output any) error {
-	f.requests = append(f.requests, fakeRequest{method: "DELETE", path: path})
+	f.record(fakeRequest{method: "DELETE", path: path})
 	if f.err != nil {
 		return f.err
 	}
 	return f.reply(path, nil, output)
+}
+
+func (f *fakeCollector) record(request fakeRequest) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	f.requests = append(f.requests, request)
 }
 
 // reply answers a request of the given path as GetJSON does.

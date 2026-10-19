@@ -67,6 +67,36 @@ type DeleteNodeInput struct {
 
 type DeleteNodeOutput = core.NodeDeletion
 
+// NodeTagInput selects the nodes of a tag change: nodes, or the filters of
+// list_nodes and count_nodes with expected_count.
+type NodeTagInput struct {
+	Tag   string   `json:"tag" jsonschema:"one exact tag name, case-insensitive, or tag ID"`
+	Nodes []string `json:"nodes,omitempty" jsonschema:"optional exact node names or node IDs, at most 50; not with filters"`
+	NodeFiltersInput
+	// FilterTag is the tag filter of list_nodes, whose name tag is the tag
+	// changed here.
+	FilterTag     string `json:"filter_tag,omitempty" jsonschema:"optional exact tag name or tag ID; keeps only the nodes holding this tag, the tag filter of list_nodes and count_nodes; to detach a tag from every node holding it, pass the same tag; not with filterset"`
+	ExpectedCount int    `json:"expected_count,omitempty" jsonschema:"with filters, required: the number of nodes count_nodes gives for the same filters, which the user saw; a selection of another size is refused"`
+}
+
+func (input NodeTagInput) options() core.NodeTagOptions {
+	filters := input.NodeFiltersInput.core()
+	filters.Tag = input.FilterTag
+	return core.NodeTagOptions{Tag: input.Tag, Nodes: input.Nodes, Filters: filters, ExpectedCount: input.ExpectedCount}
+}
+
+type AttachNodeTagInput struct {
+	NodeTagInput
+	AttachData *string `json:"attach_data,omitempty" jsonschema:"optional data of the attachment, such as the fields of the form of a tag, as JSON text"`
+}
+
+type NodeTagOutput = core.NodeTagChange
+
+// nodeTagSelection tells how a tag change selects its nodes.
+const nodeTagSelection = "Pass the nodes, at most 50 exact names or IDs, or the filters of list_nodes and count_nodes to select up to 1000 nodes: then first count them with count_nodes with the same filters, its tag filter given here as filter_tag, tell the user the number, and pass it as expected_count; a selection of another size is refused, and nothing is changed. " +
+	"An unknown or ambiguous node name refuses the whole call, before anything is changed. The MCP sends one request per node: the change is not atomic, and the result gives the outcome on each node, with the reason of each refusal, such as a tag the collector holds incompatible with the other tags of the node. " +
+	"Requires to be responsible for the nodes."
+
 // RegisterNodeActionTools registers the tools that create, update and
 // delete nodes in the collector. They are registered only when actions are
 // enabled.
@@ -106,6 +136,46 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 			result, err := service.UpdateNode(ctx, input.Node, input.properties())
 			if err != nil {
 				return nil, UpdateNodeOutput{}, err
+			}
+			return nil, result, nil
+		},
+	); err != nil {
+		return err
+	}
+	if err := addTool(
+		registrar,
+		&mcp.Tool{
+			Name:  "attach_node_tag",
+			Title: "Attach node tag",
+			Description: "Attach one tag of the OpenSVC collector to one or several nodes, such as pci-dss, which filters, filtersets and contextual compliance rulesets may rely on. A node already holding the tag is left as it is, its attach data updated when given. " +
+				nodeTagSelection,
+			Annotations: actionAnnotations(false, true),
+		},
+		func(ctx context.Context, _ *mcp.CallToolRequest, input AttachNodeTagInput) (*mcp.CallToolResult, NodeTagOutput, error) {
+			options := input.options()
+			options.AttachData = input.AttachData
+			result, err := service.AttachNodeTag(ctx, options)
+			if err != nil {
+				return nil, NodeTagOutput{}, err
+			}
+			return nil, result, nil
+		},
+	); err != nil {
+		return err
+	}
+	if err := addTool(
+		registrar,
+		&mcp.Tool{
+			Name:  "detach_node_tag",
+			Title: "Detach node tag",
+			Description: "Detach one tag of the OpenSVC collector from one or several nodes, with its attach data: the filters, filtersets and contextual compliance rulesets relying on the tag no longer select them. A node not holding the tag is left as it is. " +
+				nodeTagSelection,
+			Annotations: actionAnnotations(true, true),
+		},
+		func(ctx context.Context, _ *mcp.CallToolRequest, input NodeTagInput) (*mcp.CallToolResult, NodeTagOutput, error) {
+			result, err := service.DetachNodeTag(ctx, input.options())
+			if err != nil {
+				return nil, NodeTagOutput{}, err
 			}
 			return nil, result, nil
 		},

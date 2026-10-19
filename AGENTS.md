@@ -12,8 +12,10 @@ contracts, so that a change in one is easy to carry to the other.
 The collector is the only resource server. Most tools read it. Action tools,
 which change the collector state, are registered only when
 `OPENSVC_MCP_ACTIONS=enabled`, on both listeners. Add an action tool only at
-user direction, one tool per action, targeting one exact item, never a
-selector.
+user direction, one tool per action, targeting one exact item or a bounded
+list of exact items. A selection by filters is allowed only with the number
+of items the user saw, which the tool checks before any change, as
+`attach_node_tag` does.
 
 Module and binary: `github.com/opensvc/oc3-mcp` and `oc3-mcp`.
 Use Go, the standard library, `github.com/modelcontextprotocol/go-sdk`,
