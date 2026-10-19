@@ -120,6 +120,11 @@ binding; startup must not contact the collector.
   the text for safe to repeat. The sysreport of a node is the exception: its
   files and diffs are returned as the collector serves them, unmasked, and
   the tool descriptions say they may hold secrets.
+- The email addresses and phone numbers of people are not returned: the
+  person fields the collector records, such as an author, a creator, an
+  assignee or the user of an event, mask the email addresses
+  (`personName` of `internal/core/mask.go`), and the user tools do not read
+  them.
 - A name that matches several items is refused with their identifiers, never
   resolved by choosing one.
 - A `get_*` tool returns the columns of its item, read in one call: for a

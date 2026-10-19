@@ -46,6 +46,12 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 - Every result carries `provenance`: `source` (`opensvc_collector`) and
   `observed_at`, the UTC time the MCP collected it. Collector timestamps are
   returned as the collector gives them, in its local time without a zone.
+- The email addresses and phone numbers of people are not returned. The
+  person fields the collector records, the `author` of a form, a moduleset, a
+  ruleset variable or a filterset, the `creator` and `assignee` of a request
+  and of its steps, the `user` and `impersonator` of an event, mask the email
+  addresses as `(masked)`: the collector records many of them as an email
+  address. The user tools read no email address or phone number.
 - Visibility is that of the collector account of the caller: the MCP sends
   the collector the verified token of the socket, see
   [Unix socket authentication](../configuration.md#unix-socket-authentication),

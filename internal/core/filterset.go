@@ -35,7 +35,7 @@ type FiltersetList struct {
 type Filterset struct {
 	ID      int    `json:"id" jsonschema:"the collector filterset ID"`
 	Name    string `json:"name" jsonschema:"the filterset name"`
-	Author  string `json:"author,omitempty" jsonschema:"who last changed the filterset"`
+	Author  string `json:"author,omitempty" jsonschema:"who last changed the filterset; an email address is masked"`
 	Updated string `json:"updated,omitempty" jsonschema:"when the filterset was last changed, in collector local time without a zone"`
 }
 
@@ -254,5 +254,5 @@ func (s *Service) lookupFilterset(ctx context.Context, filterset string) (collec
 }
 
 func filtersetOf(row collectorFilterset) Filterset {
-	return Filterset{ID: row.ID, Name: row.Name, Author: strings.TrimSpace(row.Author), Updated: row.Updated}
+	return Filterset{ID: row.ID, Name: row.Name, Author: personName(row.Author), Updated: row.Updated}
 }

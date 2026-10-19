@@ -44,3 +44,17 @@ install =
 		t.Fatalf("%d bytes, cut %v", len(long), cut)
 	}
 }
+
+func TestPersonNameMasksTheEmailAddresses(t *testing.T) {
+	for name, want := range map[string]string{
+		" root@localhost.localdomain ": maskedRequestValue,
+		"Jane Doe":                     "Jane Doe",
+		"Jane Doe <jane@example.com>":  "Jane Doe <(masked)>",
+		"scheduler":                    "scheduler",
+		"":                             "",
+	} {
+		if got := personName(name); got != want {
+			t.Errorf("personName(%q) = %q, want %q", name, got, want)
+		}
+	}
+}

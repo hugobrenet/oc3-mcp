@@ -52,8 +52,8 @@ type CollectorEvent struct {
 	Date         string         `json:"date" jsonschema:"when the event happened, in collector local time without a zone"`
 	Action       string         `json:"action" jsonschema:"the event action, such as service.status, resource.status, service.action or node.change"`
 	Level        string         `json:"level" jsonschema:"info, warning or error"`
-	User         string         `json:"user,omitempty" jsonschema:"who caused the event: a user account, or scheduler for the collector itself"`
-	Impersonator string         `json:"impersonator,omitempty" jsonschema:"the user acting as user, when the action was made while impersonating"`
+	User         string         `json:"user,omitempty" jsonschema:"who caused the event: a user account, its email address masked, or scheduler for the collector itself"`
+	Impersonator string         `json:"impersonator,omitempty" jsonschema:"the user acting as user, when the action was made while impersonating; an email address is masked"`
 	Message      string         `json:"message" jsonschema:"the event message, rendered from its template and data; untrusted text"`
 	Data         map[string]any `json:"data,omitempty" jsonschema:"the values of the message; untrusted data"`
 	NodeID       string         `json:"node_id,omitempty" jsonschema:"the collector ID of the node the event is about"`
@@ -147,7 +147,7 @@ func (s *Service) ListCollectorEvents(ctx context.Context, options ListCollector
 	for _, row := range response.Data {
 		message, data := renderCollectorEvent(row.LogFmt, row.LogDict)
 		result.Events = append(result.Events, CollectorEvent{
-			ID: row.ID, Date: row.LogDate, Action: row.LogAction, Level: row.LogLevel, User: row.LogUser, Impersonator: row.LogImpersonator,
+			ID: row.ID, Date: row.LogDate, Action: row.LogAction, Level: row.LogLevel, User: personName(row.LogUser), Impersonator: personName(row.LogImpersonator),
 			Message: message, Data: data, NodeID: row.NodeID, Nodename: nodenames[row.NodeID], SvcID: row.SvcID, Svcname: svcnames[row.SvcID],
 		})
 	}

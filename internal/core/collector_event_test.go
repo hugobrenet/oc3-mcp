@@ -45,7 +45,7 @@ func TestListCollectorEventsReadsTheLog(t *testing.T) {
 		status.Message != "service 'test/svc/zfs30' has zero live instance. Status flagged 'undef'" || status.Svcname != "test/svc/zfs30" || status.User != "scheduler" {
 		t.Fatalf("status = %+v", status)
 	}
-	if change.Message != `change properties {"loc_building":"b1"} on 3 nodes %(missing)s` || change.Nodename != "dev2n1" || change.Impersonator != "root@example.com" ||
+	if change.Message != `change properties {"loc_building":"b1"} on 3 nodes %(missing)s` || change.Nodename != "dev2n1" || change.Impersonator != maskedRequestValue || change.User != maskedRequestValue ||
 		change.Data["count"] != float64(3) {
 		t.Fatalf("change = %+v", change)
 	}

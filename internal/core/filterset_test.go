@@ -7,7 +7,7 @@ import (
 )
 
 func TestListFiltersetsFiltersTheName(t *testing.T) {
-	collector := &fakeCollector{body: `{"data":[{"id":283,"fset_name":"big-memory","fset_author":" root ","fset_updated":"2026-09-15 15:51:56"}],"meta":{"total":3}}`}
+	collector := &fakeCollector{body: `{"data":[{"id":283,"fset_name":"big-memory","fset_author":"root@localhost.localdomain","fset_updated":"2026-09-15 15:51:56"}],"meta":{"total":3}}`}
 	list, err := newTestService(collector).ListFiltersets(t.Context(), ListFiltersetsOptions{Name: "mem", Limit: 1})
 	if err != nil {
 		t.Fatal(err)
@@ -15,7 +15,7 @@ func TestListFiltersetsFiltersTheName(t *testing.T) {
 	if collector.requests[0].path != "/filtersets" || collector.requests[0].query.Get("filter") != "fset_name:~mem" || collector.requests[0].query.Get("orderby") != "fset_name,id" {
 		t.Fatalf("request = %+v", collector.requests[0])
 	}
-	if list.Total != 3 || !list.Truncated || list.Filtersets[0].Author != "root" || list.Filtersets[0].Name != "big-memory" {
+	if list.Total != 3 || !list.Truncated || list.Filtersets[0].Author != maskedRequestValue || list.Filtersets[0].Name != "big-memory" {
 		t.Fatalf("list = %+v", list)
 	}
 }
