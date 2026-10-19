@@ -187,13 +187,11 @@ The nodes are given one of two ways:
   (`filter=nodename:in:…`, `filter=node_id:in:…`). An unknown, invisible or
   ambiguous name refuses the whole call before any change; a name given
   twice is changed once.
-- filters, those of `list_nodes` and `count_nodes`, with `expected_count`.
-  The model first counts the nodes with `count_nodes` with the same filters,
-  tells the user the number, and passes it: the MCP reads the selection, at
-  most 1000 nodes, and refuses a selection of another size, before any
-  change. The confirmation of the agent shows the filters and the number,
-  not 403 names. The number guards against a selection that changed since
-  the user saw it, not against one that changed with the same size.
+- filters, at least one of those of `list_nodes` and `count_nodes`: the MCP
+  reads the selection, and refuses one of more than 1000 nodes, or one that
+  changed while it was read, before any change. The confirmation of the
+  agent shows the filters, not the names of hundreds of nodes, and the
+  result gives the number selected and the outcome on each node.
 
 The tag filter of `list_nodes` is `filter_tag` here, as `tag` names the tag
 changed: to detach a tag from every node holding it, pass the same tag as
@@ -236,7 +234,7 @@ the caller is not responsible for with 403.
 |---|---|
 | `tag` | One exact tag name, case-insensitive, or tag ID |
 | `nodes` | Optional, see [selection](#selection) |
-| filters, `expected_count` | Optional, see [selection](#selection) |
+| filters | Optional, see [selection](#selection) |
 | `attach_data` | `attach_node_tag` only: optional data of the attachment, as JSON text, at most 4096 bytes |
 
 #### Output

@@ -68,21 +68,20 @@ type DeleteNodeInput struct {
 type DeleteNodeOutput = core.NodeDeletion
 
 // NodeTagInput selects the nodes of a tag change: nodes, or the filters of
-// list_nodes and count_nodes with expected_count.
+// list_nodes and count_nodes.
 type NodeTagInput struct {
 	Tag   string   `json:"tag" jsonschema:"one exact tag name, case-insensitive, or tag ID"`
 	Nodes []string `json:"nodes,omitempty" jsonschema:"optional exact node names or node IDs, at most 50; not with filters"`
 	NodeFiltersInput
 	// FilterTag is the tag filter of list_nodes, whose name tag is the tag
 	// changed here.
-	FilterTag     string `json:"filter_tag,omitempty" jsonschema:"optional exact tag name or tag ID; keeps only the nodes holding this tag, the tag filter of list_nodes and count_nodes; to detach a tag from every node holding it, pass the same tag; not with filterset"`
-	ExpectedCount int    `json:"expected_count,omitempty" jsonschema:"with filters, required: the number of nodes count_nodes gives for the same filters, which the user saw; a selection of another size is refused"`
+	FilterTag string `json:"filter_tag,omitempty" jsonschema:"optional exact tag name or tag ID; keeps only the nodes holding this tag, the tag filter of list_nodes and count_nodes; to detach a tag from every node holding it, pass the same tag; not with filterset"`
 }
 
 func (input NodeTagInput) options() core.NodeTagOptions {
 	filters := input.NodeFiltersInput.core()
 	filters.Tag = input.FilterTag
-	return core.NodeTagOptions{Tag: input.Tag, Nodes: input.Nodes, Filters: filters, ExpectedCount: input.ExpectedCount}
+	return core.NodeTagOptions{Tag: input.Tag, Nodes: input.Nodes, Filters: filters}
 }
 
 type AttachNodeTagInput struct {
@@ -93,7 +92,7 @@ type AttachNodeTagInput struct {
 type NodeTagOutput = core.NodeTagChange
 
 // nodeTagSelection tells how a tag change selects its nodes.
-const nodeTagSelection = "Pass the nodes, at most 50 exact names or IDs, or the filters of list_nodes and count_nodes to select up to 1000 nodes: then first count them with count_nodes with the same filters, its tag filter given here as filter_tag, tell the user the number, and pass it as expected_count; a selection of another size is refused, and nothing is changed. " +
+const nodeTagSelection = "Pass the nodes, at most 50 exact names or IDs, or at least one of the filters of list_nodes and count_nodes, the tag filter given here as filter_tag, to select up to 1000 nodes; a larger selection is refused, and nothing is changed." +
 	"An unknown or ambiguous node name refuses the whole call, before anything is changed. The MCP sends one request per node: the change is not atomic, and the result gives the outcome on each node, with the reason of each refusal, such as a tag the collector holds incompatible with the other tags of the node. " +
 	"Requires to be responsible for the nodes."
 

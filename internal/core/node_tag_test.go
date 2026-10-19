@@ -36,10 +36,10 @@ func tagCollector(t *testing.T, nodes string, total int, change map[string]strin
 
 func itoa(value int) string { return strconv.Itoa(value) }
 
-func TestAttachNodeTagByFiltersChecksTheExpectedCount(t *testing.T) {
+func TestAttachNodeTagByFilters(t *testing.T) {
 	nodes := `[{"node_id":"n-1","nodename":"b"},{"node_id":"n-2","nodename":"a"}]`
 	collector := tagCollector(t, nodes, 2, map[string]string{"n-1": `{"info":"node 'n-1' tag 'tag-mcp' attached"}`, "n-2": `{"info":"tag 'tag-mcp' already attached to node 'n-2'"}`})
-	change, err := newTestService(collector).AttachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", Filters: NodeFilters{Status: "In service"}, ExpectedCount: 2})
+	change, err := newTestService(collector).AttachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", Filters: NodeFilters{Status: "In service"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,10 +51,10 @@ func TestAttachNodeTagByFiltersChecksTheExpectedCount(t *testing.T) {
 			t.Fatalf("selection request = %+v", request)
 		}
 	}
-	// Another size than the one the user saw changes nothing.
-	collector = tagCollector(t, nodes, 2, nil)
-	if _, err := newTestService(collector).AttachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", Filters: NodeFilters{Status: "In service"}, ExpectedCount: 3}); err == nil || !strings.Contains(err.Error(), "select 2 nodes, not the expected 3") {
-		t.Fatalf("other count: %v", err)
+	// A selection too large changes nothing.
+	collector = tagCollector(t, nodes, 1001, nil)
+	if _, err := newTestService(collector).AttachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", Filters: NodeFilters{Status: "In service"}}); err == nil || !strings.Contains(err.Error(), "select 1001 nodes, more than 1000") {
+		t.Fatalf("too large: %v", err)
 	}
 	for _, request := range collector.requests {
 		if request.method != "GET" {
@@ -62,8 +62,8 @@ func TestAttachNodeTagByFiltersChecksTheExpectedCount(t *testing.T) {
 		}
 	}
 	for _, options := range []NodeTagOptions{
-		{Tag: "tag-mcp"}, {Tag: "tag-mcp", Filters: NodeFilters{Status: "x"}}, {Tag: "tag-mcp", Nodes: []string{"a"}, Filters: NodeFilters{Status: "x"}, ExpectedCount: 1},
-		{Tag: "tag-mcp", Nodes: []string{"a"}, ExpectedCount: 1}, {Nodes: []string{"a"}}, {Tag: "tag-mcp", Nodes: make([]string, 51)},
+		{Tag: "tag-mcp"}, {Tag: "tag-mcp", Nodes: []string{"a"}, Filters: NodeFilters{Status: "x"}},
+		{Nodes: []string{"a"}}, {Tag: "tag-mcp", Nodes: make([]string, 51)},
 	} {
 		collector := tagCollector(t, nodes, 2, nil)
 		if _, err := newTestService(collector).AttachNodeTag(t.Context(), options); err == nil || len(collector.requests) != 0 {
