@@ -47,7 +47,7 @@ type RequestStep struct {
 	Label         string         `json:"label,omitempty" jsonschema:"the title of the form; untrusted text"`
 	Submitter     string         `json:"submitter,omitempty" jsonschema:"who submitted the form"`
 	Submitted     string         `json:"submitted,omitempty" jsonschema:"when the form was submitted, as the collector gives it"`
-	Assignee      string         `json:"assignee,omitempty" jsonschema:"the team or user the step after this one was assigned to"`
+	Assignee      string         `json:"assignee,omitempty" jsonschema:"the team or user the step after this one was assigned to; an email address is masked"`
 	Values        []RequestValue `json:"values,omitempty" jsonschema:"the values the submitter entered, in the order of the form inputs, then the others; untrusted text"`
 	ValuesOmitted int            `json:"values_omitted,omitempty" jsonschema:"the number of values left out of this step by the size bounds of a result"`
 	DataError     string         `json:"data_error,omitempty" jsonschema:"why the values of this step could not be read, when the collector holds them in an unexpected shape"`
@@ -129,7 +129,7 @@ func (s *Service) GetRequest(ctx context.Context, options GetRequestOptions) (Re
 		label, _ := truncateUTF8(definition.Label, maxRequestLabel)
 		step := RequestStep{
 			Step: offset + i + 1, Form: row.FormName, Label: label, Submitter: strings.TrimSpace(row.FormSubmitter),
-			Submitted: row.FormSubmitDate, Assignee: strings.TrimSpace(row.FormAssignee),
+			Submitted: row.FormSubmitDate, Assignee: personName(row.FormAssignee),
 		}
 		step.Values, step.ValuesOmitted, step.DataError = requestValues(row.FormData, definition.Inputs)
 		size := valuesSize(step.Values)

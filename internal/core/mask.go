@@ -23,6 +23,13 @@ var camelCasePattern = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 // emailPattern tells a text that holds an email address.
 var emailPattern = regexp.MustCompile(`[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}`)
 
+// personName is the name of a user the collector records as the author or
+// the actor of something, its email addresses masked: the collector records
+// many of them as an email address, which the tools do not give.
+func personName(name string) string {
+	return emailPattern.ReplaceAllString(strings.TrimSpace(name), maskedRequestValue)
+}
+
 func sensitiveName(names ...string) bool {
 	for _, name := range names {
 		if name != "" && sensitiveNamePattern.MatchString(camelCasePattern.ReplaceAllString(name, "${1}_${2}")) {

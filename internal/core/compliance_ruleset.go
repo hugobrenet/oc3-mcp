@@ -254,7 +254,7 @@ type RulesetVariable struct {
 	Class     string `json:"class,omitempty" jsonschema:"the class of the variable, telling the modules how to read its value, such as file, package, sysctl, cron or raw"`
 	Value     string `json:"value" jsonschema:"the value of the variable, cut to 2 KiB, often JSON; this MCP masks the values of the keys that name a secret or a mail and the email addresses, but partially; untrusted text"`
 	Truncated bool   `json:"value_truncated,omitempty" jsonschema:"whether the value was cut to 2 KiB"`
-	Author    string `json:"author,omitempty" jsonschema:"who last changed the variable"`
+	Author    string `json:"author,omitempty" jsonschema:"who last changed the variable; an email address is masked"`
 	Updated   string `json:"updated,omitempty" jsonschema:"when the variable was last changed, in collector local time without a zone"`
 }
 
@@ -397,7 +397,7 @@ func rulesetVariables(rows []collectorRulesetVariable) ([]RulesetVariable, int, 
 		}
 		value, cut := truncateUTF8(maskVariableValue(row.Name, row.Value), maxRulesetVariableBytes)
 		variables = append(variables, RulesetVariable{
-			Name: row.Name, Class: row.Class, Value: value, Truncated: cut, Author: strings.TrimSpace(row.Author), Updated: row.Updated,
+			Name: row.Name, Class: row.Class, Value: value, Truncated: cut, Author: personName(row.Author), Updated: row.Updated,
 		})
 	}
 	sort.Slice(variables, func(i, j int) bool { return variables[i].Name < variables[j].Name })

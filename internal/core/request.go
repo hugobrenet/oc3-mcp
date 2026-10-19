@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
-	"strings"
 )
 
 const (
@@ -48,9 +47,9 @@ type Request struct {
 	LastForm   string `json:"last_form,omitempty" jsonschema:"the form last submitted in the request"`
 	Status     string `json:"status,omitempty" jsonschema:"the request status: pending while a step is to submit, closed when the workflow is closed, which tells nothing of the outcome of the requested operation"`
 	Steps      int    `json:"steps" jsonschema:"the number of forms submitted in the request"`
-	Creator    string `json:"creator,omitempty" jsonschema:"who submitted the first form"`
+	Creator    string `json:"creator,omitempty" jsonschema:"who submitted the first form; an email address is masked"`
 	Created    string `json:"created,omitempty" jsonschema:"when the request was created, as the collector gives it"`
-	Assignee   string `json:"assignee,omitempty" jsonschema:"the team or user the last step was assigned to: for a pending request, who is to submit the next form"`
+	Assignee   string `json:"assignee,omitempty" jsonschema:"the team or user the last step was assigned to: for a pending request, who is to submit the next form; an email address is masked"`
 	Updated    string `json:"updated,omitempty" jsonschema:"when a form of the request was last submitted, as the collector gives it"`
 }
 
@@ -147,6 +146,6 @@ func (s *Service) ListRequests(ctx context.Context, options ListRequestsOptions)
 func requestOf(row collectorRequest) Request {
 	return Request{
 		ID: row.ID, Form: row.FormName, FormFolder: row.FormFolder, LastForm: row.LastFormName, Status: row.Status, Steps: row.Steps,
-		Creator: strings.TrimSpace(row.Creator), Created: row.CreateDate, Assignee: strings.TrimSpace(row.LastAssignee), Updated: row.LastUpdate,
+		Creator: personName(row.Creator), Created: row.CreateDate, Assignee: personName(row.LastAssignee), Updated: row.LastUpdate,
 	}
 }

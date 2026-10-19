@@ -50,7 +50,7 @@ type Form struct {
 	Description string     `json:"description,omitempty" jsonschema:"what the form is for, cut to 512 bytes; untrusted text"`
 	Type        string     `json:"type,omitempty" jsonschema:"the form type: obj for a compliance variable form, custo or generic for a form starting a request or running a script, folder for a folder"`
 	Folder      string     `json:"folder,omitempty" jsonschema:"the folder of the form, such as /compliance or /samples"`
-	Author      string     `json:"author,omitempty" jsonschema:"who wrote the form"`
+	Author      string     `json:"author,omitempty" jsonschema:"who wrote the form; an email address is masked"`
 	Created     string     `json:"created,omitempty" jsonschema:"when the form was created, as the collector gives it"`
 	Inputs      *int       `json:"inputs,omitempty" jsonschema:"the number of inputs of the form; absent when its definition is unavailable"`
 	Outputs     []string   `json:"outputs,omitempty" jsonschema:"what a submission does, by output: workflow starts or goes on with a request, compliance variable sets a compliance variable, script, rest, mail or db run an action"`
@@ -64,7 +64,7 @@ type Form struct {
 type FormNext struct {
 	Condition string   `json:"condition" jsonschema:"when this step comes: always, on_success or on_error of the script the output runs"`
 	Forms     []string `json:"forms,omitempty" jsonschema:"the forms to submit next; none closes the request"`
-	Assignee  string   `json:"assignee,omitempty" jsonschema:"the team or user the next step is assigned to"`
+	Assignee  string   `json:"assignee,omitempty" jsonschema:"the team or user the next step is assigned to; an email address is masked"`
 }
 
 type collectorForm struct {
@@ -231,7 +231,7 @@ func formNextStep(branch map[string]any, condition string) FormNext {
 			step.Forms = append(step.Forms, name)
 		}
 	}
-	step.Assignee = strings.TrimSpace(formText(branch["NextAssignee"]))
+	step.Assignee = personName(formText(branch["NextAssignee"]))
 	return step
 }
 
@@ -245,7 +245,7 @@ func sameFormNext(a, b FormNext) bool {
 func formOf(row collectorForm) Form {
 	form := Form{
 		ID: row.ID, Name: row.FormName, Type: row.FormType, Folder: row.FormFolder,
-		Author: strings.TrimSpace(row.FormAuthor), Created: row.FormCreated,
+		Author: personName(row.FormAuthor), Created: row.FormCreated,
 	}
 	definition, ok := parseFormDefinition(row.FormDefinition)
 	if !ok {

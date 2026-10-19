@@ -48,7 +48,7 @@ type ComplianceModulesetList struct {
 type ComplianceModuleset struct {
 	ID               int                `json:"id" jsonschema:"the collector moduleset ID"`
 	Name             string             `json:"name" jsonschema:"the moduleset name"`
-	Author           string             `json:"author,omitempty" jsonschema:"who last changed the moduleset"`
+	Author           string             `json:"author,omitempty" jsonschema:"who last changed the moduleset; an email address is masked"`
 	Updated          string             `json:"updated,omitempty" jsonschema:"when the moduleset was last changed, in collector local time without a zone"`
 	ModulesCount     int                `json:"modules_count" jsonschema:"the number of modules of the moduleset itself, those of its included modulesets apart"`
 	Modules          []ComplianceModule `json:"modules" jsonschema:"the modules of the moduleset itself, sorted by name, at most 50"`
@@ -174,7 +174,7 @@ func (s *Service) ListComplianceModulesets(ctx context.Context, options ListComp
 	result.Provenance = s.newProvenance()
 	result.Total, result.Count = *response.Meta.Total, len(response.Data)
 	for _, row := range response.Data {
-		moduleset := ComplianceModuleset{ID: row.ID, Name: row.Name, Author: strings.TrimSpace(row.Author), Updated: row.Updated, Modules: []ComplianceModule{}}
+		moduleset := ComplianceModuleset{ID: row.ID, Name: row.Name, Author: personName(row.Author), Updated: row.Updated, Modules: []ComplianceModule{}}
 		all := modules[row.ID]
 		moduleset.ModulesCount = len(all)
 		if len(all) > maxModulesetModules {
@@ -315,7 +315,7 @@ func (s *Service) GetComplianceModuleset(ctx context.Context, moduleset string) 
 		return ComplianceModulesetDetails{}, fmt.Errorf("export moduleset %s: unexpected collector response", row.Name)
 	}
 	result := ComplianceModulesetDetails{
-		Moduleset:    ComplianceModuleset{ID: row.ID, Name: row.Name, Author: strings.TrimSpace(row.Author), Updated: row.Updated},
+		Moduleset:    ComplianceModuleset{ID: row.ID, Name: row.Name, Author: personName(row.Author), Updated: row.Updated},
 		Publications: export.Modulesets[own].Publications,
 		Responsibles: export.Modulesets[own].Responsibles,
 	}
