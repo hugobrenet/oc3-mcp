@@ -27,7 +27,8 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Filtersets | `list_filtersets`, `get_filterset` | [Filterset tools](filtersets.md) |
 | Groups and users | `list_groups`, `get_group`, `list_users` | [Group and user tools](groups.md) |
 | Storage | `list_storage_arrays`, `list_storage_quotas`, `list_san_switch_ports` | [Storage tools](storage.md) |
-| Node actions | `create_node`, `update_node`, `delete_node`, `attach_node_tag`, `detach_node_tag`, `attach_node_ruleset`, `detach_node_ruleset`, `attach_node_moduleset`, `detach_node_moduleset` | [Node action tools](node-actions.md) |
+| Node actions | `create_node`, `update_node`, `delete_node`, `attach_node_tag`, `detach_node_tag`, `attach_node_ruleset`, `detach_node_ruleset`, `attach_node_moduleset`, `detach_node_moduleset`, `queue_node_action` | [Node action tools](node-actions.md) |
+| Node action queue | `list_node_actions` | [Node action tools](node-actions.md#list_node_actions) |
 
 ## Conventions
 

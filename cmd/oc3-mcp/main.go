@@ -211,7 +211,7 @@ func newToolsHandler(collector *client.Client, actions bool, route ...mcp.Middle
 	}
 	server.AddReceivingMiddleware(append([]mcp.Middleware{auditToolCalls}, route...)...)
 	for _, register := range []func(*tools.Registrar, *core.Service) error{
-		tools.RegisterClusterTools, tools.RegisterNodeTools, tools.RegisterServiceTools, tools.RegisterServiceActionTools, tools.RegisterAlertTools, tools.RegisterCheckTools, tools.RegisterPackageTools, tools.RegisterCollectorEventTools, tools.RegisterComplianceTools, tools.RegisterComplianceModulesetTools, tools.RegisterComplianceRulesetTools, tools.RegisterFiltersetTools, tools.RegisterStorageTools, tools.RegisterIPTools, tools.RegisterTagTools, tools.RegisterAppTools, tools.RegisterFindTools, tools.RegisterRequestTools, tools.RegisterFormTools, tools.RegisterSysreportTools, tools.RegisterGroupTools,
+		tools.RegisterClusterTools, tools.RegisterNodeTools, tools.RegisterServiceTools, tools.RegisterServiceActionTools, tools.RegisterAlertTools, tools.RegisterCheckTools, tools.RegisterPackageTools, tools.RegisterCollectorEventTools, tools.RegisterComplianceTools, tools.RegisterComplianceModulesetTools, tools.RegisterComplianceRulesetTools, tools.RegisterFiltersetTools, tools.RegisterStorageTools, tools.RegisterNodeActionQueueTools, tools.RegisterIPTools, tools.RegisterTagTools, tools.RegisterAppTools, tools.RegisterFindTools, tools.RegisterRequestTools, tools.RegisterFormTools, tools.RegisterSysreportTools, tools.RegisterGroupTools,
 	} {
 		if err := register(registrar, service); err != nil {
 			return nil, err

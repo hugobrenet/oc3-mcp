@@ -10,6 +10,8 @@ tools:
   - detach_node_ruleset
   - attach_node_moduleset
   - detach_node_moduleset
+  - queue_node_action
+  - list_node_actions
 stability: experimental
 ---
 
@@ -17,13 +19,16 @@ stability: experimental
 
 This document describes the tools that create, update and delete the nodes
 of the OpenSVC collector inventory, and attach to them, or detach from them,
-tags and compliance rulesets and modulesets. They change the collector state, and are
+tags and compliance rulesets and modulesets, and queue agent actions on
+them. `list_node_actions`, which reads the action queue, is read-only and
+always registered. They change the collector state, and are
 registered only when `OPENSVC_MCP_ACTIONS=enabled` ([configuration](../configuration.md)).
 
 Implementation:
 
 - business logic: `internal/core/node_action.go`, `internal/core/node_tag.go`
-  and `internal/core/node_compliance.go`, with the node selection of
+  `internal/core/node_compliance.go` and `internal/core/node_actionq.go`, with
+  the node selection of
   `internal/core/node_selection.go`;
 - MCP definitions: `internal/tools/node_action.go`.
 
@@ -35,6 +40,7 @@ Implementation:
 | `attach_node_tag` | not read-only, not destructive, idempotent | Responsible for each node |
 | `detach_node_tag` | destructive, idempotent | Responsible for each node |
 | `attach_node_ruleset`, `detach_node_ruleset`, `attach_node_moduleset`, `detach_node_moduleset` | destructive, idempotent | Responsible for each node |
+| `queue_node_action` | not read-only, not destructive, not idempotent | NodeExec, CompExec for `compliance_check`, and responsible for each node |
 
 The OpenSVC AI agent asks the user to confirm a destructive tool before it
 runs: the update, the deletion, the detachments and the compliance
@@ -313,3 +319,109 @@ change, and detaches one.
 | `provenance` | Collector API source and MCP collection time |
 | `ruleset` or `moduleset` | `id`, `name`, and for a ruleset `type` |
 | `filter_tag`, `filterset`, `selected`, `changed`, `unchanged`, `refused`, `nodes[]` | As for the tags |
+
+### `queue_node_action`
+
+Queue one agent action on nodes. The agent of each node runs it, as
+`om node <action>`, when it reads its queue: at once on dev2, where a
+`freeze --local` queued on dev2n2 ran within 3 s.
+
+The collector queues the action as the node reads its queue, its
+`action_type`. Only a `feed` entry reaches an om3 agent, which takes it when
+it pings the collector, and marks it sent. The collector runner notifies a
+`pull` node through the listener of the former agent, which an om3 agent
+does not have, and runs `nodemgr`, the command of the former agent, over ssh
+on a `push` node; a node without `action_type`, such as one `create_node`
+created, is queued for pull. The outcome of each node gives `queued_for`, and a `warning` when
+it is not `feed`, so that the model tells the user rather than lets them
+wait.
+
+The actions refresh what the collector knows of the node and change nothing
+else on it:
+
+| Action | The agent |
+|---|---|
+| `pushasset` | pushes the hardware and system of the node |
+| `pushdisks` | pushes its disks |
+| `pushpkg` | pushes its packages |
+| `pushstats` | pushes its performance statistics |
+| `checks` | runs its health checks and pushes them |
+| `sysreport` | pushes its sysreport |
+| `compliance_check` | runs a compliance check on every module attached to the node, without fixing |
+
+The collector also accepts `pushpatch`, `updatecomp` and `updatepkg`, which
+the om3 agent does not have, and the actions that change the node, such as
+`reboot`, `shutdown`, `drain`, `compliance_fix`, `freeze` and `thaw`: the
+tool does not queue them.
+
+The nodes are selected as for the tags, see [selection](#selection), with
+`tag` as the tag filter. One request per node, four at a time:
+
+```text
+PUT /api/actions   {"node_id": <node_id>, "action": <action>}
+```
+
+The collector answers with the queued action. It refuses a caller without
+the NodeExec privilege, CompExec for `compliance_check`, or not responsible
+for the node, and a node attached to another collector; it records the
+request in its log, `node.action`. Queuing again queues another run: the
+tool is not idempotent. For a push node, reached over ssh, the collector
+queues an ssh command running `nodemgr`, the command of the former agent.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `action` | One of the actions above |
+| `nodes`, filters | See [selection](#selection) |
+
+#### Output
+
+As the tag tools, the outcome on each node being `queued`, with
+`action_id`, the ID `list_node_actions` follows, `queued_for` and, when not
+`feed`, a `warning`, or `refused`.
+
+### `list_node_actions`
+
+Returns one page of the agent actions of the queue, the most recently queued
+first. Read-only, registered without `OPENSVC_MCP_ACTIONS`.
+
+#### Collector API
+
+```text
+GET /api/nodes/<node>?props=node_id,nodename,cluster_id                    with node
+GET /api/actions?props=id,status,command,date_queued,date_dequeued,ret,stdout,stderr,action_type,user_id,node_id,svc_id,connect_to,nodes.nodename,services.svcname&orderby=-id&filter=…&limit=…&offset=…
+GET /api/users?props=id,first_name,last_name&filter=id:in:…
+```
+
+A Manager sees every action; another user, those of the nodes whose app
+they are responsible for. The collector deletes an action a day after it
+was done or cancelled. Its statuses are `W` waiting, `N` notified, `Q`
+queued, `S` sent, `R` running, `T` done and `C` cancelled: an om3 agent
+reading its queue marks its actions sent, then running. The node and service
+names come from the joins of the queue; the user, which has none, from
+`/api/users`.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `node` | Optional exact node name or node ID |
+| `status` | Optional: `waiting`, `notified`, `queued`, `sent`, `running`, `done`, `cancelled` |
+| `command` | Optional text the command contains |
+| `since` | Optional date the action was queued at or after, in collector local time |
+| `limit` | Optional page size, 1 to 100, default 20 |
+| `cursor` | Optional `next_cursor` of a previous call with the same filters |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `node` | With `node`, the node it resolved to |
+| `total`, `count`, `truncated`, `next_cursor` | As the other lists |
+| `actions[]` | `id`, `node_id`, `nodename`, `svc_id`, `svcname`, `command`, `status`, `queued_at`, `dequeued_at`, and when done `ret`, `stdout`, `stderr`, `output_truncated`; `user`, the name of who queued it, email addresses masked; `action_type` |
+
+The command loses the ssh invocation of a push node. The outputs lose their
+terminal colors and are cut at 2000 bytes each; they are untrusted text,
+not masked, as the logs of `get_service_action_logs`.

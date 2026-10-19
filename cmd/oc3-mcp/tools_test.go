@@ -804,7 +804,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		// deletion, the detachments and the compliance attachments, not the
 		// creation or the attachment of a tag.
 		for name, destructive := range map[string]bool{"create_node": false, "update_node": true, "delete_node": true, "attach_node_tag": false, "detach_node_tag": true,
-			"attach_node_ruleset": true, "detach_node_ruleset": true, "attach_node_moduleset": true, "detach_node_moduleset": true} {
+			"attach_node_ruleset": true, "detach_node_ruleset": true, "attach_node_moduleset": true, "detach_node_moduleset": true, "queue_node_action": false} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
 				t.Fatalf("%s = %+v", name, tool)
@@ -824,7 +824,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		if !strings.Contains(string(schema), `"loc_city"`) || !strings.Contains(string(schema), `"required":["node"]`) {
 			t.Fatalf("update_node schema = %s", schema)
 		}
-		if len(found) != 9 {
+		if len(found) != 10 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -906,5 +906,35 @@ func TestNodeComplianceToolsChangeTheSelectedNodes(t *testing.T) {
 	}
 	if strings.Join(changes, ",") != "POST /nodes/n-1/compliance/rulesets/12,DELETE /nodes/n-2/compliance/modulesets/7" {
 		t.Fatalf("changes = %v", changes)
+	}
+}
+
+func TestNodeActionQueueTools(t *testing.T) {
+	var put map[string]any
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.EscapedPath() {
+		case "GET /nodes":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"n-1","nodename":"lab01"}],"meta":{"total":1}}`))
+		case "PUT /actions":
+			_ = json.NewDecoder(r.Body).Decode(&put)
+			_, _ = w.Write([]byte(`{"data":[{"id":901,"status":"W","action_type":"feed"}],"meta":{"count":1}}`))
+		case "GET /actions":
+			_, _ = w.Write([]byte(`{"data":[{"id":901,"status":"W","command":"pushasset","node_id":"n-1","user_id":0,"nodes.nodename":"lab01"}],"meta":{"total":1}}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, queued := call("queue_node_action", map[string]any{"action": "pushasset", "nodes": []string{"lab01"}})
+	if node := queued["nodes"].([]any)[0].(map[string]any); result.IsError || queued["changed"] != float64(1) || node["action_id"] != float64(901) || node["queued_for"] != "feed" || put["node_id"] != "n-1" {
+		t.Fatalf("queue_node_action = %+v, put %v", queued, put)
+	}
+	result, list := call("list_node_actions", map[string]any{"status": "waiting"})
+	actions, _ := list["actions"].([]any)
+	if result.IsError || len(actions) != 1 || actions[0].(map[string]any)["nodename"] != "lab01" || actions[0].(map[string]any)["status"] != "waiting" {
+		t.Fatalf("list_node_actions = %+v", list)
+	}
+	if result, _ := call("queue_node_action", map[string]any{"action": "reboot", "nodes": []string{"lab01"}}); !result.IsError {
+		t.Fatal("queue_node_action accepted reboot")
 	}
 }

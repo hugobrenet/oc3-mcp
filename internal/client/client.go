@@ -120,6 +120,12 @@ func (c *Client) PostJSON(ctx context.Context, path string, input any, output an
 	return c.do(ctx, http.MethodPost, path, nil, input, output)
 }
 
+// PutJSON sends input as a JSON body with PUT and reads the bounded JSON
+// response. It changes the collector state: only the action tools call it.
+func (c *Client) PutJSON(ctx context.Context, path string, input any, output any) error {
+	return c.do(ctx, http.MethodPut, path, nil, input, output)
+}
+
 // DeleteJSON sends a DELETE request and reads the bounded JSON response.
 // It changes the collector state: only the action tools call it.
 func (c *Client) DeleteJSON(ctx context.Context, path string, output any) error {

@@ -114,6 +114,13 @@ type NodeModulesetInput struct {
 
 type NodeRulesetOutput = core.NodeRulesetChange
 
+type QueueNodeActionInput struct {
+	Action string `json:"action" jsonschema:"the agent action: pushasset, pushdisks, pushpkg, pushstats, checks, sysreport or compliance_check"`
+	NodeSelectionInput
+}
+
+type QueueNodeActionOutput = core.NodeActionQueueing
+
 type NodeModulesetOutput = core.NodeModulesetChange
 
 // nodeComplianceSelection tells how a compliance change selects its nodes.
@@ -274,6 +281,29 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 		); err != nil {
 			return err
 		}
+	}
+	if err := addTool(
+		registrar,
+		&mcp.Tool{
+			Name:  "queue_node_action",
+			Title: "Queue node action",
+			Description: "Queue one agent action on one or several nodes in the OpenSVC collector: the agent of each node runs it, as om node <action>, when it reads its queue. " +
+				"The actions refresh what the collector knows of the node, and change nothing else on it: pushasset, its hardware and system; pushdisks, its disks; pushpkg, its packages; pushstats, its performance statistics; checks, its health checks; sysreport, its sysreport; compliance_check, a compliance check on every module attached to it, without fixing. " +
+				"Returns as soon as each action is queued, with its action_id: follow it with list_node_actions. Queuing again queues another run. Only an action queued for feed reaches an om3 agent: a warning tells the nodes queued for pull or push, whose action may never run. " +
+				"Pass the nodes, at most 50 exact names or IDs, or at least one of the filters of list_nodes and count_nodes, to select up to 1000 nodes; a larger selection is refused, and nothing is queued. " +
+				"An unknown or ambiguous node name refuses the whole call, before anything is queued. The result gives the outcome on each node, with the reason of each refusal. " +
+				"Requires the NodeExec privilege, CompExec for compliance_check, and to be responsible for the nodes.",
+			Annotations: actionAnnotations(false, false),
+		},
+		func(ctx context.Context, _ *mcp.CallToolRequest, input QueueNodeActionInput) (*mcp.CallToolResult, QueueNodeActionOutput, error) {
+			result, err := service.QueueNodeAction(ctx, core.NodeActionOptions{Action: input.Action, NodeSelection: input.selection()})
+			if err != nil {
+				return nil, QueueNodeActionOutput{}, err
+			}
+			return nil, result, nil
+		},
+	); err != nil {
+		return err
 	}
 	return addTool(
 		registrar,
