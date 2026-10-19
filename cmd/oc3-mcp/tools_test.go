@@ -801,9 +801,10 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			continue
 		}
 		// The agent asks to confirm a destructive tool: the update, the
-		// deletion and the detachment of a tag, not the creation or the
-		// attachment.
-		for name, destructive := range map[string]bool{"create_node": false, "update_node": true, "delete_node": true, "attach_node_tag": false, "detach_node_tag": true} {
+		// deletion, the detachments and the compliance attachments, not the
+		// creation or the attachment of a tag.
+		for name, destructive := range map[string]bool{"create_node": false, "update_node": true, "delete_node": true, "attach_node_tag": false, "detach_node_tag": true,
+			"attach_node_ruleset": true, "detach_node_ruleset": true, "attach_node_moduleset": true, "detach_node_moduleset": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
 				t.Fatalf("%s = %+v", name, tool)
@@ -823,7 +824,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		if !strings.Contains(string(schema), `"loc_city"`) || !strings.Contains(string(schema), `"required":["node"]`) {
 			t.Fatalf("update_node schema = %s", schema)
 		}
-		if len(found) != 5 {
+		if len(found) != 9 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -862,5 +863,48 @@ func TestDetachNodeTagFromTheNodesHoldingIt(t *testing.T) {
 	}
 	if result, _ := call("detach_node_tag", map[string]any{"tag": "tag-mcp"}); !result.IsError || len(deleted) != 2 {
 		t.Fatalf("a call selecting no node was accepted, deleted %v", deleted)
+	}
+}
+
+func TestNodeComplianceToolsChangeTheSelectedNodes(t *testing.T) {
+	var mutex sync.Mutex
+	var changes []string
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch path := r.Method + " " + r.URL.EscapedPath(); {
+		case path == "GET /compliance/rulesets/os.linux.base":
+			_, _ = w.Write([]byte(`{"data":[{"id":12,"ruleset_name":"os.linux.base","ruleset_type":"explicit"}]}`))
+		case path == "GET /compliance/modulesets/base.linux":
+			_, _ = w.Write([]byte(`{"data":[{"id":7,"modset_name":"base.linux"}]}`))
+		case path == "GET /tags":
+			_, _ = w.Write([]byte(`{"data":[{"tag_id":"t-1","tag_name":"pci-dss"}]}`))
+		case path == "GET /tags/t-1/nodes":
+			if filter := r.URL.Query().Get("filter"); filter != "os_name:~linux" {
+				t.Errorf("selection filter = %q", filter)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"n-1","nodename":"a"}],"meta":{"total":1}}`))
+		case path == "GET /nodes":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"n-2","nodename":"b"}],"meta":{"total":1}}`))
+		case strings.HasPrefix(path, "POST /nodes/"), strings.HasPrefix(path, "DELETE /nodes/"):
+			mutex.Lock()
+			changes = append(changes, path)
+			mutex.Unlock()
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"info":"done"}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	// The tag filter of list_nodes selects here: no tag is changed.
+	result, ruleset := call("attach_node_ruleset", map[string]any{"ruleset": "os.linux.base", "tag": "pci-dss", "os_name": "linux"})
+	if result.IsError || ruleset["changed"] != float64(1) || ruleset["filter_tag"].(map[string]any)["name"] != "pci-dss" {
+		t.Fatalf("attach_node_ruleset = %+v", ruleset)
+	}
+	result, moduleset := call("detach_node_moduleset", map[string]any{"moduleset": "base.linux", "nodes": []string{"b"}})
+	if result.IsError || moduleset["changed"] != float64(1) || moduleset["moduleset"].(map[string]any)["id"] != float64(7) {
+		t.Fatalf("detach_node_moduleset = %+v", moduleset)
+	}
+	if strings.Join(changes, ",") != "POST /nodes/n-1/compliance/rulesets/12,DELETE /nodes/n-2/compliance/modulesets/7" {
+		t.Fatalf("changes = %v", changes)
 	}
 }

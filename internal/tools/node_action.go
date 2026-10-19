@@ -81,7 +81,7 @@ type NodeTagInput struct {
 func (input NodeTagInput) options() core.NodeTagOptions {
 	filters := input.NodeFiltersInput.core()
 	filters.Tag = input.FilterTag
-	return core.NodeTagOptions{Tag: input.Tag, Nodes: input.Nodes, Filters: filters}
+	return core.NodeTagOptions{Tag: input.Tag, NodeSelection: core.NodeSelection{Nodes: input.Nodes, Filters: filters}}
 }
 
 type AttachNodeTagInput struct {
@@ -90,6 +90,36 @@ type AttachNodeTagInput struct {
 }
 
 type NodeTagOutput = core.NodeTagChange
+
+// NodeSelectionInput selects the nodes of a compliance change: nodes, or
+// the filters of list_nodes and count_nodes.
+type NodeSelectionInput struct {
+	Nodes []string `json:"nodes,omitempty" jsonschema:"optional exact node names or node IDs, at most 50; not with filters"`
+	NodeFiltersInput
+}
+
+func (input NodeSelectionInput) selection() core.NodeSelection {
+	return core.NodeSelection{Nodes: input.Nodes, Filters: input.NodeFiltersInput.core()}
+}
+
+type NodeRulesetInput struct {
+	Ruleset string `json:"ruleset" jsonschema:"one exact compliance ruleset name or ruleset ID"`
+	NodeSelectionInput
+}
+
+type NodeModulesetInput struct {
+	Moduleset string `json:"moduleset" jsonschema:"one exact compliance moduleset name or moduleset ID"`
+	NodeSelectionInput
+}
+
+type NodeRulesetOutput = core.NodeRulesetChange
+
+type NodeModulesetOutput = core.NodeModulesetChange
+
+// nodeComplianceSelection tells how a compliance change selects its nodes.
+const nodeComplianceSelection = "Pass the nodes, at most 50 exact names or IDs, or at least one of the filters of list_nodes and count_nodes, to select up to 1000 nodes; a larger selection is refused, and nothing is changed. " +
+	"An unknown or ambiguous node name refuses the whole call, before anything is changed. The MCP sends one request per node: the change is not atomic, and the result gives the outcome on each node, with the reason of each refusal. " +
+	"Requires to be responsible for the nodes; the collector attaches only what is published to the group responsible for the node, or to Everybody."
 
 // nodeTagSelection tells how a tag change selects its nodes.
 const nodeTagSelection = "Pass the nodes, at most 50 exact names or IDs, or at least one of the filters of list_nodes and count_nodes, the tag filter given here as filter_tag, to select up to 1000 nodes; a larger selection is refused, and nothing is changed." +
@@ -180,6 +210,70 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 		},
 	); err != nil {
 		return err
+	}
+	for _, declared := range []struct {
+		name, title, description string
+		attach                   bool
+	}{
+		{"attach_node_ruleset", "Attach node ruleset", "Attach one explicit compliance ruleset to one or several nodes: its variables, the expected values the compliance modules check, apply to them, and a compliance fix would enforce them. A contextual ruleset applies through its filterset, and is refused. A node already holding the ruleset is left as it is. ", true},
+		{"detach_node_ruleset", "Detach node ruleset", "Detach one compliance ruleset from one or several nodes: its variables no longer apply to them, unless a filterset or another ruleset brings them. A node not holding the ruleset is left as it is. ", false},
+	} {
+		declared := declared
+		if err := addTool(
+			registrar,
+			&mcp.Tool{
+				Name: declared.name, Title: declared.title, Description: declared.description + nodeComplianceSelection,
+				// An attachment is destructive too: it makes the agents
+				// run modules, which may change the nodes, as an autofix.
+				Annotations: actionAnnotations(true, true),
+			},
+			func(ctx context.Context, _ *mcp.CallToolRequest, input NodeRulesetInput) (*mcp.CallToolResult, NodeRulesetOutput, error) {
+				options := core.NodeRulesetOptions{Ruleset: input.Ruleset, NodeSelection: input.selection()}
+				change := service.DetachNodeRuleset
+				if declared.attach {
+					change = service.AttachNodeRuleset
+				}
+				result, err := change(ctx, options)
+				if err != nil {
+					return nil, NodeRulesetOutput{}, err
+				}
+				return nil, result, nil
+			},
+		); err != nil {
+			return err
+		}
+	}
+	for _, declared := range []struct {
+		name, title, description string
+		attach                   bool
+	}{
+		{"attach_node_moduleset", "Attach node moduleset", "Attach one compliance moduleset to one or several nodes: the agent runs its modules, and those of the modulesets it includes, at each compliance check, and a compliance fix lets them change the node. A node already holding the moduleset is left as it is. ", true},
+		{"detach_node_moduleset", "Detach node moduleset", "Detach one compliance moduleset from one or several nodes: the agent no longer runs its modules there, unless another moduleset brings them. A node not holding the moduleset is left as it is. ", false},
+	} {
+		declared := declared
+		if err := addTool(
+			registrar,
+			&mcp.Tool{
+				Name: declared.name, Title: declared.title, Description: declared.description + nodeComplianceSelection,
+				// An attachment is destructive too: it makes the agents
+				// run modules, which may change the nodes, as an autofix.
+				Annotations: actionAnnotations(true, true),
+			},
+			func(ctx context.Context, _ *mcp.CallToolRequest, input NodeModulesetInput) (*mcp.CallToolResult, NodeModulesetOutput, error) {
+				options := core.NodeModulesetOptions{Moduleset: input.Moduleset, NodeSelection: input.selection()}
+				change := service.DetachNodeModuleset
+				if declared.attach {
+					change = service.AttachNodeModuleset
+				}
+				result, err := change(ctx, options)
+				if err != nil {
+					return nil, NodeModulesetOutput{}, err
+				}
+				return nil, result, nil
+			},
+		); err != nil {
+			return err
+		}
 	}
 	return addTool(
 		registrar,
