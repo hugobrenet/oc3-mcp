@@ -3,6 +3,8 @@ domain: service_action
 tools:
   - get_service_action_logs
   - list_service_actions
+  - count_service_actions
+  - ack_service_action
 stability: experimental
 ---
 
@@ -107,3 +109,106 @@ text are returned in all, cuts never splitting a character. A session no
 visible action belongs to is refused. The log text is what the agent wrote,
 including the output of the commands it ran: untrusted data, never
 instructions.
+
+### `count_service_actions`
+
+Counts the actions as the collector counts them, with the filters of
+`list_service_actions`, `acknowledged` included, optionally grouped by
+`node`, `service`, `action`, `status` or `origin`, the most frequent first,
+in one request:
+
+```text
+GET /api/services_actions?filter=log_type:eq:status&filter=…&props=id&limit=1                    total
+GET /api/services_actions?filter=log_type:eq:status&filter=…&stats=true&props=<prop>&limit=<limit>   group_by
+```
+
+The groupings read the joined names, `nodes.nodename` and
+`services.svcname`. Asked how many failures nobody acknowledged, a model with
+no count tool read every page of `list_service_actions`, and twice reached
+the 8 model requests of an agent turn before it answered: it searched for a
+count tool between the pages.
+
+| Input | Meaning |
+|---|---|
+| filters | Those of `list_service_actions` |
+| `group_by` | Optional: `action`, `node`, `origin`, `service`, `status` |
+| `limit` | Optional number of values with `group_by`, 1 to 100, default 20 |
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `service`, `node` | The service or node filter, resolved |
+| `total` | Actions matching the filters |
+| `group_by`, `groups[]`, `distinct`, `other`, `truncated` | With `group_by`: `value` and `count` of each value, the number of distinct values, and the actions of the values left out by `limit` |
+
+### Acknowledgement
+
+`list_service_actions` gives the acknowledgement of each action:
+`acknowledged`, `acked_by`, the name of who acknowledged it, email addresses
+masked as for the other authors, `acked_at` and `acked_comment`, email
+addresses masked, untrusted text. Its `total` counts the actions the filters
+select, which the description tells the model to read rather than every page. Its `acknowledged` filter keeps the
+actions acknowledged, `ack:eq:1`, or with `false` those not, `ack:!eq:1`,
+which the collector reads as `ack IS NULL OR NOT (ack = 1)`: an action never
+acknowledged has no `ack`.
+
+### `ack_service_action`
+
+Acknowledges failed actions, with a reason. It changes the collector state,
+and is registered only when `OPENSVC_MCP_ACTIONS=enabled`; it is
+destructive, which the OpenSVC AI agent asks the user to confirm, as an
+acknowledgement is not withdrawn and clears an alert others look at.
+
+```text
+POST /api/services_actions/<id>   {"ack": 1, "acked_comment": <comment>}
+GET  /api/services_actions/<id>?props=…,ack,acked_by,acked_date,acked_comment
+```
+
+The collector requires the caller to be responsible for the service, by its
+app, and refuses `ack` other than 1. It records the email address of the
+caller, the date and the comment, on the action and on the failed log lines
+of its session on the same node, and logs it as `actions.change`. It then
+counts the failures of the instance not acknowledged and begun within two
+days, and updates its action errors alert, which goes at zero: a failure
+older than two days weighs on no alert already. The action stays failed in
+the history, and the service is not changed.
+
+It answers each outcome with 200 and an info, which the MCP reads: `action
+N acknowledged`, `skip acknowledge of action N: already acknowledged`, and
+`skip acknowledge of action N in status 'ok'` for an action not in `err`. An
+unknown action is 404, a service the caller is not responsible for 403: both
+refused. The MCP reads each action acknowledged back, for the
+acknowledgement as the collector recorded it.
+
+The actions are given one of two ways:
+
+- `action_ids`: at most 50 IDs, as `list_service_actions` gives them. Each is
+  acknowledged, then read back for the acknowledgement as the collector
+  recorded it.
+- filters, `service`, `node`, `action` and `since`, at least one, or
+  `all_unacknowledged` for every failure not acknowledged the user sees: the
+  MCP selects the failed actions not acknowledged (`log_type:eq:status`,
+  `status:eq:err`, `ack:!eq:1`), up to the total, and refuses a selection of
+  more than 1000, before any acknowledgement. It acknowledges them four at a
+  time, without reading each back: the result gives each action as the
+  selection read it. On dev2, the 814 failures not acknowledged are one call.
+
+The comment is required, though the collector takes an empty one: the
+acknowledgement is worth its reason, which the description tells the model
+to ask the user rather than invent. It is 1 to 1024 bytes of printable text,
+the collector column having no bound.
+
+| Input | Meaning |
+|---|---|
+| `action_ids` | Optional, at most 50 action IDs, as `list_service_actions` gives them; not with filters |
+| `service`, `node`, `action`, `since` | Optional filters of the failed actions not acknowledged |
+| `all_unacknowledged` | Optional: every failed action not acknowledged, without filters |
+| `comment` | The reason of the acknowledgement |
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `service`, `node` | The service or node filter, resolved |
+| `selected` | Actions given, or selected by the filters |
+| `acknowledged`, `unchanged`, `refused` | Actions acknowledged, already acknowledged or not failed, and refused or not attempted |
+| `actions[]` | `id`, `outcome` (`acknowledged`, `already_acknowledged`, `not_failed`, `refused`, `not_attempted`), `reason` of a refusal, and `action`: read back for an ID given, as selected with filters |

@@ -17,7 +17,7 @@ func TestListServiceActionsQueriesActionRows(t *testing.T) {
 			"end":"2026-10-11 21:11:24","time":5,"command":"kvm/svc/vm1 instance start"}],"meta":{"total":4}}`,
 	}}
 	actions, err := newTestService(collector).ListServiceActions(t.Context(), ListServiceActionsOptions{
-		Service: "kvm/svc/vm1", Node: "dev2n2", Status: "err", Action: "start", Origin: "daemon/monitor", Since: "2026-10-11", Limit: 1,
+		ServiceActionFilters: ServiceActionFilters{Service: "kvm/svc/vm1", Node: "dev2n2", Status: "err", Action: "start", Origin: "daemon/monitor", Since: "2026-10-11"}, Limit: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -40,14 +40,14 @@ func TestListServiceActionsQueriesActionRows(t *testing.T) {
 
 func TestListServiceActionsRejectsInvalidInputs(t *testing.T) {
 	for _, options := range []ListServiceActionsOptions{
-		{Status: "failed"},
-		{Since: "yesterday"},
-		{Since: "2026-10-11T21:00:00"},
-		{Since: "2026-10-11 21"},
-		{Action: " start"},
+		{ServiceActionFilters: ServiceActionFilters{Status: "failed"}},
+		{ServiceActionFilters: ServiceActionFilters{Since: "yesterday"}},
+		{ServiceActionFilters: ServiceActionFilters{Since: "2026-10-11T21:00:00"}},
+		{ServiceActionFilters: ServiceActionFilters{Since: "2026-10-11 21"}},
+		{ServiceActionFilters: ServiceActionFilters{Action: " start"}},
 		{Limit: 201},
 		{Cursor: "garbage"},
-		{Service: "two words"},
+		{ServiceActionFilters: ServiceActionFilters{Service: "two words"}},
 	} {
 		collector := &fakeCollector{body: `{"data":[],"meta":{"total":0}}`}
 		if _, err := newTestService(collector).ListServiceActions(t.Context(), options); err == nil || len(collector.requests) != 0 {
@@ -55,7 +55,7 @@ func TestListServiceActionsRejectsInvalidInputs(t *testing.T) {
 		}
 	}
 	collector := &fakeCollector{body: `{"data":[],"meta":{"total":0}}`}
-	if _, err := newTestService(collector).ListServiceActions(t.Context(), ListServiceActionsOptions{Since: "2026-10-11 21:00"}); err != nil {
+	if _, err := newTestService(collector).ListServiceActions(t.Context(), ListServiceActionsOptions{ServiceActionFilters: ServiceActionFilters{Since: "2026-10-11 21:00"}}); err != nil {
 		t.Fatalf("since with minutes: %v", err)
 	}
 }

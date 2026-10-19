@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -21,7 +22,7 @@ var serviceActionStatuses = []string{"ok", "warn", "err"}
 
 var serviceActionProps = []string{
 	"id", "sid", "svc_id", "services.svcname", "node_id", "nodes.nodename", "rid", "action", "origin", "status",
-	"begin", "end", "time", "command",
+	"begin", "end", "time", "command", "ack", "acked_by", "acked_date", "acked_comment",
 }
 
 var serviceActionLogProps = []string{
@@ -30,14 +31,9 @@ var serviceActionLogProps = []string{
 }
 
 type ListServiceActionsOptions struct {
-	Service string
-	Node    string
-	Status  string
-	Action  string
-	Origin  string
-	Since   string
-	Limit   int
-	Cursor  string
+	ServiceActionFilters
+	Limit  int
+	Cursor string
 }
 
 type ServiceActionList struct {
@@ -66,6 +62,10 @@ type ServiceAction struct {
 	End             string `json:"end,omitempty" jsonschema:"when the action ended, as the collector gives it; empty when the agent reported no end"`
 	DurationSeconds int    `json:"duration_seconds" jsonschema:"the duration of the action in seconds, as the agent reported it"`
 	Command         string `json:"command,omitempty" jsonschema:"the command of the action; untrusted text"`
+	Acknowledged    bool   `json:"acknowledged" jsonschema:"whether a user acknowledged the failed action"`
+	AckedBy         string `json:"acked_by,omitempty" jsonschema:"who acknowledged it: the collector records an email address, which this MCP masks"`
+	AckedAt         string `json:"acked_at,omitempty" jsonschema:"when it was acknowledged, as the collector gives it"`
+	AckedComment    string `json:"acked_comment,omitempty" jsonschema:"why it was acknowledged, the email addresses it holds masked by this MCP; untrusted text"`
 }
 
 type ServiceActionLogs struct {
@@ -88,28 +88,34 @@ type ServiceActionLog struct {
 }
 
 type collectorServiceAction struct {
-	ID        int64  `json:"id"`
-	SID       string `json:"sid"`
-	SvcID     string `json:"svc_id"`
-	Svcname   string `json:"services.svcname"`
-	NodeID    string `json:"node_id"`
-	Nodename  string `json:"nodes.nodename"`
-	RID       string `json:"rid"`
-	Action    string `json:"action"`
-	Origin    string `json:"origin"`
-	Status    string `json:"status"`
-	Begin     string `json:"begin"`
-	End       string `json:"end"`
-	Time      int    `json:"time"`
-	Command   string `json:"command"`
-	LogType   string `json:"log_type"`
-	StatusLog string `json:"status_log"`
+	ID           int64  `json:"id"`
+	SID          string `json:"sid"`
+	SvcID        string `json:"svc_id"`
+	Svcname      string `json:"services.svcname"`
+	NodeID       string `json:"node_id"`
+	Nodename     string `json:"nodes.nodename"`
+	RID          string `json:"rid"`
+	Action       string `json:"action"`
+	Origin       string `json:"origin"`
+	Status       string `json:"status"`
+	Begin        string `json:"begin"`
+	End          string `json:"end"`
+	Time         int    `json:"time"`
+	Command      string `json:"command"`
+	LogType      string `json:"log_type"`
+	StatusLog    string `json:"status_log"`
+	Ack          any    `json:"ack"`
+	AckedBy      string `json:"acked_by"`
+	AckedDate    string `json:"acked_date"`
+	AckedComment string `json:"acked_comment"`
 }
 
 func (a collectorServiceAction) summary() ServiceAction {
 	return ServiceAction{
 		ID: a.ID, SessionID: a.SID, SvcID: a.SvcID, Svcname: a.Svcname, NodeID: a.NodeID, Nodename: a.Nodename, RID: a.RID,
 		Action: a.Action, Origin: a.Origin, Status: a.Status, Begin: a.Begin, End: a.End, DurationSeconds: a.Time, Command: a.Command,
+		Acknowledged: anyText(a.Ack) == "1", AckedBy: personName(a.AckedBy), AckedAt: zeroDate(a.AckedDate),
+		AckedComment: emailPattern.ReplaceAllString(a.AckedComment, maskedRequestValue),
 	}
 }
 
@@ -117,51 +123,15 @@ func (a collectorServiceAction) summary() ServiceAction {
 // services, the most recent first, with typed filters. The log entries of
 // the actions are left out: get_service_action_logs reads those of a session.
 func (s *Service) ListServiceActions(ctx context.Context, options ListServiceActionsOptions) (ServiceActionList, error) {
-	for name, value := range map[string]string{"action": options.Action, "origin": options.Origin} {
-		if err := validateFilterValue(name, value); err != nil {
-			return ServiceActionList{}, err
-		}
-	}
-	if options.Status != "" && !contains(serviceActionStatuses, options.Status) {
-		return ServiceActionList{}, fmt.Errorf("status must be one of %s", strings.Join(serviceActionStatuses, ", "))
-	}
-	if err := validateCollectorDate("since", options.Since); err != nil {
-		return ServiceActionList{}, err
-	}
 	limit, err := pageLimit(options.Limit, defaultListServiceActionsLimit, maxListServiceActionsLimit)
 	if err != nil {
 		return ServiceActionList{}, err
 	}
-	result := ServiceActionList{}
-	filters := []string{filterEquals("log_type", "status")}
-	if options.Service != "" {
-		service, err := s.lookupService(ctx, options.Service, []string{"svc_id", "svcname", "cluster_id"})
-		if err != nil {
-			return ServiceActionList{}, err
-		}
-		result.Service = &ServiceReference{SvcID: service.SvcID, Svcname: service.Svcname, ClusterID: service.ClusterID}
-		filters = append(filters, filterEquals("svc_id", service.SvcID))
+	filters, service, node, err := s.serviceActionScope(ctx, options.ServiceActionFilters)
+	if err != nil {
+		return ServiceActionList{}, err
 	}
-	if options.Node != "" {
-		node, err := s.lookupNode(ctx, options.Node, []string{"node_id", "nodename", "cluster_id"})
-		if err != nil {
-			return ServiceActionList{}, err
-		}
-		result.Node = &NodeReference{NodeID: node.NodeID, Nodename: node.Nodename, ClusterID: node.ClusterID}
-		filters = append(filters, filterEquals("node_id", node.NodeID))
-	}
-	if options.Status != "" {
-		filters = append(filters, filterEquals("status", options.Status))
-	}
-	if options.Action != "" {
-		filters = append(filters, filterEquals("action", options.Action))
-	}
-	if options.Origin != "" {
-		filters = append(filters, filterEquals("origin", options.Origin))
-	}
-	if options.Since != "" {
-		filters = append(filters, "begin:gte:"+options.Since)
-	}
+	result := ServiceActionList{Service: service, Node: node}
 	fingerprint := listFingerprint(url.Values{"filter": filters})
 	offset, err := decodeListCursor(options.Cursor, fingerprint)
 	if err != nil {
@@ -186,6 +156,138 @@ func (s *Service) ListServiceActions(ctx context.Context, options ListServiceAct
 		result.Truncated = true
 	}
 	return result, nil
+}
+
+// ServiceActionFilters are the filters of list_service_actions and
+// count_service_actions.
+type ServiceActionFilters struct {
+	Service string
+	Node    string
+	Status  string
+	Action  string
+	Origin  string
+	Since   string
+	// Acknowledged keeps the actions acknowledged, or with false those not.
+	Acknowledged *bool
+}
+
+// serviceActionScope validates the filters and translates them, with the
+// service and node they resolve to: the action rows only, the log lines of
+// the sessions left out.
+func (s *Service) serviceActionScope(ctx context.Context, options ServiceActionFilters) ([]string, *ServiceReference, *NodeReference, error) {
+	for name, value := range map[string]string{"action": options.Action, "origin": options.Origin} {
+		if err := validateFilterValue(name, value); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	if options.Status != "" && !contains(serviceActionStatuses, options.Status) {
+		return nil, nil, nil, fmt.Errorf("status must be one of %s", strings.Join(serviceActionStatuses, ", "))
+	}
+	if err := validateCollectorDate("since", options.Since); err != nil {
+		return nil, nil, nil, err
+	}
+	var serviceRef *ServiceReference
+	var nodeRef *NodeReference
+	filters := []string{filterEquals("log_type", "status")}
+	if options.Service != "" {
+		service, err := s.lookupService(ctx, options.Service, []string{"svc_id", "svcname", "cluster_id"})
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		serviceRef = &ServiceReference{SvcID: service.SvcID, Svcname: service.Svcname, ClusterID: service.ClusterID}
+		filters = append(filters, filterEquals("svc_id", service.SvcID))
+	}
+	if options.Node != "" {
+		node, err := s.lookupNode(ctx, options.Node, []string{"node_id", "nodename", "cluster_id"})
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		nodeRef = &NodeReference{NodeID: node.NodeID, Nodename: node.Nodename, ClusterID: node.ClusterID}
+		filters = append(filters, filterEquals("node_id", node.NodeID))
+	}
+	if options.Status != "" {
+		filters = append(filters, filterEquals("status", options.Status))
+	}
+	if options.Action != "" {
+		filters = append(filters, filterEquals("action", options.Action))
+	}
+	if options.Origin != "" {
+		filters = append(filters, filterEquals("origin", options.Origin))
+	}
+	if options.Since != "" {
+		filters = append(filters, "begin:gte:"+options.Since)
+	}
+	// The collector takes a negation for a null too: an action never
+	// acknowledged has no ack.
+	if options.Acknowledged != nil {
+		filters = append(filters, map[bool]string{true: "ack:eq:1", false: "ack:!eq:1"}[*options.Acknowledged])
+	}
+	return filters, serviceRef, nodeRef, nil
+}
+
+// serviceActionGroupProps are the groupings of count_service_actions.
+var serviceActionGroupProps = map[string]string{
+	"node":    "nodes.nodename",
+	"service": "services.svcname",
+	"action":  "action",
+	"status":  "status",
+	"origin":  "origin",
+}
+
+// ServiceActionGroupings lists the groupings of count_service_actions, sorted.
+func ServiceActionGroupings() []string {
+	names := make([]string, 0, len(serviceActionGroupProps))
+	for name := range serviceActionGroupProps {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+type CountServiceActionsOptions struct {
+	ServiceActionFilters
+	GroupBy string
+	Limit   int
+}
+
+type ServiceActionCount struct {
+	Provenance Provenance        `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
+	Service    *ServiceReference `json:"service,omitempty" jsonschema:"the service the service filter resolved to"`
+	Node       *NodeReference    `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
+	Total      int               `json:"total" jsonschema:"the number of actions matching the filters, as the collector counts them"`
+	GroupBy    string            `json:"group_by,omitempty" jsonschema:"the grouping asked"`
+	Groups     []CountGroup      `json:"groups,omitempty" jsonschema:"with group_by, the most frequent values first, and the number of matching actions with each"`
+	Distinct   int               `json:"distinct,omitempty" jsonschema:"with group_by, the number of distinct values among the matching actions"`
+	Other      int               `json:"other,omitempty" jsonschema:"with group_by, the number of matching actions whose value is not in groups, left out by limit"`
+	Truncated  bool              `json:"truncated" jsonschema:"whether values were left out of groups by limit"`
+}
+
+// CountServiceActions counts the actions the agents ran on the services, as
+// the collector counts them, optionally grouped, in one request.
+func (s *Service) CountServiceActions(ctx context.Context, options CountServiceActionsOptions) (ServiceActionCount, error) {
+	prop := ""
+	if options.GroupBy != "" {
+		var ok bool
+		if prop, ok = serviceActionGroupProps[options.GroupBy]; !ok {
+			return ServiceActionCount{}, fmt.Errorf("group_by must be one of %s", strings.Join(ServiceActionGroupings(), ", "))
+		}
+	}
+	limit, err := pageLimit(options.Limit, defaultCountGroups, maxCountGroups)
+	if err != nil {
+		return ServiceActionCount{}, err
+	}
+	filters, service, node, err := s.serviceActionScope(ctx, options.ServiceActionFilters)
+	if err != nil {
+		return ServiceActionCount{}, err
+	}
+	total, groups, distinct, other, err := s.countRows(ctx, "/services_actions", "id", filters, prop, limit)
+	if err != nil {
+		return ServiceActionCount{}, fmt.Errorf("count service actions: %w", err)
+	}
+	return ServiceActionCount{
+		Provenance: s.newProvenance(), Service: service, Node: node, Total: total, GroupBy: options.GroupBy,
+		Groups: groups, Distinct: distinct, Other: other, Truncated: other > 0,
+	}, nil
 }
 
 // GetServiceActionLogs reads the actions and the log entries of one agent
