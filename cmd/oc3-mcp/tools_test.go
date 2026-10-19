@@ -806,7 +806,8 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		for name, destructive := range map[string]bool{"create_node": false, "update_node": true, "delete_node": true, "attach_node_tag": false, "detach_node_tag": true,
 			"attach_node_ruleset": true, "detach_node_ruleset": true, "attach_node_moduleset": true, "detach_node_moduleset": true, "queue_node_action": false,
 			"freeze_node": false, "unfreeze_node": true, "drain_node": true, "fix_node_compliance": true, "cancel_node_action": false,
-			"attach_service_tag": false, "detach_service_tag": true} {
+			"attach_service_tag": false, "detach_service_tag": true,
+			"delete_service": true, "delete_service_instance": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
 				t.Fatalf("%s = %+v", name, tool)
@@ -826,7 +827,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		if !strings.Contains(string(schema), `"loc_city"`) || !strings.Contains(string(schema), `"required":["node"]`) {
 			t.Fatalf("update_node schema = %s", schema)
 		}
-		if len(found) != 17 {
+		if len(found) != 19 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -999,5 +1000,54 @@ func TestServiceTagTools(t *testing.T) {
 	}
 	if result, _ := call("attach_service_tag", map[string]any{"tag": "tag-mcp"}); !result.IsError {
 		t.Fatal("attach_service_tag accepted a call selecting no service")
+	}
+}
+
+func TestServiceDeleteTools(t *testing.T) {
+	var mutex sync.Mutex
+	var deleted []string
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		filters := strings.Join(r.URL.Query()["filter"], " ")
+		switch path := r.Method + " " + r.URL.EscapedPath(); {
+		case path == "GET /services/web":
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s-1","svcname":"web","cluster_id":"c1","svc_app":"WEB"}]}`))
+		case path == "GET /services/lone":
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s-3","svcname":"lone","cluster_id":"c1"}]}`))
+		case path == "GET /services/dup":
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s-1","svcname":"dup","cluster_id":"c1"},{"svc_id":"s-2","svcname":"dup","cluster_id":"c2"}]}`))
+		case path == "GET /nodes/n1":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"n-1","nodename":"n1","cluster_id":"c1"}]}`))
+		case path == "GET /services_instances" && strings.Contains(filters, "svc_id:eq:s-3"):
+			_, _ = w.Write([]byte(`{"data":[],"meta":{"total":0}}`))
+		case path == "GET /services_instances" && strings.Contains(filters, "mon_updated:gte:-1h"):
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s-1"}],"meta":{"total":1}}`))
+		case path == "GET /services_instances":
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s-1"}],"meta":{"total":2}}`))
+		case strings.HasPrefix(path, "DELETE /services/"):
+			mutex.Lock()
+			deleted = append(deleted, path)
+			mutex.Unlock()
+			_, _ = w.Write([]byte(`{"info":"service web in app WEB deleted"}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	// An instance reported within the hour: the service is deleted, with a
+	// warning that it comes back.
+	result, deletion := call("delete_service", map[string]any{"service": "web"})
+	if result.IsError || deletion["deleted"] != true || deletion["instances"] != float64(2) || deletion["recently_reported"] != float64(1) || deletion["warning"] == nil ||
+		strings.Join(deleted, ",") != "DELETE /services/s-1" {
+		t.Fatalf("delete_service = %+v, deleted %v", deletion, deleted)
+	}
+	// No instance of the service on the node: nothing is deleted.
+	result, _ = call("delete_service_instance", map[string]any{"service": "lone", "node": "n1"})
+	if !result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "has no instance on node n1") || len(deleted) != 1 {
+		t.Fatalf("delete_service_instance without instance = %+v, deleted %v", result.Content[0], deleted)
+	}
+	// A name two clusters hold: refused with both IDs, nothing is deleted.
+	result, _ = call("delete_service", map[string]any{"service": "dup"})
+	if text := result.Content[0].(*mcp.TextContent).Text; !result.IsError || !strings.Contains(text, "s-1 (cluster c1)") || !strings.Contains(text, "s-2 (cluster c2)") || len(deleted) != 1 {
+		t.Fatalf("delete_service of homonyms = %q, deleted %v", text, deleted)
 	}
 }
