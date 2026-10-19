@@ -680,3 +680,42 @@ func TestFormToolsReadTheCollector(t *testing.T) {
 		t.Fatalf("list_forms = %+v", list)
 	}
 }
+
+func TestStorageToolsReadTheCollector(t *testing.T) {
+	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.EscapedPath() {
+		case "/arrays":
+			_, _ = w.Write([]byte(`{"data":[{"id":7,"array_name":"lyn-pmax-01","array_model":"PowerMax_8500","array_cache":2097152}],"meta":{"total":1}}`))
+		case "/arrays/7/diskgroups":
+			_, _ = w.Write([]byte(`{"data":[{"id":1,"dg_name":"SRP_1","dg_size":1000,"dg_used":400,"dg_free":600}]}`))
+		case "/apps/DATA/quotas":
+			_, _ = w.Write([]byte(`{"data":[{"app":"DATA","array_name":"lyn-pmax-01","dg_name":"SRP_1","quota":300,"quota_used":100}]}`))
+		case "/san-switches":
+			if filters := strings.Join(r.URL.Query()["filter"], "|"); filters != "sw_portstate:eq:No_Light" {
+				t.Errorf("san-switches filters = %q", filters)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"sw_fabric":"a","sw_name":"edge01","sw_port":5,"sw_porttype":"U-Port","sw_portstate":"No_Light"}],"meta":{"total":1}}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, arrays := call("list_storage_arrays", map[string]any{})
+	items, _ := arrays["arrays"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["free_mb"] != float64(600) || items[0].(map[string]any)["cache"] != "2097152" {
+		t.Fatalf("list_storage_arrays = %+v", arrays)
+	}
+	result, quotas := call("list_storage_quotas", map[string]any{"app": "DATA"})
+	items, _ = quotas["quotas"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["quota_mb"] != float64(300) {
+		t.Fatalf("list_storage_quotas = %+v", quotas)
+	}
+	result, ports := call("list_san_switch_ports", map[string]any{"state": "No_Light"})
+	items, _ = ports["ports"].([]any)
+	if result.IsError || len(items) != 1 || items[0].(map[string]any)["switch"] != "edge01" {
+		t.Fatalf("list_san_switch_ports = %+v", ports)
+	}
+	if result, _ := call("list_san_switch_ports", map[string]any{"type": "X-Port"}); !result.IsError {
+		t.Fatal("list_san_switch_ports accepted type X-Port")
+	}
+}
