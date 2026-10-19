@@ -6,18 +6,25 @@ tools:
   - delete_node
   - attach_node_tag
   - detach_node_tag
+  - attach_node_ruleset
+  - detach_node_ruleset
+  - attach_node_moduleset
+  - detach_node_moduleset
 stability: experimental
 ---
 
 # Node Action Tools
 
 This document describes the tools that create, update and delete the nodes
-of the OpenSVC collector inventory, and attach tags to them or detach them. They change the collector state, and are
+of the OpenSVC collector inventory, and attach to them, or detach from them,
+tags and compliance rulesets and modulesets. They change the collector state, and are
 registered only when `OPENSVC_MCP_ACTIONS=enabled` ([configuration](../configuration.md)).
 
 Implementation:
 
-- business logic: `internal/core/node_action.go` and `internal/core/node_tag.go`;
+- business logic: `internal/core/node_action.go`, `internal/core/node_tag.go`
+  and `internal/core/node_compliance.go`, with the node selection of
+  `internal/core/node_selection.go`;
 - MCP definitions: `internal/tools/node_action.go`.
 
 | Tool | Annotations | Collector privilege |
@@ -27,9 +34,13 @@ Implementation:
 | `delete_node` | destructive, idempotent | NodeManager, and responsible for the node |
 | `attach_node_tag` | not read-only, not destructive, idempotent | Responsible for each node |
 | `detach_node_tag` | destructive, idempotent | Responsible for each node |
+| `attach_node_ruleset`, `detach_node_ruleset`, `attach_node_moduleset`, `detach_node_moduleset` | destructive, idempotent | Responsible for each node |
 
 The OpenSVC AI agent asks the user to confirm a destructive tool before it
-runs: the update, the deletion and the detachment of a tag. The collector decides the access, and
+runs: the update, the deletion, the detachments and the compliance
+attachments. A compliance attachment is destructive though it adds: it makes
+the agents run modules, which may change the nodes, as a module in autofix
+does at the next run, on up to 1000 nodes at once. The collector decides the access, and
 records each change in its log: `node.add`, `node.change`, `node.delete`.
 
 ## Properties
@@ -247,3 +258,58 @@ the caller is not responsible for with 403.
 | `selected` | Nodes selected |
 | `changed`, `unchanged`, `refused` | Nodes changed, already as asked, refused by the collector |
 | `nodes[]` | `node_id`, `nodename`, `outcome` (`attached`, `already_attached`, `detached`, `already_detached`, `refused`, `not_attempted` when the call ended before) and `reason` of a refusal, sorted by node name |
+
+### `attach_node_ruleset`, `detach_node_ruleset`, `attach_node_moduleset` and `detach_node_moduleset`
+
+Attach one compliance ruleset or moduleset to nodes, or detach it from them.
+A moduleset is the modules the agent runs at each compliance check, which
+a compliance fix lets change the node; a ruleset is the variables, the
+expected values the modules check. Only an explicit ruleset is attached: a
+contextual one applies to the nodes its filterset selects. A moduleset has
+no filterset: it applies to the nodes and services it is attached to, and
+through the modulesets including it.
+
+The nodes are selected as for the tags, see [selection](#selection), by
+`nodes` or by filters; here the tag filter of `list_nodes` keeps its name,
+`tag`. One request per node, four at a time, not atomic.
+
+#### Collector API
+
+```text
+GET    /api/compliance/rulesets/<ruleset>?props=id,ruleset_name,ruleset_type
+GET    /api/compliance/modulesets/<moduleset>?props=id,modset_name
+GET    /api/nodes, /api/tags/<tag_id>/nodes or /api/filtersets/<id>/nodes?props=node_id,nodename,cluster_id&filter=…
+POST   /api/nodes/<node_id>/compliance/rulesets/<id>     attach
+DELETE /api/nodes/<node_id>/compliance/rulesets/<id>     detach
+POST   /api/nodes/<node_id>/compliance/modulesets/<id>   attach
+DELETE /api/nodes/<node_id>/compliance/modulesets/<id>   detach
+```
+
+The collector requires the caller to be responsible for the node, and
+attaches a ruleset or a moduleset published to the group responsible for
+the node, `team_responsible`, not to the caller, or published to Everybody;
+it refuses another with 403, `not attachable to this node`. It answers 409
+an attachment already there, `already attached`, and a detachment of what
+is not attached, `not attached`: the MCP reports them as `already_attached`
+and `already_detached`. It writes no log entry for these changes.
+
+The collector checks that a ruleset is explicit and public only when it is
+not published to Everybody: it attaches a contextual ruleset published to
+Everybody. The MCP refuses to attach a contextual ruleset, before any
+change, and detaches one.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `ruleset` or `moduleset` | One exact name or ID |
+| `nodes` | Optional, see [selection](#selection) |
+| filters | Optional, those of `list_nodes`, with `tag`; see [selection](#selection) |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `ruleset` or `moduleset` | `id`, `name`, and for a ruleset `type` |
+| `filter_tag`, `filterset`, `selected`, `changed`, `unchanged`, `refused`, `nodes[]` | As for the tags |

@@ -39,11 +39,11 @@ func itoa(value int) string { return strconv.Itoa(value) }
 func TestAttachNodeTagByFilters(t *testing.T) {
 	nodes := `[{"node_id":"n-1","nodename":"b"},{"node_id":"n-2","nodename":"a"}]`
 	collector := tagCollector(t, nodes, 2, map[string]string{"n-1": `{"info":"node 'n-1' tag 'tag-mcp' attached"}`, "n-2": `{"info":"tag 'tag-mcp' already attached to node 'n-2'"}`})
-	change, err := newTestService(collector).AttachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", Filters: NodeFilters{Status: "In service"}})
+	change, err := newTestService(collector).AttachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", NodeSelection: NodeSelection{Filters: NodeFilters{Status: "In service"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if change.Selected != 2 || change.Changed != 1 || change.Unchanged != 1 || change.Nodes[0].Nodename != "a" || change.Nodes[0].Outcome != TagAlreadyAttached || change.Nodes[1].Outcome != TagAttached {
+	if change.Selected != 2 || change.Changed != 1 || change.Unchanged != 1 || change.Nodes[0].Nodename != "a" || change.Nodes[0].Outcome != ChangeAlreadyAttached || change.Nodes[1].Outcome != ChangeAttached {
 		t.Fatalf("change = %+v", change)
 	}
 	for _, request := range collector.requests {
@@ -53,7 +53,7 @@ func TestAttachNodeTagByFilters(t *testing.T) {
 	}
 	// A selection too large changes nothing.
 	collector = tagCollector(t, nodes, 1001, nil)
-	if _, err := newTestService(collector).AttachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", Filters: NodeFilters{Status: "In service"}}); err == nil || !strings.Contains(err.Error(), "select 1001 nodes, more than 1000") {
+	if _, err := newTestService(collector).AttachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", NodeSelection: NodeSelection{Filters: NodeFilters{Status: "In service"}}}); err == nil || !strings.Contains(err.Error(), "select 1001 nodes, more than 1000") {
 		t.Fatalf("too large: %v", err)
 	}
 	for _, request := range collector.requests {
@@ -62,8 +62,8 @@ func TestAttachNodeTagByFilters(t *testing.T) {
 		}
 	}
 	for _, options := range []NodeTagOptions{
-		{Tag: "tag-mcp"}, {Tag: "tag-mcp", Nodes: []string{"a"}, Filters: NodeFilters{Status: "x"}},
-		{Nodes: []string{"a"}}, {Tag: "tag-mcp", Nodes: make([]string, 51)},
+		{Tag: "tag-mcp"}, {Tag: "tag-mcp", NodeSelection: NodeSelection{Nodes: []string{"a"}, Filters: NodeFilters{Status: "x"}}},
+		{NodeSelection: NodeSelection{Nodes: []string{"a"}}}, {Tag: "tag-mcp", NodeSelection: NodeSelection{Nodes: make([]string, 51)}},
 	} {
 		collector := tagCollector(t, nodes, 2, nil)
 		if _, err := newTestService(collector).AttachNodeTag(t.Context(), options); err == nil || len(collector.requests) != 0 {
@@ -75,11 +75,11 @@ func TestAttachNodeTagByFilters(t *testing.T) {
 func TestDetachNodeTagFromNamedNodes(t *testing.T) {
 	nodes := `[{"node_id":"n-1","nodename":"a"},{"node_id":"n-2","nodename":"b"}]`
 	collector := tagCollector(t, nodes, 2, map[string]string{"n-1": `{"info":"tag detached"}`, "n-2": `{"info":"tag already detached"}`})
-	change, err := newTestService(collector).DetachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", Nodes: []string{"a", "B", "a"}})
+	change, err := newTestService(collector).DetachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", NodeSelection: NodeSelection{Nodes: []string{"a", "B", "a"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if change.Changed != 1 || change.Unchanged != 1 || change.Nodes[0].Outcome != TagDetached || change.Nodes[1].Outcome != TagAlreadyDetached {
+	if change.Changed != 1 || change.Unchanged != 1 || change.Nodes[0].Outcome != ChangeDetached || change.Nodes[1].Outcome != ChangeAlreadyDetached {
 		t.Fatalf("change = %+v", change)
 	}
 	var deletes int
@@ -96,7 +96,7 @@ func TestDetachNodeTagFromNamedNodes(t *testing.T) {
 	}
 	// An unknown name refuses the whole call before any change.
 	collector = tagCollector(t, `[{"node_id":"n-1","nodename":"a"}]`, 1, nil)
-	if _, err := newTestService(collector).DetachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", Nodes: []string{"a", "nosuch"}}); err == nil || !strings.Contains(err.Error(), "not found or not visible: nosuch") {
+	if _, err := newTestService(collector).DetachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", NodeSelection: NodeSelection{Nodes: []string{"a", "nosuch"}}}); err == nil || !strings.Contains(err.Error(), "not found or not visible: nosuch") {
 		t.Fatalf("unknown node: %v", err)
 	}
 	for _, request := range collector.requests {
@@ -118,11 +118,11 @@ func TestAttachNodeTagReportsARefusal(t *testing.T) {
 		return `{}`
 	}
 	refusing := &refusingCollector{fakeCollector: collector}
-	change, err := New(refusing).AttachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", Nodes: []string{"a"}})
+	change, err := New(refusing).AttachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", NodeSelection: NodeSelection{Nodes: []string{"a"}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if change.Refused != 1 || change.Nodes[0].Outcome != TagRefused || !strings.Contains(change.Nodes[0].Reason, "not compatible") {
+	if change.Refused != 1 || change.Nodes[0].Outcome != ChangeRefused || !strings.Contains(change.Nodes[0].Reason, "not compatible") {
 		t.Fatalf("change = %+v", change)
 	}
 }
@@ -138,3 +138,23 @@ func (refusingCollector) PostJSON(context.Context, string, any, any) error {
 type errString string
 
 func (e errString) Error() string { return string(e) }
+
+// A name whose homonym is on a second page of the resolution is refused as
+// ambiguous, not taken for the node of the first page.
+func TestResolveNodesReadsEveryPage(t *testing.T) {
+	var first []string
+	first = append(first, `{"node_id":"n-1","nodename":"a","cluster_id":"c1"}`)
+	for i := 1; i < selectionPage; i++ {
+		first = append(first, `{"node_id":"m-`+strconv.Itoa(i)+`","nodename":"b`+strconv.Itoa(i)+`"}`)
+	}
+	collector := &fakeCollector{answer: func(path string, query url.Values) string {
+		if query.Get("offset") == strconv.Itoa(selectionPage) {
+			return `{"data":[{"node_id":"n-2","nodename":"a","cluster_id":"c2"}],"meta":{"total":201}}`
+		}
+		return `{"data":[` + strings.Join(first, ",") + `],"meta":{"total":201}}`
+	}}
+	_, err := newTestService(collector).resolveNodes(t.Context(), []string{"a"})
+	if err == nil || !strings.Contains(err.Error(), "names several nodes hold") || !strings.Contains(err.Error(), "n-2 (cluster c2)") {
+		t.Fatalf("homonym on the second page: %v", err)
+	}
+}

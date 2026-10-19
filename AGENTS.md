@@ -112,7 +112,10 @@ binding; startup must not contact the collector.
   annotations. A read-only tool is never destructive. A tool that changes
   the collector state sets `readOnlyHint: false`; `destructiveHint: true`
   marks one that overwrites or deletes data, which the OpenSVC AI agent asks
-  the user to confirm before it runs. Annotations are client hints, never
+  the user to confirm before it runs. An attachment that makes the agents
+  act on the nodes is destructive too, though it only adds a link: a
+  compliance ruleset or moduleset attached may let a module in autofix
+  change the nodes at its next run. An attachment of a tag is not. Annotations are client hints, never
   authorization controls: the collector decides the access.
 - An action tool checks what the collector would accept silently, such as an
   app or a group it does not know, before it sends anything, and returns the
