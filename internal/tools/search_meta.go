@@ -33,6 +33,7 @@ var toolKeywords = map[string][]string{
 	"attach_node_moduleset":        {"add moduleset", "assign moduleset", "compliance modules", "enable compliance"},
 	"attach_node_ruleset":          {"add ruleset", "assign ruleset", "compliance rules", "apply ruleset"},
 	"attach_node_tag":              {"add tag", "tag nodes", "label nodes", "set tag", "bulk tag", "mass tag"},
+	"cancel_node_action":           {"cancel action", "abort action", "remove queued action", "dequeue"},
 	"count_compliance_runs":        {"how many", "number of fixes", "failed checks", "compliance statistics", "per module", "per node", "distribution"},
 	"count_instances":              {"how many instances", "number of instances", "instances per node", "statistics", "distribution"},
 	"count_nodes":                  {"how many nodes", "number", "distribution", "statistics", "fleet", "inventory", "servers", "hosts"},
@@ -42,7 +43,10 @@ var toolKeywords = map[string][]string{
 	"detach_node_moduleset":        {"remove moduleset", "unassign moduleset", "disable compliance"},
 	"detach_node_ruleset":          {"remove ruleset", "unassign ruleset", "drop rules"},
 	"detach_node_tag":              {"remove tag", "untag", "untag nodes", "unset tag", "bulk untag"},
+	"drain_node":                   {"evacuate node", "stop all services", "maintenance", "empty node"},
 	"find_objects":                 {"search", "lookup", "partial name", "unknown name", "what is", "fuzzy", "find"},
+	"fix_node_compliance":          {"compliance fix", "remediate", "enforce compliance", "apply rules"},
+	"freeze_node":                  {"freeze", "block failover", "stop automatic actions", "maintenance mode"},
 	"get_app":                      {"application", "owner", "ownership", "responsible", "team", "who", "contact"},
 	"get_compliance_moduleset":     {"moduleset details", "compliance policy", "included modulesets", "moduleset rulesets", "where used", "autofix"},
 	"get_compliance_ruleset":       {"ruleset details", "compliance variables", "variable values", "included rulesets", "filterset", "compliance policy"},
@@ -90,6 +94,7 @@ var toolKeywords = map[string][]string{
 	"list_tags":                    {"tag", "label", "labels", "attribute", "classification", "metadata", "attached tags"},
 	"list_users":                   {"user", "users", "people", "person", "who", "member", "members", "contact", "team members", "group members", "who is in"},
 	"queue_node_action":            {"run action", "push asset", "refresh inventory", "run checks", "compliance check", "trigger sysreport"},
+	"unfreeze_node":                {"thaw", "unfreeze", "resume automatic actions", "end maintenance"},
 	"update_node":                  {"modify node", "change node", "set app", "set status", "edit node", "node owner", "node location"},
 }
 

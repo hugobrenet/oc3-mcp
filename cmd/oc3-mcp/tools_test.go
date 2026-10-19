@@ -804,7 +804,8 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		// deletion, the detachments and the compliance attachments, not the
 		// creation or the attachment of a tag.
 		for name, destructive := range map[string]bool{"create_node": false, "update_node": true, "delete_node": true, "attach_node_tag": false, "detach_node_tag": true,
-			"attach_node_ruleset": true, "detach_node_ruleset": true, "attach_node_moduleset": true, "detach_node_moduleset": true, "queue_node_action": false} {
+			"attach_node_ruleset": true, "detach_node_ruleset": true, "attach_node_moduleset": true, "detach_node_moduleset": true, "queue_node_action": false,
+			"freeze_node": false, "unfreeze_node": true, "drain_node": true, "fix_node_compliance": true, "cancel_node_action": false} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
 				t.Fatalf("%s = %+v", name, tool)
@@ -824,7 +825,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		if !strings.Contains(string(schema), `"loc_city"`) || !strings.Contains(string(schema), `"required":["node"]`) {
 			t.Fatalf("update_node schema = %s", schema)
 		}
-		if len(found) != 10 {
+		if len(found) != 15 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -936,5 +937,34 @@ func TestNodeActionQueueTools(t *testing.T) {
 	}
 	if result, _ := call("queue_node_action", map[string]any{"action": "reboot", "nodes": []string{"lab01"}}); !result.IsError {
 		t.Fatal("queue_node_action accepted reboot")
+	}
+}
+
+func TestNodeChangingActionTools(t *testing.T) {
+	var put map[string]any
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.EscapedPath() {
+		case "GET /nodes":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"n-1","nodename":"lab01"}],"meta":{"total":1}}`))
+		case "PUT /actions":
+			_ = json.NewDecoder(r.Body).Decode(&put)
+			_, _ = w.Write([]byte(`{"data":[{"id":903,"status":"W","action_type":"pull"}]}`))
+		case "GET /actions/903":
+			_, _ = w.Write([]byte(`{"data":[{"id":903,"status":"W","command":"thaw --local","nodes.nodename":"lab01"}]}`))
+		case "POST /actions":
+			_, _ = w.Write([]byte(`{"id":903,"status":"C"}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, queued := call("unfreeze_node", map[string]any{"nodes": []string{"lab01"}})
+	node := queued["nodes"].([]any)[0].(map[string]any)
+	if result.IsError || put["action"] != "thaw" || node["queued_for"] != "pull" || node["warning"] == nil {
+		t.Fatalf("unfreeze_node = %+v, put %v", queued, put)
+	}
+	result, cancelled := call("cancel_node_action", map[string]any{"action_ids": []int{903}})
+	if result.IsError || cancelled["cancelled"] != float64(1) || cancelled["actions"].([]any)[0].(map[string]any)["command"] != "thaw --local" {
+		t.Fatalf("cancel_node_action = %+v", cancelled)
 	}
 }

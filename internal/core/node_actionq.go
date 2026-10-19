@@ -33,6 +33,14 @@ const actionStatusNames = "waiting, notified, queued, sent, running, done or can
 // collector. The om3 agent has no pushpatch, updatecomp or updatepkg.
 var QueueableNodeActions = []string{"pushasset", "pushdisks", "pushpkg", "pushstats", "checks", "sysreport", "compliance_check"}
 
+// ChangingNodeActions are the node actions that change the node, which the
+// om3 agent runs: freeze and thaw, as om node freeze and om node unfreeze,
+// drain, which freezes the node and stops its instances, and compliance_fix,
+// om node compliance fix. Each has its own tool. The collector also accepts
+// reboot, schedule_reboot, unschedule_reboot and shutdown, actions of the
+// former agent which the om3 agent answers with unknown command.
+var ChangingNodeActions = []string{"freeze", "thaw", "drain", "compliance_fix"}
+
 // ansiEscape is a terminal color sequence, which the agent logs hold.
 var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
 
@@ -210,6 +218,19 @@ func (s *Service) QueueNodeAction(ctx context.Context, options NodeActionOptions
 	if !slices.Contains(QueueableNodeActions, options.Action) {
 		return NodeActionQueueing{}, fmt.Errorf("action must be one of %s", strings.Join(QueueableNodeActions, ", "))
 	}
+	return s.queueNodeAction(ctx, options)
+}
+
+// RunNodeAction posts an action that changes the node, one of
+// ChangingNodeActions, on the selected nodes, as QueueNodeAction does.
+func (s *Service) RunNodeAction(ctx context.Context, options NodeActionOptions) (NodeActionQueueing, error) {
+	if !slices.Contains(ChangingNodeActions, options.Action) {
+		return NodeActionQueueing{}, fmt.Errorf("action must be one of %s", strings.Join(ChangingNodeActions, ", "))
+	}
+	return s.queueNodeAction(ctx, options)
+}
+
+func (s *Service) queueNodeAction(ctx context.Context, options NodeActionOptions) (NodeActionQueueing, error) {
 	filters, err := checkSelection(options.NodeSelection)
 	if err != nil {
 		return NodeActionQueueing{}, err
@@ -285,4 +306,96 @@ func zeroDate(date string) string {
 // anyText gives a collector value the queue gives as a number or a string.
 func anyText(value any) string {
 	return propText(map[string]any{"v": value}, "v")
+}
+
+// maxCancelActions bounds the actions cancelled in one call.
+const maxCancelActions = 50
+
+// cancellableStatuses are the statuses of an action no agent has taken yet:
+// the collector also cancels a sent or running action, which the agent
+// goes on running.
+var cancellableStatuses = []string{"W", "N", "Q"}
+
+type NodeActionCancellation struct {
+	Provenance Provenance             `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
+	Cancelled  int                    `json:"cancelled" jsonschema:"the number of actions cancelled"`
+	Refused    int                    `json:"refused" jsonschema:"the number of actions not cancelled"`
+	Actions    []NodeActionCancelling `json:"actions" jsonschema:"the outcome on each action, in the order given"`
+}
+
+type NodeActionCancelling struct {
+	ID       int    `json:"id" jsonschema:"the ID of the action in the queue"`
+	Nodename string `json:"nodename,omitempty" jsonschema:"the name of the node of the action"`
+	Command  string `json:"command,omitempty" jsonschema:"the command of the action"`
+	Outcome  string `json:"outcome" jsonschema:"cancelled, already_cancelled, or refused"`
+	Reason   string `json:"reason,omitempty" jsonschema:"with refused, why: an action already taken by its agent, done, unknown, or refused by the collector"`
+}
+
+// CancelNodeActions cancels actions of the queue no agent has taken yet:
+// waiting, notified or queued. The collector also cancels a sent or running
+// action, which its agent goes on running: the MCP refuses them.
+func (s *Service) CancelNodeActions(ctx context.Context, ids []int) (NodeActionCancellation, error) {
+	if len(ids) == 0 || len(ids) > maxCancelActions {
+		return NodeActionCancellation{}, fmt.Errorf("pass 1 to %d action IDs, as list_node_actions gives them", maxCancelActions)
+	}
+	result := NodeActionCancellation{Actions: []NodeActionCancelling{}}
+	seen := map[int]bool{}
+	for _, id := range ids {
+		if id <= 0 {
+			return NodeActionCancellation{}, fmt.Errorf("action IDs must be positive integers")
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		outcome := s.cancelNodeAction(ctx, id)
+		if outcome.Outcome == "cancelled" {
+			result.Cancelled++
+		} else if outcome.Outcome == "refused" {
+			result.Refused++
+		}
+		result.Actions = append(result.Actions, outcome)
+	}
+	result.Provenance = s.newProvenance()
+	return result, nil
+}
+
+func (s *Service) cancelNodeAction(ctx context.Context, id int) NodeActionCancelling {
+	outcome := NodeActionCancelling{ID: id, Outcome: "refused"}
+	var found collectorList[collectorQueuedAction]
+	err := s.client.GetJSON(ctx, "/actions/"+strconv.Itoa(id), url.Values{"props": {"id,status,command,nodes.nodename"}}, &found)
+	if err != nil && !isNotFound(err) {
+		outcome.Reason = err.Error()
+		return outcome
+	}
+	if err != nil || len(found.Data) != 1 {
+		outcome.Reason = "not found in the queue, or not visible to the caller"
+		return outcome
+	}
+	action := found.Data[0]
+	outcome.Nodename, outcome.Command = action.Nodename, agentCommand(action.Command)
+	switch {
+	case action.Status == "C":
+		outcome.Outcome = "already_cancelled"
+		return outcome
+	case !slices.Contains(cancellableStatuses, action.Status):
+		outcome.Reason = "the action is " + actionStatuses[action.Status] + ": its agent took it, and a cancellation would not stop it"
+		return outcome
+	}
+	var response map[string]any
+	if err := s.client.PostJSON(ctx, "/actions", map[string]any{"id": id, "status": "C"}, &response); err != nil {
+		outcome.Reason = err.Error()
+		return outcome
+	}
+	// The collector answers a refusal with 200 and an error.
+	if text := propText(response, "error"); text != "" {
+		outcome.Reason = text
+		return outcome
+	}
+	if propText(response, "status") != "C" {
+		outcome.Reason = "unexpected collector response"
+		return outcome
+	}
+	outcome.Outcome = "cancelled"
+	return outcome
 }

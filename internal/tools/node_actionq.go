@@ -10,7 +10,7 @@ import (
 type ListNodeActionsInput struct {
 	Node    string `json:"node,omitempty" jsonschema:"optional exact node name or node ID: its actions"`
 	Status  string `json:"status,omitempty" jsonschema:"optional status: waiting, notified, queued, sent, running, done or cancelled"`
-	Command string `json:"command,omitempty" jsonschema:"optional text the command contains, case-insensitive, such as pushasset or freeze"`
+	Command string `json:"command,omitempty" jsonschema:"optional text the command contains, case-insensitive, such as pushasset or freeze; the collector names the action of unfreeze_node thaw, and that of fix_node_compliance compliance fix"`
 	Since   string `json:"since,omitempty" jsonschema:"optional; keeps the actions queued at or after this date, in collector local time: YYYY-MM-DD, YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS"`
 	Limit   int    `json:"limit,omitempty" jsonschema:"optional page size between 1 and 100; defaults to 20"`
 	Cursor  string `json:"cursor,omitempty" jsonschema:"optional next_cursor returned by a previous call with the same filters"`
