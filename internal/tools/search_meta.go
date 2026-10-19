@@ -41,6 +41,8 @@ var toolKeywords = map[string][]string{
 	"count_services":               {"how many services", "number", "distribution", "statistics", "services down"},
 	"create_node":                  {"add node", "new node", "register node", "declare node", "inventory"},
 	"delete_node":                  {"remove node", "decommission", "purge node", "drop node"},
+	"delete_service":               {"remove service", "purge service", "decommission service", "clean inventory"},
+	"delete_service_instance":      {"remove instance", "stale instance", "orphan instance", "purge instance"},
 	"detach_node_moduleset":        {"remove moduleset", "unassign moduleset", "disable compliance"},
 	"detach_node_ruleset":          {"remove ruleset", "unassign ruleset", "drop rules"},
 	"detach_node_tag":              {"remove tag", "untag", "untag nodes", "unset tag", "bulk untag"},
