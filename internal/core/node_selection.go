@@ -27,6 +27,7 @@ const (
 	ChangeAlreadyAttached = "already_attached"
 	ChangeDetached        = "detached"
 	ChangeAlreadyDetached = "already_detached"
+	ChangeQueued          = "queued"
 	ChangeRefused         = "refused"
 	ChangeNotAttempted    = "not_attempted"
 )
@@ -50,10 +51,13 @@ type NodeChangeSummary struct {
 }
 
 type NodeChangeOutcome struct {
-	NodeID   string `json:"node_id" jsonschema:"the collector node ID"`
-	Nodename string `json:"nodename" jsonschema:"the node name"`
-	Outcome  string `json:"outcome" jsonschema:"attached, already_attached, detached, already_detached, refused, or not_attempted when the call ended before"`
-	Reason   string `json:"reason,omitempty" jsonschema:"with refused, the reason the collector gave"`
+	NodeID    string `json:"node_id" jsonschema:"the collector node ID"`
+	Nodename  string `json:"nodename" jsonschema:"the node name"`
+	Outcome   string `json:"outcome" jsonschema:"attached, already_attached, detached, already_detached, queued, refused, or not_attempted when the call ended before"`
+	Reason    string `json:"reason,omitempty" jsonschema:"with refused, the reason the collector gave"`
+	ActionID  int    `json:"action_id,omitempty" jsonschema:"with queued, the ID of the action in the queue, which list_node_actions follows"`
+	QueuedFor string `json:"queued_for,omitempty" jsonschema:"with queued, how the node reads its queue: feed, read by an om3 agent; pull or push, the means of the former agent"`
+	Warning   string `json:"warning,omitempty" jsonschema:"with queued, why the action may never run, such as a node queued for pull, which an om3 agent never reads; tell the user"`
 }
 
 // checkSelection validates a selection without reading the collector, and
@@ -129,7 +133,7 @@ func (s *Service) changeSelectedNodes(ctx context.Context, selection NodeSelecti
 	})
 	for _, outcome := range outcomes {
 		switch outcome.Outcome {
-		case ChangeAttached, ChangeDetached:
+		case ChangeAttached, ChangeDetached, ChangeQueued:
 			summary.Changed++
 		case ChangeAlreadyAttached, ChangeAlreadyDetached:
 			summary.Unchanged++

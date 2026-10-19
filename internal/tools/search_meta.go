@@ -71,6 +71,7 @@ var toolKeywords = map[string][]string{
 	"list_filtersets":              {"filtersets", "list filtersets", "node selection", "saved filters"},
 	"list_forms":                   {"form", "forms catalog", "which form", "request form", "compliance variable", "template"},
 	"list_ips":                     {"ip", "address", "owner", "ownership", "vip", "interface", "mac", "network", "subnet"},
+	"list_node_actions":            {"action queue", "pending actions", "queued actions", "agent actions", "action result", "action output"},
 	"list_node_checks":             {"node check", "threshold", "filesystem usage", "disk full", "inode", "multipath", "monitoring"},
 	"list_node_disks":              {"disk", "lun", "storage", "san", "wwid", "array", "volume"},
 	"list_node_sysreport_changes":  {"sysreport", "what changed", "configuration change", "when changed", "change history", "file change", "recent changes", "node changes", "modification"},
@@ -88,6 +89,7 @@ var toolKeywords = map[string][]string{
 	"list_storage_quotas":          {"storage quota", "quota", "allocation", "reserved space", "app storage"},
 	"list_tags":                    {"tag", "label", "labels", "attribute", "classification", "metadata", "attached tags"},
 	"list_users":                   {"user", "users", "people", "person", "who", "member", "members", "contact", "team members", "group members", "who is in"},
+	"queue_node_action":            {"run action", "push asset", "refresh inventory", "run checks", "compliance check", "trigger sysreport"},
 	"update_node":                  {"modify node", "change node", "set app", "set status", "edit node", "node owner", "node location"},
 }
 

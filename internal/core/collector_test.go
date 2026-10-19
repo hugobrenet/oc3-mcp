@@ -55,6 +55,17 @@ func (f *fakeCollector) PostJSON(_ context.Context, path string, input any, outp
 	return f.reply(path, nil, output)
 }
 
+func (f *fakeCollector) PutJSON(_ context.Context, path string, input any, output any) error {
+	payload, _ := json.Marshal(input)
+	var body map[string]any
+	_ = json.Unmarshal(payload, &body)
+	f.record(fakeRequest{method: "PUT", path: path, body: body})
+	if f.err != nil {
+		return f.err
+	}
+	return f.reply(path, nil, output)
+}
+
 func (f *fakeCollector) DeleteJSON(_ context.Context, path string, output any) error {
 	f.record(fakeRequest{method: "DELETE", path: path})
 	if f.err != nil {

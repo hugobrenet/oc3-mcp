@@ -71,6 +71,8 @@ func (notFoundCollector) GetJSON(context.Context, string, url.Values, any) error
 
 func (notFoundCollector) PostJSON(context.Context, string, any, any) error { return fakeNotFound{} }
 
+func (notFoundCollector) PutJSON(context.Context, string, any, any) error { return fakeNotFound{} }
+
 func (notFoundCollector) DeleteJSON(context.Context, string, any) error { return fakeNotFound{} }
 
 // An exact lookup that finds nothing suggests find_objects, whether the
