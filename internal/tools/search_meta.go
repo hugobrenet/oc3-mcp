@@ -71,10 +71,13 @@ var toolKeywords = map[string][]string{
 	"list_nodes":                   {"node list", "servers", "hosts", "machines", "inventory", "frozen", "silent", "stopped reporting"},
 	"list_package_differences":     {"package diff", "version mismatch", "compare", "drift", "inconsistency"},
 	"list_requests":                {"request", "workflow", "ticket", "approval", "pending request", "form submission", "self service", "assigned"},
+	"list_san_switch_ports":        {"san switch", "switch port", "fabric", "zoning", "no light", "port down", "isl", "brocade", "wwn"},
 	"list_service_actions":         {"action", "start", "stop", "restart", "failed action", "who ran", "operation history"},
 	"list_service_checks":          {"service check", "threshold", "volume usage", "resource check"},
 	"list_service_resources":       {"resource", "filesystem", "ip", "disk", "container", "driver", "resource status"},
 	"list_services":                {"service list", "applications", "services down", "frozen", "placement"},
+	"list_storage_arrays":          {"storage array", "baie", "capacity", "free space", "pool", "disk group", "powermax", "storage usage"},
+	"list_storage_quotas":          {"storage quota", "quota", "allocation", "reserved space", "app storage"},
 	"list_tags":                    {"tag", "label", "labels", "attribute", "classification", "metadata", "attached tags"},
 	"list_users":                   {"user", "users", "people", "person", "who", "member", "members", "contact", "team members", "group members", "who is in"},
 }

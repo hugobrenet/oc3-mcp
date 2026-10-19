@@ -26,6 +26,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Sysreport | `list_node_sysreport_changes`, `get_node_sysreport_diff`, `list_node_sysreport_files`, `get_node_sysreport_file` | [Sysreport tools](sysreport.md) |
 | Filtersets | `list_filtersets`, `get_filterset` | [Filterset tools](filtersets.md) |
 | Groups and users | `list_groups`, `get_group`, `list_users` | [Group and user tools](groups.md) |
+| Storage | `list_storage_arrays`, `list_storage_quotas`, `list_san_switch_ports` | [Storage tools](storage.md) |
 
 ## Conventions
 
