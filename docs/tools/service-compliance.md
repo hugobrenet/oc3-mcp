@@ -33,6 +33,10 @@ a contextual one applies to the services its filterset selects. An
 attachment is destructive, as for the nodes: it makes the agent run modules,
 which may change what the service runs on.
 
+`check_service_compliance` and `fix_service_compliance` run the modules
+attached to a service on its instances, through their agents: see the
+[service agent action tools](service-agent-actions.md#compliance-runs).
+
 ## Selection
 
 The services are selected as for the [service tag tools](service-tags.md#selection),
