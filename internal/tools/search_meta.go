@@ -105,6 +105,7 @@ var toolKeywords = map[string][]string{
 	"list_tags":                    {"tag", "label", "labels", "attribute", "classification", "metadata", "attached tags"},
 	"list_users":                   {"user", "users", "people", "person", "who", "member", "members", "contact", "team members", "group members", "who is in"},
 	"queue_node_action":            {"run action", "push asset", "refresh inventory", "run checks", "compliance check", "trigger sysreport"},
+	"set_service_sla":              {"sla", "availability target", "service level", "set sla", "unset sla"},
 	"unfreeze_node":                {"thaw", "unfreeze", "resume automatic actions", "end maintenance"},
 	"unjustify_service_downtime":   {"remove downtime justification", "count downtime again"},
 	"update_node":                  {"modify node", "change node", "set app", "set status", "edit node", "node owner", "node location"},

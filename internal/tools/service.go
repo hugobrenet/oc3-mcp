@@ -188,7 +188,7 @@ func RegisterServiceTools(registrar *Registrar, service *core.Service) error {
 			Title: "Get collector service",
 			Description: "Read one service of the OpenSVC collector by exact name or service ID: identity, topology and configured nodes, aggregated status, 30-day availability rate and SLA, " +
 				"and its instances, one per node, with their availability, overall, monitor and freeze states and the status of each resource kind. " +
-				"A name several services hold is refused with their service IDs; pass one of them. " +
+				"A name several services hold is refused with their service IDs; pass one of them. set_service_sla sets the SLA. " +
 				"The configuration text is returned, cut to 32 KiB: this MCP masks the values of the keys that name a secret or a mail and the email addresses, but partially; when the text is asked for, show it saying so, never as free of secrets. " +
 				"Its tags are read with list_tags, the groups responsible for its app with get_app. States are those the collector last received; collector dates are as it gives them.",
 			Annotations: readOnlyClosedWorldAnnotations(),

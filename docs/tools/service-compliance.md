@@ -37,7 +37,8 @@ which may change what the service runs on.
 
 The services are selected as for the [service tag tools](service-tags.md#selection),
 by `services`, at most 50 exact names or IDs, or by the filters of
-`list_services`, up to 1000 services, with `node`. The ruleset or moduleset
+`list_services` and those of the instances, `node`, `on_nodes` and the
+`instance_*` states, up to 1000 services. The ruleset or moduleset
 filter is `filter_ruleset` or `filter_moduleset` here, as `ruleset` or
 `moduleset` names the one changed: to detach a ruleset or a moduleset from
 every service it is attached to, pass the same name to both. A contextual
@@ -91,7 +92,7 @@ change, and detaches one.
 |---|---|
 | `ruleset` or `moduleset` | One exact name or ID |
 | `services` | Optional, see [selection](#selection) |
-| filters, `node` | Optional, those of `list_services`, with `filter_ruleset` or `filter_moduleset` for the filter of the kind changed; see [selection](#selection) |
+| filters, `node`, `on_nodes`, `instance_availability`, `instance_overall`, `instance_frozen` | Optional, those of `list_services` and of the instances, with `filter_ruleset` or `filter_moduleset` for the filter of the kind changed; see [selection](#selection) |
 
 ## Output
 
@@ -100,6 +101,8 @@ change, and detaches one.
 | `provenance` | Collector API source and MCP collection time |
 | `ruleset` or `moduleset` | `id`, `name`, and for a ruleset `type` |
 | `node`, `filter_tag`, `filterset`, `filter_ruleset`, `filter_moduleset` | The filter of the selection, resolved |
+| `on_nodes_selected` | With `on_nodes`, the number of nodes the node filters selected |
+| `on_nodes_filter` | With `on_nodes` and its member filter, what it resolved to |
 | `selected` | Services selected |
 | `changed`, `unchanged`, `refused` | Services changed, already as asked, refused by the collector |
 | `services[]` | `svc_id`, `svcname`, `cluster_id`, `outcome` (`attached`, `already_attached`, `detached`, `already_detached`, `refused`, `not_attempted`) and `reason` of a refusal, sorted by service name |

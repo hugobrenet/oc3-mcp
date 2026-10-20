@@ -808,7 +808,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"freeze_node": false, "unfreeze_node": true, "drain_node": true, "fix_node_compliance": true, "cancel_node_action": false,
 			"attach_service_tag": false, "detach_service_tag": true,
 			"attach_service_ruleset": true, "detach_service_ruleset": true, "attach_service_moduleset": true, "detach_service_moduleset": true,
-			"justify_service_downtime": true, "unjustify_service_downtime": true,
+			"justify_service_downtime": true, "unjustify_service_downtime": true, "set_service_sla": true,
 			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
@@ -818,11 +818,35 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				t.Fatalf("tool %s has no search keywords", name)
 			}
 		}
+		// properties are the inputs of a tool, by name, and their
+		// description: an input named twice keeps one of them only.
+		properties := func(name string) map[string]string {
+			data, _ := json.Marshal(found[name].InputSchema)
+			var schema struct {
+				Properties map[string]struct {
+					Description string `json:"description"`
+				} `json:"properties"`
+			}
+			_ = json.Unmarshal(data, &schema)
+			inputs := map[string]string{}
+			for input, property := range schema.Properties {
+				inputs[input] = property.Description
+			}
+			return inputs
+		}
 		// The tag changed and the tag filter have their own names.
 		for _, name := range []string{"attach_node_tag", "detach_node_tag", "attach_service_tag", "detach_service_tag"} {
-			schema, _ := json.Marshal(found[name].InputSchema)
-			if strings.Count(string(schema), `"tag":{`) != 1 || !strings.Contains(string(schema), `"filter_tag":{`) || !strings.Contains(string(schema), `"status":{`) {
-				t.Fatalf("%s schema = %s", name, schema)
+			inputs := properties(name)
+			if !strings.HasPrefix(inputs["tag"], "one exact tag") || inputs["filter_tag"] == "" || inputs["status"] == "" {
+				t.Fatalf("%s inputs = %v", name, inputs)
+			}
+		}
+		// The selections of services take the filters of their instances,
+		// and those of list_nodes as an object.
+		for _, name := range []string{"attach_service_tag", "detach_service_tag", "attach_service_ruleset", "detach_service_moduleset", "set_service_sla"} {
+			inputs := properties(name)
+			if inputs["node"] == "" || inputs["on_nodes"] == "" || inputs["instance_availability"] == "" || inputs["instance_frozen"] == "" {
+				t.Fatalf("%s inputs = %v", name, inputs)
 			}
 		}
 		// So have the ruleset or moduleset changed and its filter.
@@ -832,9 +856,9 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"attach_service_ruleset": {"ruleset", "moduleset"}, "detach_service_ruleset": {"ruleset", "moduleset"},
 			"attach_service_moduleset": {"moduleset", "ruleset"}, "detach_service_moduleset": {"moduleset", "ruleset"},
 		} {
-			schema, _ := json.Marshal(found[name].InputSchema)
-			if strings.Count(string(schema), `"`+kinds[0]+`":{`) != 1 || !strings.Contains(string(schema), `"filter_`+kinds[0]+`":{`) || !strings.Contains(string(schema), `"`+kinds[1]+`":{`) {
-				t.Fatalf("%s schema = %s", name, schema)
+			inputs := properties(name)
+			if !strings.HasPrefix(inputs[kinds[0]], "one exact compliance") || inputs["filter_"+kinds[0]] == "" || !strings.HasPrefix(inputs[kinds[1]], "optional") {
+				t.Fatalf("%s inputs = %v", name, inputs)
 			}
 		}
 		schema, _ := json.Marshal(found["update_node"].InputSchema)
@@ -847,7 +871,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		if !strings.Contains(string(schema), `"required":["service","begin","comment","counted"]`) {
 			t.Fatalf("justify_service_downtime schema = %s", schema)
 		}
-		if len(found) != 26 {
+		if len(found) != 27 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -1248,6 +1272,61 @@ func TestServiceDowntimeTools(t *testing.T) {
 	result, change = call("unjustify_service_downtime", map[string]any{"service": "web", "begin": "2026-10-03 00:46:03"})
 	if result.IsError || change["outcome"] != "not_justified" || len(requests) != 2 {
 		t.Fatalf("unjustify_service_downtime of a period not justified = %+v, requests %v", change, requests)
+	}
+}
+
+func TestSetServiceSLATool(t *testing.T) {
+	var mutex sync.Mutex
+	var bodies []map[string]any
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch path := r.Method + " " + r.URL.EscapedPath(); path {
+		case "GET /nodes":
+			if filter := r.URL.Query().Get("filter"); filter != "status:eq:Maintenance" {
+				t.Errorf("node filter = %q", filter)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"n-1","nodename":"a"}],"meta":{"total":1}}`))
+		case "GET /services_instances":
+			if filter := strings.Join(r.URL.Query()["filter"], " "); filter != "node_id:eq:n-1 mon_availstatus:eq:down services.svc_env:eq:PRD" {
+				t.Errorf("instance filter = %q", filter)
+			}
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s-1","node_id":"n-1","services.svcname":"web"},{"svc_id":"s-2","node_id":"n-1","services.svcname":"db"},
+				{"svc_id":"s-3","node_id":"n-1","services.svcname":"lab","services.svc_sla":99.95,"services.svc_availability":98.5}],"meta":{"total":3}}`))
+		case "POST /services/s-2":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"text":"user is not responsible for service s-2"}`))
+		case "POST /services/s-1":
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			mutex.Lock()
+			bodies = append(bodies, body)
+			mutex.Unlock()
+			_, _ = w.Write([]byte(`{"info":"changed","data":[{"svc_sla":99.95}]}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, change := call("set_service_sla", map[string]any{"sla": 99.95, "on_nodes": map[string]any{"status": "Maintenance"}, "instance_availability": "down", "env": "PRD"})
+	// Sorted db, lab, web: db refused, lab already at 99.95, web set.
+	services, _ := change["services"].([]any)
+	if result.IsError || change["changed"] != float64(1) || change["refused"] != float64(1) || change["unchanged"] != float64(1) ||
+		len(bodies) != 1 || bodies[0]["svc_sla"] != "99.95" || len(services) != 3 || change["on_nodes_selected"] != float64(1) {
+		t.Fatalf("set_service_sla = %+v, bodies %v", change, bodies)
+	}
+	db, lab, web := services[0].(map[string]any), services[1].(map[string]any), services[2].(map[string]any)
+	if db["outcome"] != "refused" || !strings.Contains(fmt.Sprint(db["reason"]), "not responsible") || lab["outcome"] != "unchanged" ||
+		lab["availability_percent"] != 98.5 || web["outcome"] != "set" || web["sla"] != 99.95 {
+		t.Fatalf("set_service_sla services = %v", services)
+	}
+	for _, arguments := range []map[string]any{
+		{"sla": 120, "on_nodes": map[string]any{"status": "Maintenance"}},
+		{"sla": 99, "remove": true, "on_nodes": map[string]any{"status": "Maintenance"}},
+		{"sla": 99},
+		{"sla": 99, "on_nodes": map[string]any{}},
+	} {
+		if result, _ := call("set_service_sla", arguments); !result.IsError || len(bodies) != 1 {
+			t.Fatalf("set_service_sla %v was accepted, bodies %v", arguments, bodies)
+		}
 	}
 }
 

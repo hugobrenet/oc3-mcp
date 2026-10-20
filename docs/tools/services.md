@@ -226,7 +226,7 @@ service ID.
 | `service` | `svc_id`, `svcname`, `cluster_id`, `app`, `env`, `comment` (untrusted text), `created`, `updated`, `snooze_till` |
 | `config` | `topology`, `ha`, `autostart`, `nodes`, `drp_node`, `drp_nodes`, `drp_type`, `flex_min_nodes`, `flex_max_nodes`, `flex_target`, and the configuration `text`, `text_truncated`, `text_updated` |
 | `status` | Aggregated `overall`, `avail`, `frozen`, `placement`, `provisioned`, and `updated` |
-| `availability` | `rate_percent`, the availability of the last 30 days the collector computes, `sla_percent`, the target, each null when unknown, and `updated` |
+| `availability` | `rate_percent`, the availability of the last 30 days the collector computes, `sla_percent`, the target, which `set_service_sla` sets, each null when unknown, and `updated` |
 | `instances` | `total`, `count`, `truncated` after 200, and `items[]` sorted by node name |
 
 Each instance holds `node_id`, `nodename`, `avail`, `overall`,
