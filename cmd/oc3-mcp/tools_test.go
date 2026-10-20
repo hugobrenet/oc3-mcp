@@ -809,6 +809,8 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"attach_service_tag": false, "detach_service_tag": true,
 			"attach_service_ruleset": true, "detach_service_ruleset": true, "attach_service_moduleset": true, "detach_service_moduleset": true,
 			"justify_service_downtime": true, "unjustify_service_downtime": true, "set_service_sla": true,
+			"freeze_service": false, "thaw_service": true, "start_service": false, "stop_service": true, "restart_service": true,
+			"switch_service": true, "giveback_service": true, "takeover_service": true, "abort_service_action": true,
 			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
@@ -871,7 +873,31 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		if !strings.Contains(string(schema), `"required":["service","begin","comment","counted"]`) {
 			t.Fatalf("justify_service_downtime schema = %s", schema)
 		}
-		if len(found) != 27 {
+		// A takeover takes its destination; every action selects by name
+		// or by filters.
+		data, _ := json.Marshal(found["takeover_service"].InputSchema)
+		if !strings.Contains(string(data), `"required":["to"]`) {
+			t.Fatalf("takeover_service schema = %s", data)
+		}
+		for _, name := range []string{"freeze_service", "stop_service", "restart_service", "switch_service"} {
+			data, _ := json.Marshal(found[name].InputSchema)
+			if strings.Contains(string(data), `"required"`) || strings.Contains(string(data), "dry_run") || strings.Contains(string(data), "all_matching") {
+				t.Fatalf("%s schema = %s", name, data)
+			}
+		}
+		// A restart and a switch act again at each call; the others not.
+		for name, idempotent := range map[string]bool{"restart_service": false, "switch_service": false, "takeover_service": true, "giveback_service": true, "freeze_service": true, "stop_service": true} {
+			if found[name].Annotations.IdempotentHint != idempotent {
+				t.Fatalf("%s idempotent = %v", name, found[name].Annotations.IdempotentHint)
+			}
+		}
+		// local is an input of the actions on services or instances only.
+		for name, local := range map[string]bool{"freeze_service": true, "stop_service": true, "switch_service": false, "abort_service_action": false, "restart_service": false, "takeover_service": false} {
+			if _, ok := properties(name)["local"]; ok != local {
+				t.Fatalf("%s local input = %v", name, ok)
+			}
+		}
+		if len(found) != 36 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -1327,6 +1353,64 @@ func TestSetServiceSLATool(t *testing.T) {
 		if result, _ := call("set_service_sla", arguments); !result.IsError || len(bodies) != 1 {
 			t.Fatalf("set_service_sla %v was accepted, bodies %v", arguments, bodies)
 		}
+	}
+}
+
+func TestServiceAgentActionTools(t *testing.T) {
+	var mutex sync.Mutex
+	var bodies []map[string]any
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch path := r.Method + " " + r.URL.EscapedPath(); path {
+		case "GET /nodes/dev2n1":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"n-1","nodename":"dev2n1"}]}`))
+		case "GET /services":
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s-1","svcname":"foo","svc_topology":"failover"},{"svc_id":"s-2","svcname":"bug1","svc_topology":"flex"}],"meta":{"total":2}}`))
+		case "GET /services_instances":
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s-1","node_id":"n-1","nodes.nodename":"dev2n1","nodes.version":"v3.0.0-rc50-8","services.svcname":"foo","services.svc_topology":"failover"},
+				{"svc_id":"s-2","node_id":"n-1","nodes.nodename":"dev2n1","nodes.version":"v3.0.0-rc50-8","services.svcname":"bug1","services.svc_topology":"flex"}],"meta":{"total":2}}`))
+		case "PUT /actions":
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			mutex.Lock()
+			bodies = append(bodies, body)
+			mutex.Unlock()
+			if body["svc_id"] == "s-2" && body["action"] == "freeze" {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"text":"user has no NodeExec privilege"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"data":[{"id":817,"status":"W","action_type":"feed","command":"freeze --local","node_id":"n-1"}]}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	// The instances of foo and bug1 on dev2n1, each run by dev2n1: bug1
+	// refused by the collector, foo queued.
+	result, queued := call("freeze_service", map[string]any{"services": []string{"foo", "bug1"}, "node": "dev2n1", "local": true})
+	actions, _ := queued["actions"].([]any)
+	if result.IsError || queued["queued"] != float64(1) || queued["refused"] != float64(1) || len(actions) != 2 ||
+		actions[1].(map[string]any)["command"] != "freeze --local" || !strings.Contains(fmt.Sprint(actions[0].(map[string]any)["reason"]), "NodeExec") ||
+		bodies[0]["node_id"] != "n-1" || queued["follow_up"] == nil {
+		t.Fatalf("freeze_service = %+v, bodies %v", queued, bodies)
+	}
+	// A switch of foo and bug1: the flex bug1 refused before sending, the
+	// failover foo queued on the whole service.
+	result, queued = call("switch_service", map[string]any{"services": []string{"foo", "bug1"}})
+	if result.IsError || queued["queued"] != float64(1) || queued["refused"] != float64(1) || len(bodies) != 3 || bodies[2]["node_id"] != nil || bodies[2]["svc_id"] != "s-1" {
+		t.Fatalf("switch_service = %+v, bodies %v", queued, bodies)
+	}
+	if result, _ := call("takeover_service", map[string]any{"services": []string{"foo"}}); !result.IsError || len(bodies) != 3 {
+		t.Fatalf("a takeover without destination was accepted, bodies %v", bodies)
+	}
+	// A node alone selects every service of the node, the agent showing
+	// the call to confirm; a call selecting nothing is refused.
+	result, queued = call("restart_service", map[string]any{"node": "dev2n1"})
+	if result.IsError || queued["selected"] != float64(2) || len(bodies) != 5 || bodies[3]["node_id"] != "n-1" || bodies[3]["action"] != "restart" {
+		t.Fatalf("restart_service = %+v, bodies %v", queued, bodies)
+	}
+	if result, _ := call("stop_service", map[string]any{}); !result.IsError || len(bodies) != 5 {
+		t.Fatalf("a stop selecting nothing was accepted, bodies %v", bodies)
 	}
 }
 

@@ -186,3 +186,25 @@ func TestCancelNodeActionsCancelsOnlyWhatNoAgentTook(t *testing.T) {
 		}
 	}
 }
+
+// The service filter keeps the actions on a service and its instances.
+func TestListNodeActionsFiltersAService(t *testing.T) {
+	collector := &fakeCollector{answer: func(path string, query url.Values) string {
+		switch path {
+		case "/services/foo":
+			return `{"data":[{"svc_id":"s-1","svcname":"foo","cluster_id":"c1"}]}`
+		case "/actions":
+			return `{"data":[{"id":817,"status":"T","command":"freeze --local","svc_id":"s-1","services.svcname":"foo"}],"meta":{"total":1}}`
+		}
+		return `{"data":[]}`
+	}}
+	list, err := newTestService(collector).ListNodeActions(t.Context(), ListNodeActionsOptions{Service: "foo"})
+	if err != nil || list.Service == nil || list.Service.Svcname != "foo" || list.Actions[0].Svcname != "foo" {
+		t.Fatalf("list = %+v, %v", list, err)
+	}
+	for _, request := range collector.requests {
+		if request.path == "/actions" && request.query.Get("filter") != "svc_id:eq:s-1" {
+			t.Fatalf("actions query = %v", request.query)
+		}
+	}
+}

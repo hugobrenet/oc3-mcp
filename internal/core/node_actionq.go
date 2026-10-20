@@ -46,6 +46,7 @@ var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
 
 type ListNodeActionsOptions struct {
 	Node    string
+	Service string
 	Status  string
 	Command string
 	Since   string
@@ -56,6 +57,7 @@ type ListNodeActionsOptions struct {
 type NodeActionList struct {
 	Provenance Provenance         `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Node       *NodeReference     `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
+	Service    *ServiceReference  `json:"service,omitempty" jsonschema:"the service the service filter resolved to"`
 	Total      int                `json:"total" jsonschema:"the number of actions matching, as the collector counts them"`
 	Count      int                `json:"count" jsonschema:"the number of actions returned in this page"`
 	Actions    []NodeQueuedAction `json:"actions" jsonschema:"the actions, the most recently queued first"`
@@ -141,6 +143,14 @@ func (s *Service) ListNodeActions(ctx context.Context, options ListNodeActionsOp
 		}
 		result.Node = &NodeReference{NodeID: node.NodeID, Nodename: node.Nodename, ClusterID: node.ClusterID}
 		filters = append(filters, filterEquals("node_id", node.NodeID))
+	}
+	if options.Service != "" {
+		service, err := s.lookupService(ctx, options.Service, []string{"svc_id", "svcname", "cluster_id"})
+		if err != nil {
+			return NodeActionList{}, err
+		}
+		result.Service = &ServiceReference{SvcID: service.SvcID, Svcname: service.Svcname, ClusterID: service.ClusterID}
+		filters = append(filters, filterEquals("svc_id", service.SvcID))
 	}
 	fingerprint := listFingerprint(url.Values{"filter": filters})
 	offset, err := decodeListCursor(options.Cursor, fingerprint)
@@ -252,19 +262,7 @@ func (s *Service) queueNodeAction(ctx context.Context, options NodeActionOptions
 			outcome.ActionID, _ = strconv.Atoi(anyText(response.Data[0].ID))
 			outcome.QueuedFor = response.Data[0].Type
 		}
-		// Only a feed entry reaches an om3 agent, when it pings the
-		// collector: the collector notifies a pull node through the
-		// listener of the former agent, and runs nodemgr over ssh on a push
-		// node, such as a node created in the collector that never pushed.
-		switch outcome.QueuedFor {
-		case "feed":
-		case "pull":
-			outcome.Warning = "queued for pull: the collector notifies the node through the listener of the former agent, and an om3 agent never reads it; the action may wait until cancelled"
-		case "push":
-			outcome.Warning = "queued for push: the collector runs nodemgr, the command of the former agent, over ssh; an om3 agent does not run it"
-		default:
-			outcome.Warning = "the collector did not tell how the node reads its queue"
-		}
+		outcome.Warning = queueWarning(outcome.QueuedFor)
 		return outcome
 	})
 	if err != nil {
@@ -287,6 +285,23 @@ func (s *Service) queueNodeAction(ctx context.Context, options NodeActionOptions
 		result.FollowUp = fmt.Sprintf("list_node_actions with%s command %q: an action is done when its status is done, with its exit code and output", node, command)
 	}
 	return result, nil
+}
+
+// queueWarning tells why an action queued for actionType may never run.
+// Only a feed entry reaches an om3 agent, when it pings the collector: the
+// collector notifies a pull node through the listener of the former agent,
+// and runs the command of the former agent over ssh on a push node, such as
+// a node created in the collector that never pushed.
+func queueWarning(actionType string) string {
+	switch actionType {
+	case "feed":
+		return ""
+	case "pull":
+		return "queued for pull: the collector notifies the node through the listener of the former agent, and an om3 agent never reads it; the action may wait until cancelled"
+	case "push":
+		return "queued for push: the collector runs the command of the former agent over ssh; an om3 agent does not run it"
+	}
+	return "the collector did not tell how the node reads its queue"
 }
 
 // userNamesByID reads the names of the users with these IDs in one
