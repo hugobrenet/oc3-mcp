@@ -31,6 +31,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Node action queue | `list_node_actions` | [Node action tools](node-actions.md#list_node_actions) |
 | Service tags | `attach_service_tag`, `detach_service_tag` | [Service tag tools](service-tags.md) |
 | Service compliance | `attach_service_ruleset`, `detach_service_ruleset`, `attach_service_moduleset`, `detach_service_moduleset` | [Service compliance tools](service-compliance.md) |
+| Service downtime | `justify_service_downtime`, `unjustify_service_downtime` | [Service downtime tools](service-downtime.md) |
 | Service deletion | `delete_service`, `delete_service_instance` | [Service deletion tools](service-delete.md) |
 
 ## Conventions

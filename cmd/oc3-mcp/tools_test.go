@@ -808,6 +808,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"freeze_node": false, "unfreeze_node": true, "drain_node": true, "fix_node_compliance": true, "cancel_node_action": false,
 			"attach_service_tag": false, "detach_service_tag": true,
 			"attach_service_ruleset": true, "detach_service_ruleset": true, "attach_service_moduleset": true, "detach_service_moduleset": true,
+			"justify_service_downtime": true, "unjustify_service_downtime": true,
 			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
@@ -840,7 +841,13 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 		if !strings.Contains(string(schema), `"loc_city"`) || !strings.Contains(string(schema), `"required":["node"]`) {
 			t.Fatalf("update_node schema = %s", schema)
 		}
-		if len(found) != 24 {
+		// The justification of a downtime requires its comment and whether
+		// the period counts: the model passes them, it does not default them.
+		schema, _ = json.Marshal(found["justify_service_downtime"].InputSchema)
+		if !strings.Contains(string(schema), `"required":["service","begin","comment","counted"]`) {
+			t.Fatalf("justify_service_downtime schema = %s", schema)
+		}
+		if len(found) != 26 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -1183,6 +1190,64 @@ func TestServiceDeleteTools(t *testing.T) {
 	result, _ = call("delete_service", map[string]any{"service": "dup"})
 	if text := result.Content[0].(*mcp.TextContent).Text; !result.IsError || !strings.Contains(text, "s-1 (cluster c1)") || !strings.Contains(text, "s-2 (cluster c2)") || len(deleted) != 1 {
 		t.Fatalf("delete_service of homonyms = %q, deleted %v", text, deleted)
+	}
+}
+
+func TestServiceDowntimeTools(t *testing.T) {
+	var mutex sync.Mutex
+	var requests []string
+	var body map[string]any
+	justified := false
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		mutex.Lock()
+		defer mutex.Unlock()
+		switch path := r.Method + " " + r.URL.EscapedPath(); path {
+		case "GET /services/web":
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s-1","svcname":"web","cluster_id":"c-1"}]}`))
+		case "GET /services/s-1/status_log":
+			ack := `null`
+			if justified {
+				ack = `{"comment":"maintenance","account":false,"acked_by":"ops@example.com","acked_on":"2026-10-20 10:00:00"}`
+			}
+			_, _ = w.Write([]byte(`{"data":[{"begin":"2026-10-03 00:46:03","end":"2026-10-03 00:46:18","status":"down","ack":` + ack + `},
+				{"begin":"2026-10-03 00:46:18","end":"2026-10-03 01:06:18","status":"up"}],
+				"availability":{"from":"2026-10-03 00:46:03","to":"2026-10-20 10:28:07","rate":0.08,"available_s":1200,"excluded_s":15,"counted_s":1500000}}`))
+		case "PUT /services/s-1/status_log/ack":
+			requests = append(requests, path)
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			justified = true
+			_, _ = w.Write([]byte(`{"info":"period justified"}`))
+		case "DELETE /services/s-1/status_log/ack":
+			requests = append(requests, path+"?"+r.URL.RawQuery)
+			justified = false
+			_, _ = w.Write([]byte(`{"info":"justification removed"}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, change := call("justify_service_downtime", map[string]any{"service": "web", "begin": "2026-10-03 00:46:03", "comment": "maintenance", "counted": false})
+	ack, _ := change["period"].(map[string]any)["ack"].(map[string]any)
+	if result.IsError || change["outcome"] != "justified" || body["end"] != "2026-10-03 00:46:18" || body["account"] != false ||
+		ack == nil || strings.Contains(fmt.Sprint(ack["acked_by"]), "@") {
+		t.Fatalf("justify_service_downtime = %+v, body %v", change, body)
+	}
+	// A period the service was up, or no comment: refused before any change.
+	for _, arguments := range []map[string]any{
+		{"service": "web", "begin": "2026-10-03 00:46:18", "comment": "maintenance", "counted": false},
+		{"service": "web", "begin": "2026-10-03 00:46:03", "comment": " ", "counted": false},
+	} {
+		if result, _ := call("justify_service_downtime", arguments); !result.IsError || len(requests) != 1 {
+			t.Fatalf("justify_service_downtime %v was accepted, requests %v", arguments, requests)
+		}
+	}
+	result, change = call("unjustify_service_downtime", map[string]any{"service": "web", "begin": "2026-10-03 00:46:03"})
+	if result.IsError || change["outcome"] != "removed" || len(requests) != 2 || !strings.Contains(requests[1], "begin=2026-10-03+00%3A46%3A03") {
+		t.Fatalf("unjustify_service_downtime = %+v, requests %v", change, requests)
+	}
+	result, change = call("unjustify_service_downtime", map[string]any{"service": "web", "begin": "2026-10-03 00:46:03"})
+	if result.IsError || change["outcome"] != "not_justified" || len(requests) != 2 {
+		t.Fatalf("unjustify_service_downtime of a period not justified = %+v, requests %v", change, requests)
 	}
 }
 

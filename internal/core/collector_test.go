@@ -66,8 +66,8 @@ func (f *fakeCollector) PutJSON(_ context.Context, path string, input any, outpu
 	return f.reply(path, nil, output)
 }
 
-func (f *fakeCollector) DeleteJSON(_ context.Context, path string, output any) error {
-	f.record(fakeRequest{method: "DELETE", path: path})
+func (f *fakeCollector) DeleteJSON(_ context.Context, path string, query url.Values, output any) error {
+	f.record(fakeRequest{method: "DELETE", path: path, query: query})
 	if f.err != nil {
 		return f.err
 	}

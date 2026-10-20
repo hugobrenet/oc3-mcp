@@ -294,7 +294,7 @@ func RegisterServiceTools(registrar *Registrar, service *core.Service) error {
 			Name:  "get_service_status_history",
 			Title: "Get service status history",
 			Description: "Read the status history and the availability rate of one OpenSVC service over the last days, 7 by default and 365 at most. The result holds the periods of one availability status, oldest first, with their justification when a responsible gave one, and the availability rate the collector computes over them, where the time no status covers counts as downtime and justified downtime marked not to count is left out. " +
-				"With node, the periods of one availability and overall status of the instance on that node instead, without rate. Use it to tell since when a service or instance is down. " +
+				"With node, the periods of one availability and overall status of the instance on that node instead, without rate. Use it to tell since when a service or instance is down; justify_service_downtime justifies a period of downtime by its begin. " +
 				"Names several items hold are refused with their IDs. The 500 most recent periods are kept. Collector dates are in its local time without a zone.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},

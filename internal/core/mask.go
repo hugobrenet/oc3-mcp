@@ -27,7 +27,15 @@ var emailPattern = regexp.MustCompile(`[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alph
 // the actor of something, its email addresses masked: the collector records
 // many of them as an email address, which the tools do not give.
 func personName(name string) string {
-	return emailPattern.ReplaceAllString(strings.TrimSpace(name), maskedRequestValue)
+	return maskEmails(strings.TrimSpace(name))
+}
+
+// maskEmails is a text a collector user wrote, such as a comment, its email
+// addresses masked. personName and maskEmails are where the tools mask the
+// identities of the people the collector records: showing them is changing
+// these two.
+func maskEmails(text string) string {
+	return emailPattern.ReplaceAllString(text, maskedRequestValue)
 }
 
 func sensitiveName(names ...string) bool {

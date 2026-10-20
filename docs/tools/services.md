@@ -295,8 +295,10 @@ The collector computes the rate as the time up or standby up over the counted
 time, from the start of the history when later than the days asked. The time
 no status covers counts as downtime; justified downtime marked not to count is
 left out, in `excluded_seconds`. A justification `ack` holds `comment`
-(untrusted text), `counted`, `acked_by` and `acked_on`. The end of the current
-period is the last status received. Periods are in collector local time
+(untrusted text, its email addresses masked), `counted`, `acked_by`, an email
+address the collector records, masked, and `acked_on`. The end of the current
+period is the last status received. `justify_service_downtime` justifies a
+period ([service downtime tools](service-downtime.md)). Periods are in collector local time
 without a zone.
 
 ### `list_service_resources`

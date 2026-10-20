@@ -73,6 +73,7 @@ var toolKeywords = map[string][]string{
 	"get_service_action_logs":      {"action log", "output", "error", "failure", "why it failed", "session"},
 	"get_service_resource_history": {"resource history", "since when", "degraded", "flapping", "resource down"},
 	"get_service_status_history":   {"outage", "downtime", "availability", "uptime", "sla", "since when", "history"},
+	"justify_service_downtime":     {"justify downtime", "explain outage", "planned maintenance", "exclude from availability", "downtime comment"},
 	"list_alerts":                  {"alert", "alarm", "warning", "problem", "issue", "incident", "dashboard"},
 	"list_clusters":                {"cluster", "quorum", "cluster list", "agent version"},
 	"list_collector_events":        {"event", "audit", "collector log", "who changed", "history", "undef"},
@@ -105,6 +106,7 @@ var toolKeywords = map[string][]string{
 	"list_users":                   {"user", "users", "people", "person", "who", "member", "members", "contact", "team members", "group members", "who is in"},
 	"queue_node_action":            {"run action", "push asset", "refresh inventory", "run checks", "compliance check", "trigger sysreport"},
 	"unfreeze_node":                {"thaw", "unfreeze", "resume automatic actions", "end maintenance"},
+	"unjustify_service_downtime":   {"remove downtime justification", "count downtime again"},
 	"update_node":                  {"modify node", "change node", "set app", "set status", "edit node", "node owner", "node location"},
 }
 

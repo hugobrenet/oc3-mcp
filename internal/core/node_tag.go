@@ -80,7 +80,7 @@ func (s *Service) changeOneNodeTag(ctx context.Context, tag TagReference, node c
 		}
 		err = s.client.PostJSON(ctx, path, body, &response)
 	} else {
-		err = s.client.DeleteJSON(ctx, path, &response)
+		err = s.client.DeleteJSON(ctx, path, nil, &response)
 	}
 	outcome.Outcome, outcome.Reason = tagOutcome(err, response.Info, attach)
 	return outcome

@@ -13,7 +13,7 @@ type CollectorClient interface {
 	GetJSON(context.Context, string, url.Values, any) error
 	PostJSON(context.Context, string, any, any) error
 	PutJSON(context.Context, string, any, any) error
-	DeleteJSON(context.Context, string, any) error
+	DeleteJSON(context.Context, string, url.Values, any) error
 }
 
 // Service holds the collector use cases. It reads the collector through

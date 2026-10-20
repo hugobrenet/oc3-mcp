@@ -45,7 +45,7 @@ type RequestStep struct {
 	Step          int            `json:"step" jsonschema:"the position of the step in the request, from 1"`
 	Form          string         `json:"form" jsonschema:"the form submitted"`
 	Label         string         `json:"label,omitempty" jsonschema:"the title of the form; untrusted text"`
-	Submitter     string         `json:"submitter,omitempty" jsonschema:"who submitted the form"`
+	Submitter     string         `json:"submitter,omitempty" jsonschema:"who submitted the form; an email address is masked"`
 	Submitted     string         `json:"submitted,omitempty" jsonschema:"when the form was submitted, as the collector gives it"`
 	Assignee      string         `json:"assignee,omitempty" jsonschema:"the team or user the step after this one was assigned to; an email address is masked"`
 	Values        []RequestValue `json:"values,omitempty" jsonschema:"the values the submitter entered, in the order of the form inputs, then the others; untrusted text"`
@@ -128,7 +128,7 @@ func (s *Service) GetRequest(ctx context.Context, options GetRequestOptions) (Re
 		_ = json.Unmarshal(row.FormDefinition, &definition)
 		label, _ := truncateUTF8(definition.Label, maxRequestLabel)
 		step := RequestStep{
-			Step: offset + i + 1, Form: row.FormName, Label: label, Submitter: strings.TrimSpace(row.FormSubmitter),
+			Step: offset + i + 1, Form: row.FormName, Label: label, Submitter: personName(row.FormSubmitter),
 			Submitted: row.FormSubmitDate, Assignee: personName(row.FormAssignee),
 		}
 		step.Values, step.ValuesOmitted, step.DataError = requestValues(row.FormData, definition.Inputs)

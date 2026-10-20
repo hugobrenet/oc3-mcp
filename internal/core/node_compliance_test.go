@@ -28,7 +28,7 @@ func (c complianceCollector) PostJSON(_ context.Context, path string, _ any, _ a
 	return c.change(path)
 }
 
-func (c complianceCollector) DeleteJSON(_ context.Context, path string, _ any) error {
+func (c complianceCollector) DeleteJSON(_ context.Context, path string, _ url.Values, _ any) error {
 	return c.change(path)
 }
 

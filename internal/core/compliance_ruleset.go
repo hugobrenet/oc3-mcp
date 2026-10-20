@@ -432,5 +432,5 @@ func maskVariableValue(name, value string) string {
 	// A text masks as a configuration, then any email address left, the
 	// value not being made of key = value lines alone.
 	masked, _ := maskServiceConfig(value)
-	return emailPattern.ReplaceAllString(masked, maskedRequestValue)
+	return maskEmails(masked)
 }

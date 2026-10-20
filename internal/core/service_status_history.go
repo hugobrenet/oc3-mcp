@@ -50,24 +50,44 @@ type StatusPeriod struct {
 }
 
 type StatusAck struct {
-	Comment string `json:"comment,omitempty" jsonschema:"the justification text; untrusted text"`
+	Comment string `json:"comment,omitempty" jsonschema:"the justification text, its email addresses masked; untrusted text"`
 	Counted bool   `json:"counted" jsonschema:"whether the period still counts in the availability rate"`
-	AckedBy string `json:"acked_by,omitempty" jsonschema:"who justified the period"`
+	AckedBy string `json:"acked_by,omitempty" jsonschema:"who justified the period; the collector records an email address, which this MCP masks"`
 	AckedOn string `json:"acked_on,omitempty" jsonschema:"when the period was justified"`
 }
 
 type collectorStatusPeriod struct {
-	Begin   string `json:"begin"`
-	End     string `json:"end"`
-	Status  string `json:"status"`
-	Avail   string `json:"avail"`
-	Overall string `json:"overall"`
-	Ack     *struct {
-		Comment string `json:"comment"`
-		Account bool   `json:"account"`
-		AckedBy string `json:"acked_by"`
-		AckedOn string `json:"acked_on"`
-	} `json:"ack"`
+	Begin   string              `json:"begin"`
+	End     string              `json:"end"`
+	Status  string              `json:"status"`
+	Avail   string              `json:"avail"`
+	Overall string              `json:"overall"`
+	Ack     *collectorStatusAck `json:"ack"`
+}
+
+type collectorStatusAck struct {
+	Comment string `json:"comment"`
+	Account bool   `json:"account"`
+	AckedBy string `json:"acked_by"`
+	AckedOn string `json:"acked_on"`
+}
+
+// statusAck is the justification of a period, its email addresses masked:
+// the collector records the email of who justified it.
+func (a *collectorStatusAck) statusAck() *StatusAck {
+	if a == nil {
+		return nil
+	}
+	return &StatusAck{Comment: maskEmails(a.Comment), Counted: a.Account, AckedBy: personName(a.AckedBy), AckedOn: a.AckedOn}
+}
+
+// availabilityWindow is the availability the collector computed.
+func (l collectorStatusLog) availabilityWindow() *ServiceAvailabilityWindow {
+	a := l.Availability
+	if a == nil {
+		return nil
+	}
+	return &ServiceAvailabilityWindow{From: a.From, To: a.To, RatePercent: a.Rate, AvailableSeconds: a.AvailableS, ExcludedSeconds: a.ExcludedS, CountedSeconds: a.CountedS}
 }
 
 type collectorStatusLog struct {
@@ -118,10 +138,7 @@ func (s *Service) GetServiceStatusHistory(ctx context.Context, options ServiceSt
 		return ServiceStatusHistory{}, fmt.Errorf("get status history of service %s: unexpected collector response", service.Svcname)
 	}
 	if result.Node == nil {
-		a := response.Availability
-		result.Availability = &ServiceAvailabilityWindow{
-			From: a.From, To: a.To, RatePercent: a.Rate, AvailableSeconds: a.AvailableS, ExcludedSeconds: a.ExcludedS, CountedSeconds: a.CountedS,
-		}
+		result.Availability = response.availabilityWindow()
 	}
 	periods := response.Data
 	result.Total = len(periods)
@@ -138,9 +155,7 @@ func (s *Service) GetServiceStatusHistory(ctx context.Context, options ServiceSt
 		} else {
 			item.Avail, item.Overall = period.Avail, period.Overall
 		}
-		if period.Ack != nil {
-			item.Ack = &StatusAck{Comment: period.Ack.Comment, Counted: period.Ack.Account, AckedBy: period.Ack.AckedBy, AckedOn: period.Ack.AckedOn}
-		}
+		item.Ack = period.Ack.statusAck()
 		result.Periods = append(result.Periods, item)
 	}
 	result.Provenance = s.newProvenance()

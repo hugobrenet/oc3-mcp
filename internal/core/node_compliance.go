@@ -132,7 +132,7 @@ func (s *Service) changeCompliance(ctx context.Context, path string, attach bool
 	if attach {
 		err = s.client.PostJSON(ctx, path, nil, &response)
 	} else {
-		err = s.client.DeleteJSON(ctx, path, &response)
+		err = s.client.DeleteJSON(ctx, path, nil, &response)
 	}
 	text := ""
 	if err != nil {

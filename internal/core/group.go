@@ -246,7 +246,7 @@ type UserList struct {
 
 type User struct {
 	ID        int    `json:"id" jsonschema:"the collector user ID; user_ followed by this ID names the personal group of the user"`
-	Username  string `json:"username,omitempty" jsonschema:"the login name of the user, when set"`
+	Username  string `json:"username,omitempty" jsonschema:"the login name of the user, when set; an email address is masked"`
 	FirstName string `json:"first_name,omitempty" jsonschema:"the first name"`
 	LastName  string `json:"last_name,omitempty" jsonschema:"the last name"`
 }
@@ -300,7 +300,7 @@ func (s *Service) ListUsers(ctx context.Context, options ListUsersOptions) (User
 	result.Total, result.Count = *response.Meta.Total, len(response.Data)
 	result.Users = make([]User, 0, len(response.Data))
 	for _, row := range response.Data {
-		result.Users = append(result.Users, User(row))
+		result.Users = append(result.Users, row.user())
 	}
 	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
 		result.NextCursor = encodeListCursor(next, fingerprint)
@@ -323,7 +323,7 @@ func (s *Service) searchUsers(ctx context.Context, result UserList, path, name s
 	var matching []User
 	for _, row := range response.Data {
 		if userMatches(row, name) {
-			matching = append(matching, User(row))
+			matching = append(matching, row.user())
 		}
 	}
 	result.Provenance = s.newProvenance()
@@ -409,13 +409,19 @@ func groupOf(row collectorGroup) Group {
 	return group
 }
 
+// user is a collector user as the tools give it, its names masked as those
+// of the people the collector records: a login name may be an email address.
+func (u collectorUser) user() User {
+	return User{ID: u.ID, Username: personName(u.Username), FirstName: personName(u.FirstName), LastName: personName(u.LastName)}
+}
+
 // userName is the first and last name of a user, or its username without
-// one.
+// one, masked as a person name.
 func userName(user collectorUser) string {
 	if name := strings.Join(strings.Fields(user.FirstName+" "+user.LastName), " "); name != "" {
-		return name
+		return personName(name)
 	}
-	return strings.TrimSpace(user.Username)
+	return personName(user.Username)
 }
 
 // userMatches tells whether name is in the first name, the last name, the
