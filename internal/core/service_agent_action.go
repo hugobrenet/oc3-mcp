@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,7 +17,16 @@ const (
 	maxServiceAgentActions = 200
 	// maxServiceAgentNamed bounds the services one call names.
 	maxServiceAgentNamed = 150
+	// maxServiceAgentResources bounds the resources one call names.
+	maxServiceAgentResources = 20
+	// maxInstanceResources bounds the resources of an instance read to
+	// check those named.
+	maxInstanceResources = 1000
 )
+
+// resourceIDPattern is a resource ID, such as fs#1 or app#web, within the
+// list the collector takes, comma-separated.
+var resourceIDPattern = regexp.MustCompile(`^[A-Za-z0-9_#.:-]+$`)
 
 // serviceAgentAction is what an agent action on services acts on.
 type serviceAgentAction struct {
@@ -37,6 +47,9 @@ type serviceAgentAction struct {
 	// instance, when the agent version of its node is 1.9 or later, and
 	// bare else: the agent then acts on the whole service.
 	local bool
+	// resources is an action the agent runs on some resources of an
+	// instance, which the collector queues with --rid instead of --local.
+	resources bool
 }
 
 // serviceAgentActions are the agent actions on services the MCP queues, as
@@ -47,9 +60,9 @@ type serviceAgentAction struct {
 var serviceAgentActions = map[string]serviceAgentAction{
 	"freeze":   {service: true, instance: true, local: true},
 	"thaw":     {service: true, instance: true, local: true},
-	"start":    {service: true, instance: true, local: true},
-	"stop":     {service: true, instance: true, local: true},
-	"restart":  {instance: true, local: true},
+	"start":    {service: true, instance: true, local: true, resources: true},
+	"stop":     {service: true, instance: true, local: true, resources: true},
+	"restart":  {instance: true, local: true, resources: true},
 	"switch":   {service: true, failover: true},
 	"giveback": {service: true},
 	"takeover": {instance: true, destination: true},
@@ -66,6 +79,9 @@ type ServiceAgentActionOptions struct {
 	Local  bool
 	// Destination is the node a takeover moves the services selected to.
 	Destination string
+	// Resources are the resource IDs the action acts on, on each instance
+	// selected.
+	Resources []string
 	ServiceSelection
 }
 
@@ -74,6 +90,7 @@ type ServiceAgentActionQueueing struct {
 	Action     string         `json:"action" jsonschema:"the agent action queued"`
 	Local      bool           `json:"local" jsonschema:"true when the action acts on instances, each run by its node, false on whole services"`
 	To         *NodeReference `json:"to,omitempty" jsonschema:"with takeover_service, the destination node"`
+	Resources  []string       `json:"resources,omitempty" jsonschema:"the resource IDs the action acts on, on each instance"`
 	ServiceSelectionScope
 	Selected  int                         `json:"selected" jsonschema:"the number of services, or of instances with local, selected"`
 	Queued    int                         `json:"queued" jsonschema:"the number of actions queued"`
@@ -106,6 +123,8 @@ type serviceAgentTarget struct {
 	availability, agentVersion string
 	// missing is a service named with no instance selected: refused.
 	missing string
+	// warning is told on the action queued.
+	warning string
 }
 
 // QueueServiceAgentAction queues an agent action on the selected services,
@@ -118,7 +137,11 @@ func (s *Service) QueueServiceAgentAction(ctx context.Context, options ServiceAg
 	if !ok {
 		return ServiceAgentActionQueueing{}, fmt.Errorf("unsupported service action %q", options.Action)
 	}
-	local := options.Local || !spec.service
+	resources, err := checkActionResources(options.Action, spec, options.Resources)
+	if err != nil {
+		return ServiceAgentActionQueueing{}, err
+	}
+	local := options.Local || !spec.service || len(resources) > 0
 	selection := options.ServiceSelection
 	switch {
 	case local && !spec.instance:
@@ -127,8 +150,10 @@ func (s *Service) QueueServiceAgentAction(ctx context.Context, options ServiceAg
 		return ServiceAgentActionQueueing{}, fmt.Errorf("%s moves the services selected to one node: pass to, the destination", options.Action)
 	case !spec.destination && options.Destination != "":
 		return ServiceAgentActionQueueing{}, fmt.Errorf("to is the destination of takeover_service only")
+	case len(resources) > 0 && selection.Node == "" && selection.OnNodes == nil:
+		return ServiceAgentActionQueueing{}, fmt.Errorf("resources act on the instances of the nodes given: pass node, such as the node the service runs on, which get_service gives, or on_nodes; nothing was queued")
 	case local && !spec.destination && selection.Node == "" && selection.OnNodes == nil:
-		return ServiceAgentActionQueueing{}, fmt.Errorf("%s acts on instances: pass node or on_nodes, the nodes of the instances", options.Action)
+		return ServiceAgentActionQueueing{}, fmt.Errorf("%s acts on the instances of the nodes given: pass node, such as the node the service runs on, which get_service gives, or on_nodes; nothing was queued", options.Action)
 	}
 	// The services named, or those the filters select, a node alone
 	// selecting every service of the node: the confirmation of the agent
@@ -160,7 +185,7 @@ func (s *Service) QueueServiceAgentAction(ctx context.Context, options ServiceAg
 		}
 		only = []string{"svc_id:in:" + strings.Join(ids, ",")}
 	}
-	result := ServiceAgentActionQueueing{Action: options.Action, Local: local, Actions: []ServiceAgentActionOutcome{}}
+	result := ServiceAgentActionQueueing{Action: options.Action, Local: local, Resources: resources, Actions: []ServiceAgentActionOutcome{}}
 	var targets []serviceAgentTarget
 	found := map[string]bool{}
 	switch {
@@ -232,9 +257,15 @@ func (s *Service) QueueServiceAgentAction(ctx context.Context, options ServiceAg
 	if spec.compliance {
 		unattached = s.servicesWithoutModuleset(ctx, targets)
 	}
+	// The resources named are checked on each instance, as its agent
+	// reported them: one it lacks would fail on the agent.
+	if len(resources) > 0 {
+		s.checkInstanceResources(ctx, targets, resources)
+	}
+	rid := strings.Join(resources, ",")
 	outcomes := make([]ServiceAgentActionOutcome, len(targets))
 	forEachSelected(ctx, len(targets), func(index int) {
-		outcomes[index] = s.queueServiceAgentAction(ctx, options.Action, spec, targets[index])
+		outcomes[index] = s.queueServiceAgentAction(ctx, options.Action, spec, rid, targets[index])
 	}, func(index int) {
 		target := targets[index]
 		outcomes[index] = ServiceAgentActionOutcome{SvcID: target.service.SvcID, Svcname: target.service.Svcname, ClusterID: target.service.ClusterID, NodeID: target.node, Nodename: target.nodename, Outcome: ChangeNotAttempted}
@@ -269,6 +300,11 @@ func (s *Service) QueueServiceAgentAction(ctx context.Context, options ServiceAg
 			}
 		}
 		result.FollowUp = fmt.Sprintf("list_node_actions with %s: an agent takes the action within seconds; done with exit code 0 means the agent accepted it, an orchestration of start, stop, switch, giveback or takeover then going on; get_service gives the state of the instances, which the collector receives 10 to 20 seconds later", filter)
+		if len(resources) > 0 {
+			// An action on resources is not orchestrated: the agent runs
+			// it on its instance, and it is over when done.
+			result.FollowUp = fmt.Sprintf("list_node_actions with %s: the agent runs it on the resources of its instance within seconds, without orchestration, and the action is done when they are, with exit code 0 when it succeeded; list_service_resources%s gives their status, which the collector receives 10 to 20 seconds later", filter, service)
+		}
 		if spec.compliance {
 			// A compliance run is not orchestrated: done, it is over, and
 			// its modules report to the collector.
@@ -277,6 +313,73 @@ func (s *Service) QueueServiceAgentAction(ctx context.Context, options ServiceAg
 	}
 	result.Provenance = s.newProvenance()
 	return result, nil
+}
+
+// checkActionResources checks the resource IDs of an action: the actions on
+// resources only, each a resource ID, without duplicates.
+func checkActionResources(action string, spec serviceAgentAction, resources []string) ([]string, error) {
+	if len(resources) == 0 {
+		return nil, nil
+	}
+	if !spec.resources {
+		return nil, fmt.Errorf("%s does not act on resources: resources is taken by start_service, stop_service and restart_service", action)
+	}
+	if len(resources) > maxServiceAgentResources {
+		return nil, fmt.Errorf("pass at most %d resources", maxServiceAgentResources)
+	}
+	seen := map[string]bool{}
+	checked := make([]string, 0, len(resources))
+	for _, resource := range resources {
+		resource = strings.TrimSpace(resource)
+		if !resourceIDPattern.MatchString(resource) {
+			return nil, fmt.Errorf("resource %q is not a resource ID, such as fs#1, as list_service_resources gives it", resource)
+		}
+		if !seen[resource] {
+			seen[resource] = true
+			checked = append(checked, resource)
+		}
+	}
+	return checked, nil
+}
+
+// checkInstanceResources refuses the instances of targets without one of the
+// resources, as their agents reported them, and warns of the disabled ones,
+// which the agent skips.
+func (s *Service) checkInstanceResources(ctx context.Context, targets []serviceAgentTarget, resources []string) {
+	forEachSelected(ctx, len(targets), func(index int) {
+		target := &targets[index]
+		if target.missing != "" {
+			return
+		}
+		var response collectorList[collectorResource]
+		filters := []string{filterEquals("svc_id", target.service.SvcID), filterEquals("node_id", target.node)}
+		err := s.client.GetJSON(ctx, "/resources", pageQuery([]string{"rid", "res_disable"}, "rid", filters, maxInstanceResources, 0), &response)
+		if err != nil {
+			target.missing = fmt.Sprintf("the resources of service %s on node %s could not be read: %v; nothing was queued for it", target.service.Svcname, target.nodename, err)
+			return
+		}
+		reported := map[string]collectorResource{}
+		for _, resource := range response.Data {
+			reported[resource.RID] = resource
+		}
+		var lacking, skipped []string
+		for _, rid := range resources {
+			resource, ok := reported[rid]
+			switch {
+			case !ok:
+				lacking = append(lacking, rid)
+			case collectorBool(resource.ResDisable):
+				skipped = append(skipped, rid)
+			}
+		}
+		if len(lacking) > 0 {
+			target.missing = fmt.Sprintf("service %s has no resource %s on node %s, as its agent reported them: nothing was queued for it; list_service_resources gives its resources", target.service.Svcname, strings.Join(lacking, ", "), target.nodename)
+			return
+		}
+		if len(skipped) > 0 {
+			target.warning = fmt.Sprintf("resource %s of service %s is disabled on node %s: the agent skips it", strings.Join(skipped, ", "), target.service.Svcname, target.nodename)
+		}
+	}, func(int) {})
 }
 
 // servicesWithoutModuleset tells the services of targets with no moduleset
@@ -349,7 +452,7 @@ func (s *Service) takeoverTargets(ctx context.Context, destination string, targe
 }
 
 // queueServiceAgentAction queues the action for one service or instance.
-func (s *Service) queueServiceAgentAction(ctx context.Context, action string, spec serviceAgentAction, target serviceAgentTarget) ServiceAgentActionOutcome {
+func (s *Service) queueServiceAgentAction(ctx context.Context, action string, spec serviceAgentAction, rid string, target serviceAgentTarget) ServiceAgentActionOutcome {
 	outcome := ServiceAgentActionOutcome{SvcID: target.service.SvcID, Svcname: target.service.Svcname, ClusterID: target.service.ClusterID, NodeID: target.node, Nodename: target.nodename, Outcome: ChangeRefused}
 	if target.missing != "" {
 		outcome.Reason = target.missing
@@ -357,8 +460,8 @@ func (s *Service) queueServiceAgentAction(ctx context.Context, action string, sp
 	}
 	// The collector adds --local for an agent of version 1.9 or later, as
 	// pushasset reports it: without, the bare action would act on the whole
-	// service.
-	if target.node != "" && spec.local && !agentAtLeast19(target.agentVersion) {
+	// service. With resources, it adds --rid instead, whatever the version.
+	if target.node != "" && spec.local && rid == "" && !agentAtLeast19(target.agentVersion) {
 		outcome.Reason = fmt.Sprintf("the collector holds no agent version 1.9 or later for node %s, which pushasset reports, and would queue the action without --local, on the whole service: nothing was queued for it; queue_node_action pushasset on the node first", target.nodename)
 		return outcome
 	}
@@ -377,6 +480,9 @@ func (s *Service) queueServiceAgentAction(ctx context.Context, action string, sp
 	body := map[string]any{"svc_id": target.service.SvcID, "action": action}
 	if target.node != "" {
 		body["node_id"] = target.node
+	}
+	if rid != "" {
+		body["rid"] = rid
 	}
 	var response struct {
 		Data []struct {
@@ -399,8 +505,8 @@ func (s *Service) queueServiceAgentAction(ctx context.Context, action string, sp
 			outcome.NodeID = queued.NodeID
 		}
 	}
-	outcome.Warning = queueWarning(outcome.QueuedFor)
-	if target.node != "" && spec.local && outcome.Command != "" && !strings.Contains(outcome.Command, "--local") {
+	outcome.Warning = strings.TrimSpace(queueWarning(outcome.QueuedFor) + " " + target.warning)
+	if target.node != "" && spec.local && rid == "" && outcome.Command != "" && !strings.Contains(outcome.Command, "--local") {
 		outcome.Warning = strings.TrimSpace(outcome.Warning + " queued without --local: the agent acts on the whole service, not only its instance on this node")
 	}
 	return outcome

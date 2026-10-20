@@ -103,6 +103,7 @@ command the collector built:
 | Action | On a service | On an instance |
 |---|---|---|
 | `freeze`, `thaw`, `start`, `stop`, `restart` | `<action>` | `<action> --local` |
+| `start`, `stop`, `restart` with `resources` | not taken by the collector | `<action> --rid <resources>` |
 | `takeover`, `switch` | `<action>` | `<action>` |
 | `giveback`, `abort` | `<action>` | not offered: the collector adds `--local`, which om3 refuses |
 | `compliance_check`, `compliance_fix` | not taken by the collector | `compliance check`, `compliance fix`, without `--local` |
@@ -132,6 +133,36 @@ on another node than the preferred one, or on two: the daemons choose the
 node on the view they have of their peers, which lags behind the stop
 flags they clear. The tool descriptions say so, to check the placement.
 
+## Resources
+
+`start_service`, `stop_service` and `restart_service` take `resources`, the
+IDs of some resources of the services, such as `fs#1`: the action acts on
+those resources only, on each instance selected, which requires `node` or
+`on_nodes`. The collector takes them as `rid`, comma-separated, with a
+`node_id` alone, and queues `<action> --rid <resources>` instead of
+`--local`, whatever the agent version: the MCP checks no version for them.
+om3 runs an action with `--rid` inline on the local instance, without
+orchestration: when the action is done, it is over.
+
+A resource ID is checked against the pattern of the collector, without the
+comma, which the MCP adds, at most 20 per call. The MCP reads the resources
+of each instance selected, as its agent reported them, one request each: an
+instance without one of the resources named is refused, with the reason;
+one of them disabled, which the agent skips, is warned of. `freeze_service`
+and `thaw_service` do not take `resources`. `get_service`
+gives the configuration text of the service, which defines its resources,
+and `list_service_resources` their status on each node: the descriptions
+point to both.
+
+A stop of some resources leaves the instance expected started: the om3
+daemon disables its monitor on a stop of the whole instance only
+(`daemon/imon/main_cmd.go`, `IsPartial`). It then sees a monitored resource
+stopped as a failure: it restarts it, or runs the monitor action of the
+service, such as a failover. `freeze_service` with `local` on the instance
+first keeps the daemon from acting. The MCP neither warns of nor refuses a
+stop of a monitored resource: the confirmation of the call, which its
+destructive annotation asks for, is the guard.
+
 ## Compliance runs
 
 `check_service_compliance` and `fix_service_compliance` act on instances
@@ -159,6 +190,8 @@ them, not NodeExec.
 GET    /api/services, /api/services_instances, …   the selection
 PUT    /api/actions   {"svc_id": …, "action": …}                 on a service
 PUT    /api/actions   {"svc_id": …, "node_id": …, "action": …}   on an instance
+PUT    /api/actions   {"svc_id": …, "node_id": …, "action": …, "rid": …}   on resources
+GET    /api/resources?filter=svc_id:eq:…&filter=node_id:eq:…   the resources of an instance
 ```
 
 The collector requires the NodeExec privilege, CompExec for the compliance
@@ -178,14 +211,15 @@ carries a warning.
 | `to` | `takeover_service` only, required: the destination node |
 | filters, `node`, `on_nodes`, `instance_*` | Optional: they select the services, or narrow those named, see [selection](#selection) |
 | `local` | `freeze_service`, `thaw_service`, `start_service` and `stop_service` only: true acts on the instances on `node` or the nodes of `on_nodes` |
-| `node` or `on_nodes` | Required by `restart_service`, the nodes of the instances, and with `local` |
+| `resources` | `start_service`, `stop_service` and `restart_service` only: exact resource IDs, such as `fs#1`, at most 20; the action acts on those resources of the instances, see [resources](#resources) |
+| `node` or `on_nodes` | Required by `restart_service`, the nodes of the instances, and with `local` or `resources` |
 
 ## Output
 
 | Output field | Meaning |
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
-| `action`, `local`, `to` | The action, whether it acts on instances, and the destination of a takeover |
+| `action`, `local`, `to`, `resources` | The action, whether it acts on instances, the destination of a takeover, and the resources acted on |
 | `node`, `on_nodes_selected`, `on_nodes_filter`, `filter_tag`, `filterset`, `filter_ruleset`, `filter_moduleset` | The filters of the selection, resolved |
 | `selected`, `queued`, `unchanged`, `refused` | Services or instances selected, actions queued, left as they were, and not queued: refused or not attempted |
 | `actions[]` | `svc_id`, `svcname`, `cluster_id`, `node_id` and `nodename`, the node of the instance or the one the collector chose, `outcome` (`queued`, `unchanged`, `refused`, `not_attempted`), `reason`, `action_id`, `command`, `queued_for` and `warning`, sorted by service then node |

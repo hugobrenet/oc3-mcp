@@ -898,6 +898,12 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				t.Fatalf("%s local input = %v", name, ok)
 			}
 		}
+		// resources is an input of start, stop and restart only.
+		for name, resources := range map[string]bool{"start_service": true, "stop_service": true, "restart_service": true, "freeze_service": false, "thaw_service": false, "switch_service": false, "check_service_compliance": false} {
+			if _, ok := properties(name)["resources"]; ok != resources {
+				t.Fatalf("%s resources input = %v", name, ok)
+			}
+		}
 		if len(found) != 38 {
 			t.Fatalf("action tools = %v", found)
 		}
@@ -1370,6 +1376,8 @@ func TestServiceAgentActionTools(t *testing.T) {
 		case "GET /services_instances":
 			_, _ = w.Write([]byte(`{"data":[{"svc_id":"s-1","node_id":"n-1","nodes.nodename":"dev2n1","nodes.version":"v3.0.0-rc50-8","services.svcname":"foo","services.svc_topology":"failover"},
 				{"svc_id":"s-2","node_id":"n-1","nodes.nodename":"dev2n1","nodes.version":"v3.0.0-rc50-8","services.svcname":"bug1","services.svc_topology":"flex"}],"meta":{"total":2}}`))
+		case "GET /resources":
+			_, _ = w.Write([]byte(`{"data":[{"rid":"fs#1","res_disable":"F"}],"meta":{"total":1}}`))
 		case "PUT /actions":
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
@@ -1434,6 +1442,14 @@ func TestServiceAgentActionTools(t *testing.T) {
 	if result.IsError || queued["queued"] != float64(1) || queued["refused"] != float64(1) || len(actions) != 2 || len(bodies) != 9 ||
 		bodies[7]["action"] != "compliance_fix" || bodies[7]["node_id"] != "n-1" || !strings.Contains(fmt.Sprint(actions[0].(map[string]any)["reason"]), "CompExec") {
 		t.Fatalf("fix_service_compliance = %+v, bodies %v", queued, bodies)
+	}
+	// A restart of the resource fs#1 of the services of dev2n1, with --rid.
+	result, queued = call("restart_service", map[string]any{"node": "dev2n1", "resources": []string{"fs#1"}})
+	if result.IsError || queued["queued"] != float64(2) || len(bodies) != 11 || bodies[9]["rid"] != "fs#1" || bodies[10]["rid"] != "fs#1" || bodies[9]["node_id"] != "n-1" {
+		t.Fatalf("restart_service with resources = %+v, bodies %v", queued, bodies)
+	}
+	if result, _ := call("stop_service", map[string]any{"node": "dev2n1", "resources": []string{"fs#9"}}); result.IsError || len(bodies) != 11 {
+		t.Fatalf("a stop of a resource the instances lack was queued, bodies %v", bodies)
 	}
 }
 
