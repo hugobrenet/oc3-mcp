@@ -126,10 +126,11 @@ func (c *Client) PutJSON(ctx context.Context, path string, input any, output any
 	return c.do(ctx, http.MethodPut, path, nil, input, output)
 }
 
-// DeleteJSON sends a DELETE request and reads the bounded JSON response.
-// It changes the collector state: only the action tools call it.
-func (c *Client) DeleteJSON(ctx context.Context, path string, output any) error {
-	return c.do(ctx, http.MethodDelete, path, nil, nil, output)
+// DeleteJSON sends a DELETE request, with query when the route names what it
+// deletes there, and reads the bounded JSON response. It changes the
+// collector state: only the action tools call it.
+func (c *Client) DeleteJSON(ctx context.Context, path string, query url.Values, output any) error {
+	return c.do(ctx, http.MethodDelete, path, query, nil, output)
 }
 
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, input any, output any) error {

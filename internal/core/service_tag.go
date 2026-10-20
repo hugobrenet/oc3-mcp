@@ -103,7 +103,7 @@ func (s *Service) changeServiceTag(ctx context.Context, options ServiceTagOption
 			}
 			err = s.client.PostJSON(ctx, path, body, &response)
 		} else {
-			err = s.client.DeleteJSON(ctx, path, &response)
+			err = s.client.DeleteJSON(ctx, path, nil, &response)
 		}
 		outcome.Outcome, outcome.Reason = tagOutcome(err, response.Info, attach)
 		return outcome

@@ -115,7 +115,7 @@ func (a collectorServiceAction) summary() ServiceAction {
 		ID: a.ID, SessionID: a.SID, SvcID: a.SvcID, Svcname: a.Svcname, NodeID: a.NodeID, Nodename: a.Nodename, RID: a.RID,
 		Action: a.Action, Origin: a.Origin, Status: a.Status, Begin: a.Begin, End: a.End, DurationSeconds: a.Time, Command: a.Command,
 		Acknowledged: anyText(a.Ack) == "1", AckedBy: personName(a.AckedBy), AckedAt: zeroDate(a.AckedDate),
-		AckedComment: emailPattern.ReplaceAllString(a.AckedComment, maskedRequestValue),
+		AckedComment: maskEmails(a.AckedComment),
 	}
 }
 

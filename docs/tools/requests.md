@@ -114,7 +114,7 @@ A request the caller takes no part in is not found, as in `list_requests`.
 | `provenance` | Collector API source and MCP collection time |
 | `request` | The request, as `list_requests` returns it |
 | `total_steps` | The forms submitted in the request |
-| `steps[]` | `step` (from 1), `form`, `label`, `submitter`, `submitted`, `assignee`, `values[]`, `values_omitted`, `data_error` |
+| `steps[]` | `step` (from 1), `form`, `label`, `submitter` and `assignee`, an email address in them masked, `submitted`, `values[]`, `values_omitted`, `data_error` |
 | `values[]` | `entry`, `input`, `label`, `value`, `masked`, `truncated` |
 | `next_cursor`, `truncated` | The cursor of the next steps, and whether some remain |
 

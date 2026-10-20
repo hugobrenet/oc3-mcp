@@ -160,5 +160,5 @@ column at a time, and the members of a group not at all.
 | `total` | Users matching, as the collector counts them, or with `name` as the MCP counts them among those it read |
 | `scan_truncated` | With `name`, whether only the first 1000 users were read |
 | `count`, `truncated` | Users in this page, and whether more remain |
-| `users[]` | `id`, `username`, `first_name`, `last_name` |
+| `users[]` | `id`, `username`, `first_name`, `last_name`, an email address in them masked |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |

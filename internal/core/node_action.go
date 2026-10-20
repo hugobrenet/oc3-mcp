@@ -167,7 +167,7 @@ func (s *Service) DeleteNode(ctx context.Context, node string) (NodeDeletion, er
 	var response struct {
 		Info string `json:"info"`
 	}
-	if err := s.client.DeleteJSON(ctx, "/nodes/"+url.PathEscape(reference.NodeID), &response); err != nil {
+	if err := s.client.DeleteJSON(ctx, "/nodes/"+url.PathEscape(reference.NodeID), nil, &response); err != nil {
 		return NodeDeletion{}, fmt.Errorf("delete node %s: %w", reference.Nodename, err)
 	}
 	return NodeDeletion{Provenance: s.newProvenance(), Node: reference, Deleted: true}, nil

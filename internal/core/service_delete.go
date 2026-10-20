@@ -55,7 +55,7 @@ func (s *Service) DeleteService(ctx context.Context, service string) (ServiceDel
 	var response struct {
 		Info string `json:"info"`
 	}
-	if err := s.client.DeleteJSON(ctx, "/services/"+url.PathEscape(found.SvcID), &response); err != nil {
+	if err := s.client.DeleteJSON(ctx, "/services/"+url.PathEscape(found.SvcID), nil, &response); err != nil {
 		return ServiceDeletion{}, fmt.Errorf("delete service %s: %w", found.Svcname, err)
 	}
 	result := ServiceDeletion{Provenance: s.newProvenance(), Service: reference, App: found.SvcApp, Instances: instances, Recent: recent, Deleted: true}
@@ -97,7 +97,7 @@ func (s *Service) DeleteServiceInstance(ctx context.Context, service, node strin
 	var response struct {
 		Info string `json:"info"`
 	}
-	if err := s.client.DeleteJSON(ctx, "/services/"+url.PathEscape(found.SvcID)+"/instances/"+url.PathEscape(foundNode.NodeID), &response); err != nil {
+	if err := s.client.DeleteJSON(ctx, "/services/"+url.PathEscape(found.SvcID)+"/instances/"+url.PathEscape(foundNode.NodeID), nil, &response); err != nil {
 		return ServiceInstanceDeletion{}, fmt.Errorf("delete instance of %s on %s: %w", found.Svcname, foundNode.Nodename, err)
 	}
 	result.Provenance, result.Deleted = s.newProvenance(), true

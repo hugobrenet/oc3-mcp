@@ -67,10 +67,9 @@ type AckServiceActionsOptions struct {
 // node, and updates the action errors alert of the instance. An
 // acknowledgement is not withdrawn.
 func (s *Service) AckServiceActions(ctx context.Context, options AckServiceActionsOptions) (ServiceActionAcknowledgement, error) {
-	comment := strings.TrimSpace(options.Comment)
-	if comment == "" || len(comment) > maxAckCommentBytes || !utf8.ValidString(comment) ||
-		strings.ContainsFunc(comment, func(r rune) bool { return r < ' ' && r != '\n' || r == 0x7f }) {
-		return ServiceActionAcknowledgement{}, fmt.Errorf("comment must be 1 to %d bytes of printable text: the reason of the acknowledgement, which the user gives", maxAckCommentBytes)
+	comment, err := checkUserComment(options.Comment, "the reason of the acknowledgement")
+	if err != nil {
+		return ServiceActionAcknowledgement{}, err
 	}
 	byFilters := options.Service != "" || options.Node != "" || options.Action != "" || options.Since != ""
 	switch {
@@ -103,6 +102,17 @@ func (s *Service) AckServiceActions(ctx context.Context, options AckServiceActio
 	result.Selected = len(result.Actions)
 	result.Provenance = s.newProvenance()
 	return result, nil
+}
+
+// checkUserComment trims a comment the user gives, of what, and refuses one
+// empty, too long, or holding control characters but newlines.
+func checkUserComment(comment, what string) (string, error) {
+	comment = strings.TrimSpace(comment)
+	if comment == "" || len(comment) > maxAckCommentBytes || !utf8.ValidString(comment) ||
+		strings.ContainsFunc(comment, func(r rune) bool { return r < ' ' && r != '\n' || r == 0x7f }) {
+		return "", fmt.Errorf("comment must be 1 to %d bytes of printable text: %s, which the user gives", maxAckCommentBytes, what)
+	}
+	return comment, nil
 }
 
 func (r *ServiceActionAcknowledgement) count(check ServiceActionAckCheck) {
