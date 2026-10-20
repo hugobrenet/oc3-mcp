@@ -67,7 +67,7 @@ func TestDetachServiceTagFromTheServicesOfANode(t *testing.T) {
 	}
 	for _, request := range collector.requests {
 		if request.path == "/services_instances" &&
-			(strings.Join(request.query["filter"], " ") != "node_id:eq:n-1 services.svc_topology:eq:failover" || request.query.Get("props") != "svc_id,services.svcname,services.cluster_id,services.svc_sla,services.svc_availability,node_id") {
+			(strings.Join(request.query["filter"], " ") != "node_id:eq:n-1 services.svc_topology:eq:failover" || request.query.Get("props") != "svc_id,services.svcname,services.cluster_id,services.svc_topology,services.svc_sla,services.svc_availability,node_id,nodes.nodename,nodes.version,mon_availstatus") {
 			t.Fatalf("selection request = %+v", request)
 		}
 	}

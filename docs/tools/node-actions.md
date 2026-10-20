@@ -500,6 +500,7 @@ names come from the joins of the queue; the user, which has none, from
 | Input | Meaning |
 |---|---|
 | `node` | Optional exact node name or node ID |
+| `service` | Optional exact service name or service ID: the actions on the service and its instances, such as those of the [service agent action tools](service-agent-actions.md) |
 | `status` | Optional: `waiting`, `notified`, `queued`, `sent`, `running`, `done`, `cancelled` |
 | `command` | Optional text the command contains |
 | `since` | Optional date the action was queued at or after, in collector local time |
@@ -512,6 +513,7 @@ names come from the joins of the queue; the user, which has none, from
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `node` | With `node`, the node it resolved to |
+| `service` | With `service`, the service it resolved to |
 | `total`, `count`, `truncated`, `next_cursor` | As the other lists |
 | `actions[]` | `id`, `node_id`, `nodename`, `svc_id`, `svcname`, `command`, `status`, `queued_at`, `dequeued_at`, and when done `ret`, `stdout`, `stderr`, `output_truncated`; `user`, the name of who queued it, email addresses masked; `action_type` |
 

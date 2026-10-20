@@ -62,8 +62,9 @@ func (selection ServiceSelection) byInstance() bool {
 	return selection.Node != "" || selection.OnNodes != nil || selection.Instance != InstanceState{}
 }
 
-// ServiceChangeSummary is the outcome of a change on the selected services.
-type ServiceChangeSummary struct {
+// ServiceSelectionScope is what the filters of a selection of services
+// resolved to.
+type ServiceSelectionScope struct {
 	Node            *NodeReference                `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
 	OnNodes         *int                          `json:"on_nodes_selected,omitempty" jsonschema:"with on_nodes, the number of nodes the node filters selected"`
 	OnNodesFilter   *NodeMembership               `json:"on_nodes_filter,omitempty" jsonschema:"with on_nodes and its tag, filterset, ruleset or moduleset filter, what it resolved to"`
@@ -71,11 +72,21 @@ type ServiceChangeSummary struct {
 	FilterTag       *TagReference                 `json:"filter_tag,omitempty" jsonschema:"the tag the tag filter resolved to"`
 	FilterRuleset   *ComplianceRulesetReference   `json:"filter_ruleset,omitempty" jsonschema:"the ruleset the ruleset filter resolved to"`
 	FilterModuleset *ComplianceModulesetReference `json:"filter_moduleset,omitempty" jsonschema:"the moduleset the moduleset filter resolved to"`
-	Selected        int                           `json:"selected" jsonschema:"the number of services selected"`
-	Changed         int                           `json:"changed" jsonschema:"the number of services changed"`
-	Unchanged       int                           `json:"unchanged" jsonschema:"the number of services already as asked"`
-	Refused         int                           `json:"refused" jsonschema:"the number of services not changed: refused by the collector, or not attempted when the call ended before"`
-	Services        []ServiceChangeOutcome        `json:"services" jsonschema:"the outcome on each service, sorted by service name"`
+}
+
+func (scope *ServiceSelectionScope) members(members ServiceMembership) {
+	scope.FilterTag, scope.Filterset = members.Tag, members.Filterset
+	scope.FilterRuleset, scope.FilterModuleset = members.Ruleset, members.Moduleset
+}
+
+// ServiceChangeSummary is the outcome of a change on the selected services.
+type ServiceChangeSummary struct {
+	ServiceSelectionScope
+	Selected  int                    `json:"selected" jsonschema:"the number of services selected"`
+	Changed   int                    `json:"changed" jsonschema:"the number of services changed"`
+	Unchanged int                    `json:"unchanged" jsonschema:"the number of services already as asked"`
+	Refused   int                    `json:"refused" jsonschema:"the number of services not changed: refused by the collector, or not attempted when the call ended before"`
+	Services  []ServiceChangeOutcome `json:"services" jsonschema:"the outcome on each service, sorted by service name"`
 }
 
 type ServiceChangeOutcome struct {
@@ -90,22 +101,30 @@ type ServiceChangeOutcome struct {
 }
 
 // selectedService is a service of a selection, with its SLA and
-// availability, which set_service_sla compares.
+// availability, which set_service_sla compares, and its topology, which a
+// switch checks.
 type selectedService struct {
-	SvcID, Svcname, ClusterID string
-	SLA, Availability         *float64
+	SvcID, Svcname, ClusterID, Topology string
+	SLA, Availability                   *float64
+}
+
+// selectedInstance is an instance of a selected service, on its node, with
+// its availability and the agent version of its node.
+type selectedInstance struct {
+	selectedService
+	NodeID, Nodename, Availability, AgentVersion string
 }
 
 // selectionProps are the props a selection reads, named with prefix.
 func selectionProps(prefix string) []string {
-	return []string{"svc_id", prefix + "svcname", prefix + "cluster_id", prefix + "svc_sla", prefix + "svc_availability"}
+	return []string{"svc_id", prefix + "svcname", prefix + "cluster_id", prefix + "svc_topology", prefix + "svc_sla", prefix + "svc_availability"}
 }
 
 // selectedRow is the service of a row a selection read, its props named
 // with prefix.
 func selectedRow(row map[string]any, prefix string) selectedService {
 	return selectedService{
-		SvcID: propText(row, "svc_id"), Svcname: propText(row, prefix+"svcname"), ClusterID: propText(row, prefix+"cluster_id"),
+		SvcID: propText(row, "svc_id"), Svcname: propText(row, prefix+"svcname"), ClusterID: propText(row, prefix+"cluster_id"), Topology: propText(row, prefix+"svc_topology"),
 		SLA: propNumber(row, prefix+"svc_sla"), Availability: propNumber(row, prefix+"svc_availability"),
 	}
 }
@@ -154,22 +173,7 @@ func checkServiceSelection(selection ServiceSelection) error {
 // change, a few at a time: one request per service, not atomic.
 func (s *Service) changeSelectedServices(ctx context.Context, selection ServiceSelection, change func(context.Context, selectedService) ServiceChangeOutcome) (ServiceChangeSummary, error) {
 	var summary ServiceChangeSummary
-	var services []selectedService
-	var err error
-	switch {
-	case len(selection.Services) > 0:
-		services, err = s.resolveServices(ctx, selection.Services)
-	case selection.byInstance():
-		services, err = s.selectServicesByInstance(ctx, selection, &summary)
-	default:
-		path, members, pathErr := s.serviceMemberPath(ctx, selection.Filters)
-		if pathErr != nil {
-			return ServiceChangeSummary{}, pathErr
-		}
-		summary.FilterTag, summary.Filterset = members.Tag, members.Filterset
-		summary.FilterRuleset, summary.FilterModuleset = members.Ruleset, members.Moduleset
-		services, err = s.selectServices(ctx, path, "", selection.Filters.collectorFilters(""))
-	}
+	services, err := s.readSelection(ctx, selection, &summary.ServiceSelectionScope, nil)
 	if err != nil {
 		return ServiceChangeSummary{}, err
 	}
@@ -200,13 +204,45 @@ func (s *Service) changeSelectedServices(ctx context.Context, selection ServiceS
 	return summary, nil
 }
 
-// selectServicesByInstance reads the services having an instance on the
-// node, on the nodes of the node filters or in the instance state of
-// selection, with the filters of the services. The tag, filterset, ruleset
-// and moduleset filters, read from their own lists, keep the services in
+// readSelection reads the services of selection, with the extra filters on
+// the services, and tells in scope what its filters resolved to.
+func (s *Service) readSelection(ctx context.Context, selection ServiceSelection, scope *ServiceSelectionScope, extra []string) ([]selectedService, error) {
+	switch {
+	case len(selection.Services) > 0:
+		return s.resolveServices(ctx, selection.Services)
+	case selection.byInstance():
+		instances, err := s.readSelectionInstances(ctx, selection, scope, extra)
+		if err != nil {
+			return nil, err
+		}
+		byID := map[string]selectedService{}
+		for _, instance := range instances {
+			byID[instance.SvcID] = instance.selectedService
+		}
+		if len(byID) > maxSelectionFiltered {
+			return nil, fmt.Errorf("the filters select %d services, more than %d: nothing was changed; narrow the filters", len(byID), maxSelectionFiltered)
+		}
+		services := make([]selectedService, 0, len(byID))
+		for _, service := range byID {
+			services = append(services, service)
+		}
+		return services, nil
+	}
+	path, members, err := s.serviceMemberPath(ctx, selection.Filters)
+	if err != nil {
+		return nil, err
+	}
+	scope.members(members)
+	return s.selectServices(ctx, path, "", append(selection.Filters.collectorFilters(""), extra...))
+}
+
+// readSelectionInstances reads the instances on the node, on the nodes of
+// the node filters or in the instance state of selection, with the filters
+// of their services and the extra filters, once each. The tag, filterset, ruleset and moduleset
+// filters, read from their own lists, keep the instances of the services in
 // both.
-func (s *Service) selectServicesByInstance(ctx context.Context, selection ServiceSelection, summary *ServiceChangeSummary) ([]selectedService, error) {
-	base := append(selection.Instance.collectorFilters(), selection.Filters.collectorFilters("services.")...)
+func (s *Service) readSelectionInstances(ctx context.Context, selection ServiceSelection, summary *ServiceSelectionScope, extra []string) ([]selectedInstance, error) {
+	base := append(append(selection.Instance.collectorFilters(), selection.Filters.collectorFilters("services.")...), extra...)
 	var nodeIDs []string
 	switch {
 	case selection.Node != "":
@@ -253,16 +289,19 @@ func (s *Service) selectServicesByInstance(ctx context.Context, selection Servic
 		}
 		queries = append(queries, append([]string{filter}, base...))
 	}
-	byID := map[string]selectedService{}
-	read := 0
+	var instances []selectedInstance
+	seen := map[[2]string]bool{}
 	for _, filters := range queries {
-		instances, err := s.selectInstances(ctx, filters, maxSelectionInstances-read)
+		read, err := s.selectInstances(ctx, filters, maxSelectionInstances-len(instances))
 		if err != nil {
 			return nil, err
 		}
-		read += len(instances)
-		for _, service := range instances {
-			byID[service.SvcID] = service
+		for _, instance := range read {
+			key := [2]string{instance.SvcID, instance.NodeID}
+			if !seen[key] {
+				seen[key] = true
+				instances = append(instances, instance)
+			}
 		}
 	}
 	if selection.Filters.member() {
@@ -270,8 +309,7 @@ func (s *Service) selectServicesByInstance(ctx context.Context, selection Servic
 		if err != nil {
 			return nil, err
 		}
-		summary.FilterTag, summary.Filterset = members.Tag, members.Filterset
-		summary.FilterRuleset, summary.FilterModuleset = members.Ruleset, members.Moduleset
+		summary.members(members)
 		kept, err := s.selectServices(ctx, path, "", selection.Filters.collectorFilters(""))
 		if err != nil {
 			return nil, err
@@ -280,28 +318,23 @@ func (s *Service) selectServicesByInstance(ctx context.Context, selection Servic
 		for _, service := range kept {
 			in[service.SvcID] = true
 		}
-		for id := range byID {
-			if !in[id] {
-				delete(byID, id)
+		var both []selectedInstance
+		for _, instance := range instances {
+			if in[instance.SvcID] {
+				both = append(both, instance)
 			}
 		}
+		instances = both
 	}
-	if len(byID) > maxSelectionFiltered {
-		return nil, fmt.Errorf("the filters select %d services, more than %d: nothing was changed; narrow the filters", len(byID), maxSelectionFiltered)
-	}
-	services := make([]selectedService, 0, len(byID))
-	for _, service := range byID {
-		services = append(services, service)
-	}
-	return services, nil
+	return instances, nil
 }
 
-// selectInstances reads the services of the instances the filters select,
-// at most limit instances, and refuses more, or a selection that changed
-// while it was read.
-func (s *Service) selectInstances(ctx context.Context, filters []string, limit int) ([]selectedService, error) {
-	props := append(selectionProps("services."), "node_id")
-	var services []selectedService
+// selectInstances reads the instances the filters select, with their
+// services, at most limit instances, and refuses more, or a selection that
+// changed while it was read.
+func (s *Service) selectInstances(ctx context.Context, filters []string, limit int) ([]selectedInstance, error) {
+	props := append(selectionProps("services."), "node_id", "nodes.nodename", "nodes.version", "mon_availstatus")
+	var services []selectedInstance
 	expected := -1
 	for offset := 0; ; offset += selectionPage {
 		var response collectorList[map[string]any]
@@ -322,7 +355,10 @@ func (s *Service) selectInstances(ctx context.Context, filters []string, limit i
 			return nil, fmt.Errorf("the filters select more than %d instances: nothing was changed; narrow the filters", maxSelectionInstances)
 		}
 		for _, row := range response.Data {
-			services = append(services, selectedRow(row, "services."))
+			services = append(services, selectedInstance{
+				selectedService: selectedRow(row, "services."), NodeID: propText(row, "node_id"), Nodename: propText(row, "nodes.nodename"),
+				Availability: propText(row, "mon_availstatus"), AgentVersion: propText(row, "nodes.version"),
+			})
 		}
 		if len(response.Data) == 0 || len(services) >= total {
 			break
