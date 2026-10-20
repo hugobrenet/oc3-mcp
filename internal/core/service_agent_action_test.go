@@ -233,3 +233,69 @@ func TestQueueServiceAgentActionBoundsTheSelection(t *testing.T) {
 		}
 	}
 }
+
+func TestQueueServiceAgentActionOnResources(t *testing.T) {
+	newCollector := func() *fakeCollector {
+		collector := newServiceAgentCollector()
+		answer := collector.answer
+		collector.answer = func(path string, query url.Values) string {
+			if path == "/resources" {
+				if filters := strings.Join(query["filter"], " "); filters != "svc_id:eq:s-1 node_id:eq:n-2" || query.Get("props") != "rid,res_disable" {
+					return `{"data":[],"meta":{"total":0}}`
+				}
+				return `{"data":[{"rid":"fs#1","res_disable":"F"},{"rid":"app#1","res_disable":"T"}],"meta":{"total":2}}`
+			}
+			if path == "/actions" {
+				return `{"data":[{"id":903,"status":"W","action_type":"feed","command":"restart --rid fs#1","node_id":"n-2"}]}`
+			}
+			return answer(path, query)
+		}
+		return collector
+	}
+	// n2 holds no agent version: the collector adds --rid, not --local,
+	// and nothing is refused for it.
+	collector := newCollector()
+	result, err := New(collector).QueueServiceAgentAction(t.Context(), ServiceAgentActionOptions{Action: "restart", Resources: []string{"fs#1", " fs#1"}, ServiceSelection: ServiceSelection{Services: []string{"web"}, Node: "n2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	queued := result.Actions[0]
+	if result.Queued != 1 || queued.Outcome != ChangeQueued || queued.Warning != "" || strings.Join(result.Resources, ",") != "fs#1" ||
+		!strings.Contains(result.FollowUp, "list_service_resources") {
+		t.Fatalf("result = %+v", result)
+	}
+	for _, request := range collector.requests {
+		if request.method == "PUT" && (request.body["rid"] != "fs#1" || request.body["node_id"] != "n-2" || request.body["action"] != "restart") {
+			t.Fatalf("queueing = %+v", request)
+		}
+	}
+	// A start with resources acts on the instances; a disabled resource is
+	// warned of, one the instance lacks refused.
+	result, err = New(newCollector()).QueueServiceAgentAction(t.Context(), ServiceAgentActionOptions{Action: "start", Resources: []string{"fs#1", "app#1"}, ServiceSelection: ServiceSelection{Node: "n2"}})
+	if err != nil || !result.Local || result.Queued != 1 || !strings.Contains(result.Actions[0].Warning, "app#1 of service web is disabled") {
+		t.Fatalf("result = %+v, %v", result, err)
+	}
+	collector = newCollector()
+	result, err = New(collector).QueueServiceAgentAction(t.Context(), ServiceAgentActionOptions{Action: "stop", Resources: []string{"fs#9"}, ServiceSelection: ServiceSelection{Node: "n2"}})
+	if err != nil || result.Refused != 1 || !strings.Contains(result.Actions[0].Reason, "no resource fs#9 on node n2") {
+		t.Fatalf("result = %+v, %v", result, err)
+	}
+	for _, request := range collector.requests {
+		if request.method == "PUT" {
+			t.Fatalf("queueing = %+v", request)
+		}
+	}
+	for _, options := range []ServiceAgentActionOptions{
+		{Action: "freeze", Resources: []string{"fs#1"}, ServiceSelection: ServiceSelection{Node: "n2"}},
+		{Action: "restart", Resources: []string{"fs#1"}, ServiceSelection: ServiceSelection{Services: []string{"web"}}},
+		{Action: "start", Resources: []string{"fs#1"}, ServiceSelection: ServiceSelection{Services: []string{"web"}}},
+		{Action: "restart", Resources: []string{"fs#1;reboot"}, ServiceSelection: ServiceSelection{Node: "n2"}},
+		{Action: "restart", Resources: []string{"fs#1,app#1"}, ServiceSelection: ServiceSelection{Node: "n2"}},
+		{Action: "restart", Resources: strings.Split(strings.Repeat("fs#1 ", maxServiceAgentResources+1), " ")[:maxServiceAgentResources+1], ServiceSelection: ServiceSelection{Node: "n2"}},
+	} {
+		collector := newCollector()
+		if _, err := New(collector).QueueServiceAgentAction(t.Context(), options); err == nil || len(collector.requests) != 0 {
+			t.Fatalf("options %+v accepted", options)
+		}
+	}
+}

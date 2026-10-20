@@ -44,11 +44,26 @@ func (input ServiceActionTargetsInput) targets() core.ServiceSelection {
 	return input.ActionFiltersInput.selection(input.Services, input.Node)
 }
 
+// ResourceActionInput selects the instances of an action, and with
+// resources some of their resources.
+type ResourceActionInput struct {
+	ServiceActionTargetsInput
+	Resources []string `json:"resources,omitempty" jsonschema:"optional exact resource IDs, such as fs#1 or app#web, at most 20: the action acts on those resources only, on the instances on node or on the nodes of on_nodes, one of which is required: pass node, such as the node the service runs on, which get_service gives"`
+}
+
 // ServiceOrInstanceActionInput selects the services of an action on whole
 // services, or with local on their instances.
 type ServiceOrInstanceActionInput struct {
 	ServiceActionTargetsInput
 	Local bool `json:"local,omitempty" jsonschema:"optional; true acts on the instances on node or on the nodes of on_nodes, each run by its node, instead of on whole services"`
+}
+
+// ServiceInstanceOrResourceActionInput selects the services of an action on
+// whole services, or with local on their instances, and with resources some
+// of their resources.
+type ServiceInstanceOrResourceActionInput struct {
+	ServiceOrInstanceActionInput
+	Resources []string `json:"resources,omitempty" jsonschema:"optional exact resource IDs, such as fs#1 or app#web, at most 20: the action acts on those resources only, on the instances on node or on the nodes of on_nodes, one of which is required: pass node, such as the node the service runs on, which get_service gives"`
 }
 
 // TakeoverActionInput selects the services a takeover moves to the node
@@ -79,6 +94,10 @@ const serviceComplianceFollowUp = "The collector queues it for the node of each 
 	"Returns as soon as each action is queued: list_node_actions with the service tells when it is done, with exit code 0 when every module passed; list_compliance_runs with the service gives the run of each module, and list_compliance_status the state. Cancel an action before an agent takes it with cancel_node_action. " +
 	"Requires the CompExec privilege and to be responsible for the services, by their app."
 
+// serviceResourceActions tells how an action acts on resources.
+const serviceResourceActions = "With resources, resource IDs such as fs#1, it acts on those resources only, on the instances on node or on_nodes, required: pass node with services, such as the node the service runs on, each node running om svc -s <service> <action> --rid <resources> without orchestration; without resources, it acts on every resource of the service, as asked for all of them. " +
+	"get_service gives the configuration text of the service, which defines its resources, and list_service_resources their status on each node; an instance without one of the resources, as its agent reported them, is refused, and a disabled one, which the agent skips, is warned of. "
+
 // startAfterStop warns of the om3 daemons choosing the node of a start right
 // after a stop of the whole service on the view they have of their peers.
 const startAfterStop = "Right after a stop of the whole service, the daemons may choose another node than the preferred one, or two: check the placement with get_service. "
@@ -94,26 +113,43 @@ func registerServiceAgentActionTools(registrar *Registrar, service *core.Service
 		}
 		return nil, result, nil
 	}
+	queueOn := func(ctx context.Context, action string, local bool, resources []string, selection core.ServiceSelection) (*mcp.CallToolResult, ServiceAgentActionOutput, error) {
+		result, err := service.QueueServiceAgentAction(ctx, core.ServiceAgentActionOptions{Action: action, Local: local, Resources: resources, ServiceSelection: selection})
+		if err != nil {
+			return nil, ServiceAgentActionOutput{}, err
+		}
+		return nil, result, nil
+	}
 	queue := func(ctx context.Context, action string, local bool, selection core.ServiceSelection) (*mcp.CallToolResult, ServiceAgentActionOutput, error) {
 		return queueTo(ctx, action, local, "", selection)
 	}
 	for _, declared := range []struct {
 		name, title, action, description string
 		destructive                      bool
+		resources                        string
 	}{
-		{"freeze_service", "Freeze service", "freeze", "Freeze OpenSVC services through their agents: the daemons no longer start, stop, move or restart them on their own, until thawed; running instances keep running. With local, only their instances on the nodes given. ", false},
-		{"thaw_service", "Thaw service", "thaw", "Thaw OpenSVC services through their agents: the daemons resume their automatic actions, and may then start, move or restart instances at once to reach their placement. With local, only their instances on the nodes given. ", true},
-		{"start_service", "Start service", "start", "Start OpenSVC services through their agents: the daemons start each where its placement says. With local, their instances on the nodes given, each started by its node. " + startAfterStop, false},
-		{"stop_service", "Stop service", "stop", "Stop OpenSVC services through their agents: the daemons stop every instance and keep them down, starting none on their own until a start. With local, only their instances on the nodes given. ", true},
+		{"freeze_service", "Freeze service", "freeze", "Freeze OpenSVC services through their agents: the daemons no longer start, stop, move or restart them on their own, until thawed; running instances keep running. With local, only their instances on the nodes given. ", false, ""},
+		{"thaw_service", "Thaw service", "thaw", "Thaw OpenSVC services through their agents: the daemons resume their automatic actions, and may then start, move or restart instances at once to reach their placement. With local, only their instances on the nodes given. ", true, ""},
+		{"start_service", "Start service", "start", "Start OpenSVC services through their agents: the daemons start each where its placement says. With local, their instances on the nodes given, each started by its node. " + startAfterStop, false, serviceResourceActions},
+		{"stop_service", "Stop service", "stop", "Stop OpenSVC services through their agents: the daemons stop every instance and keep them down, starting none on their own until a start. With local, only their instances on the nodes given. ", true, serviceResourceActions},
 	} {
 		declared := declared
-		if err := addTool(registrar, &mcp.Tool{
+		tool := &mcp.Tool{
 			Name: declared.name, Title: declared.title,
-			Description: declared.description + serviceAgentSelection + serviceAgentActionFollowUp + serviceAgentActionPrivilege,
+			Description: declared.description + declared.resources + serviceAgentSelection + serviceAgentActionFollowUp + serviceAgentActionPrivilege,
 			Annotations: actionAnnotations(declared.destructive, true),
-		}, func(ctx context.Context, _ *mcp.CallToolRequest, input ServiceOrInstanceActionInput) (*mcp.CallToolResult, ServiceAgentActionOutput, error) {
-			return queue(ctx, declared.action, input.Local, input.targets())
-		}); err != nil {
+		}
+		var err error
+		if declared.resources == "" {
+			err = addTool(registrar, tool, func(ctx context.Context, _ *mcp.CallToolRequest, input ServiceOrInstanceActionInput) (*mcp.CallToolResult, ServiceAgentActionOutput, error) {
+				return queue(ctx, declared.action, input.Local, input.targets())
+			})
+		} else {
+			err = addTool(registrar, tool, func(ctx context.Context, _ *mcp.CallToolRequest, input ServiceInstanceOrResourceActionInput) (*mcp.CallToolResult, ServiceAgentActionOutput, error) {
+				return queueOn(ctx, declared.action, input.Local, input.Resources, input.targets())
+			})
+		}
+		if err != nil {
 			return err
 		}
 	}
@@ -138,11 +174,11 @@ func registerServiceAgentActionTools(registrar *Registrar, service *core.Service
 	}
 	if err := addTool(registrar, &mcp.Tool{
 		Name: "restart_service", Title: "Restart service",
-		Description: "Restart the instances of OpenSVC services on the nodes given, through their agents: each node stops and starts its instances, again at each call. Pass node or on_nodes, and services for some of their services only. " +
-			serviceAgentSelection + serviceAgentActionFollowUp + serviceAgentActionPrivilege,
+		Description: "Restart the instances of OpenSVC services on the nodes given, or some of their resources, through their agents: each node stops and starts its instances, again at each call. Pass node or on_nodes, and services for some of their services only. " +
+			serviceResourceActions + serviceAgentSelection + serviceAgentActionFollowUp + serviceAgentActionPrivilege,
 		Annotations: actionAnnotations(true, false),
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, input ServiceActionTargetsInput) (*mcp.CallToolResult, ServiceAgentActionOutput, error) {
-		return queue(ctx, "restart", true, input.targets())
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, input ResourceActionInput) (*mcp.CallToolResult, ServiceAgentActionOutput, error) {
+		return queueOn(ctx, "restart", true, input.Resources, input.targets())
 	}); err != nil {
 		return err
 	}
