@@ -398,9 +398,12 @@ queues an ssh command running `nodemgr`, the command of the former agent.
 As the tag tools, the outcome on each node being `queued`, with
 `action_id`, the ID `list_node_actions` follows, `queued_for` and, when not
 `feed`, a `warning`, or `refused`. When an action was queued, `follow_up`
-names the call that follows it: `list_node_actions`, with the node when one
-was queued, and the command as the collector names it, such as `thaw` for
-`unfreeze_node` or `compliance fix` for `fix_node_compliance`.
+names the call that follows it: `list_node_actions` with the `action_ids`
+queued and `wait`, to read them once they end, in one call. Beyond 100
+actions, more than a page, it names the node when one was queued, and the
+command as the collector names it, such as `thaw` for `unfreeze_node` or
+`compliance fix` for `fix_node_compliance`. The [service agent action
+tools](service-agent-actions.md) follow their actions likewise.
 
 The OpenSVC AI agent shows the model, at the next turn, the tools it called
 in the recent turns, not those a search only found: a question such as
@@ -445,24 +448,22 @@ No tool queues them.
 
 ### `cancel_node_action`
 
-Cancels actions of the queue that no agent has taken yet.
+Cancels actions of the queue, as the collector decides: the MCP sends the
+cancellation of each action, without reading it first, and gives the answer
+of the collector.
 
 ```text
-GET  /api/actions/<id>?props=id,status,command,nodes.nodename
 POST /api/actions   {"id": <id>, "status": "C"}
 ```
 
 The collector cancels an action of any status but done, and answers a
-refusal with 200 and an `error`, not an HTTP error. It also cancels a sent
-or running action, which its agent goes on running: the MCP cancels only a
-waiting, notified or queued action, and refuses the others, with the reason.
+refusal, of a done or unknown action, with 200 and an `error`, not an HTTP
+error. It also cancels a sent or running action: the action is marked
+cancelled in the queue, and its agent goes on running it if it still runs.
+This cleans an action left running, such as a pushasset of an om3 agent
+that ran it but failed to report its end, as seen on dev2n1 on 2026-10-20.
 A cancelled action can be queued again by the collector, `status` back to
 waiting; no tool does it.
-
-The agent may read its queue between the check of the status and the
-cancellation, at its ping: the collector then cancels an action the agent
-runs, and the result says cancelled. The API has no guard against it; the
-description tells the model to check with `list_node_actions`.
 
 | Input | Meaning |
 |---|---|
@@ -472,7 +473,7 @@ description tells the model to check with `list_node_actions`.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `cancelled`, `refused` | Actions cancelled, and not |
-| `actions[]` | `id`, `nodename`, `command`, `outcome` (`cancelled`, `already_cancelled`, `refused`) and `reason` |
+| `actions[]` | `id`, `nodename` and `command` as the collector answers them, `outcome` (`cancelled`, `refused`) and `reason`, the error of the collector |
 
 ### `list_node_actions`
 
@@ -495,10 +496,39 @@ reading its queue marks its actions sent, then running. The node and service
 names come from the joins of the queue; the user, which has none, from
 `/api/users`.
 
+#### Waiting
+
+With `wait`, at most 120 seconds, the MCP reads the page again every 3
+seconds, and returns as soon as none of its actions is pending (`W`, `N`,
+`Q`, `S` or `R`), or when the wait ends, with the last read: `pending`
+counts those still not over, and `waited_seconds` the time waited. It stops
+when the client ends the call. An action queued for `pull` or `push`, which
+no om3 agent reads, waits until cancelled: the wait does not wait for it,
+`pending_not_feed` counts it among `pending`, and the `follow_up` of the
+action tools names its `action_ids` without `wait`. An agent takes an action within seconds of
+its queueing, on dev2 12 seconds, later when the action is behind others in
+the queue of its node: the wait covers that time too. The model follows the
+actions it queued by their `action_ids`, in one call, instead of reading the
+queue again and again, which spent the iterations of a turn of the agent;
+the description tells it to tell the user of the actions still pending
+rather than to call again at once. The node and the service of the
+filters are resolved once for the wait, and each user named once: each
+read after the first is one request to `/api/actions`, or two when a new
+user queued an action.
+
+`done` is the end of the command on the node: for an action the daemon
+orchestrates, such as a start, a stop or a switch of a whole service, exit
+code 0 tells the daemon accepted it, the orchestration going on after.
+
+The write timeout of the MCP, 4 minutes, stays above a token exchange of up
+to 1 minute, the wait, and a last collector request.
+
 #### Input
 
 | Input | Meaning |
 |---|---|
+| `action_ids` | Optional IDs of the actions, at most 100, as the action tools give them: those only, in one page by default |
+| `wait` | Optional seconds, 0 to 120, to wait for the actions read to end, see [waiting](#waiting) |
 | `node` | Optional exact node name or node ID |
 | `service` | Optional exact service name or service ID: the actions on the service and its instances, such as those of the [service agent action tools](service-agent-actions.md) |
 | `status` | Optional: `waiting`, `notified`, `queued`, `sent`, `running`, `done`, `cancelled` |
@@ -515,6 +545,10 @@ names come from the joins of the queue; the user, which has none, from
 | `node` | With `node`, the node it resolved to |
 | `service` | With `service`, the service it resolved to |
 | `total`, `count`, `truncated`, `next_cursor` | As the other lists |
+| `pending` | The actions of the page not over: waiting, notified, queued, sent or running |
+| `pending_not_feed` | Of `pending`, those queued for `pull` or `push`, which no om3 agent reads |
+| `waited_seconds` | With `wait`, the time waited |
+| `not_found` | With `action_ids`, those the collector holds no action for among those the caller sees, when the page holds every match |
 | `actions[]` | `id`, `node_id`, `nodename`, `svc_id`, `svcname`, `command`, `status`, `queued_at`, `dequeued_at`, and when done `ret`, `stdout`, `stderr`, `output_truncated`; `user`, the name of who queued it, email addresses masked; `action_type` |
 
 The command loses the ssh invocation of a push node. The outputs lose their

@@ -147,7 +147,7 @@ type CancelNodeActionOutput = core.NodeActionCancellation
 
 // nodeActionFollowUp tells how an action queued on nodes runs and how to
 // follow it.
-const nodeActionFollowUp = "The collector queues it on each node; the agent runs it when it reads its queue. Returns as soon as each action is queued, with its action_id: follow it with list_node_actions, and cancel it before an agent takes it with cancel_node_action. " +
+const nodeActionFollowUp = "The collector queues it on each node; the agent runs it when it reads its queue. Returns as soon as each action is queued, with its action_id: follow it with list_node_actions and its action_ids, with wait to its end, and cancel it with cancel_node_action. " +
 	"Only an action queued for feed reaches an om3 agent: a warning tells the nodes queued for pull or push, whose action may never run. " +
 	"Pass the nodes, at most 50 exact names or IDs, or at least one of the filters of list_nodes and count_nodes, to select up to 1000 nodes; a larger selection is refused, and nothing is queued. An unknown or ambiguous node name refuses the whole call, before anything is queued. "
 
@@ -325,7 +325,7 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 			Title: "Queue node action",
 			Description: "Queue one agent action on one or several nodes in the OpenSVC collector: the agent of each node runs it, as om node <action>, when it reads its queue. " +
 				"The actions refresh what the collector knows of the node, and change nothing else on it: pushasset, its hardware and system; pushdisks, its disks; pushpkg, its packages; pushstats, its performance statistics; checks, its health checks; sysreport, its sysreport; compliance_check, a compliance check on every module attached to it, without fixing. " +
-				"Returns as soon as each action is queued, with its action_id: follow it with list_node_actions. Queuing again queues another run. Only an action queued for feed reaches an om3 agent: a warning tells the nodes queued for pull or push, whose action may never run. " +
+				"Returns as soon as each action is queued, with its action_id: follow it with list_node_actions and its action_ids, with wait to its end. Queuing again queues another run. Only an action queued for feed reaches an om3 agent: a warning tells the nodes queued for pull or push, whose action may never run. " +
 				"Pass the nodes, at most 50 exact names or IDs, or at least one of the filters of list_nodes and count_nodes, to select up to 1000 nodes; a larger selection is refused, and nothing is queued. " +
 				"An unknown or ambiguous node name refuses the whole call, before anything is queued. The result gives the outcome on each node, with the reason of each refusal. " +
 				"Requires the NodeExec privilege, CompExec for compliance_check, and to be responsible for the nodes.",
@@ -379,9 +379,8 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 		&mcp.Tool{
 			Name:  "cancel_node_action",
 			Title: "Cancel node action",
-			Description: "Cancel actions of the OpenSVC collector queue that no agent has taken yet: waiting, notified or queued. An action sent to its agent, running or done is refused: a cancellation would not stop it. " +
-				"An agent may take an action between the check and the cancellation, and run it though the result says cancelled: check list_node_actions. " +
-				"Use it for an action queued by mistake, or one queued for pull or push that an om3 agent never reads. Requires the NodeExec or CompExec privilege and to be responsible for the node of each action.",
+			Description: "Cancel actions of the OpenSVC collector queue, as the collector does: it refuses a done action only. An action its agent took, sent or running, is marked cancelled in the queue, and the agent goes on running it. " +
+				"Use it for an action queued by mistake, one queued for pull or push that an om3 agent never reads, or one left running that its agent never reported done. Requires the NodeExec or CompExec privilege and to be responsible for the node of each action.",
 			Annotations: actionAnnotations(false, true),
 		},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input CancelNodeActionInput) (*mcp.CallToolResult, CancelNodeActionOutput, error) {

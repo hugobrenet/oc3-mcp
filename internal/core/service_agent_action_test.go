@@ -45,7 +45,7 @@ func TestQueueServiceAgentActionOnTheServicesNamed(t *testing.T) {
 	// and queues the failover one, for the node the collector chose.
 	flex, web := result.Actions[0], result.Actions[1]
 	if result.Local || result.Selected != 2 || result.Queued != 1 || result.Refused != 1 || flex.Outcome != ChangeRefused || !strings.Contains(flex.Reason, "takeover_service") ||
-		web.Outcome != ChangeQueued || web.ActionID != 901 || web.NodeID != "n-2" || web.QueuedFor != "feed" || !strings.Contains(result.FollowUp, `service "web"`) {
+		web.Outcome != ChangeQueued || web.ActionID != 901 || web.NodeID != "n-2" || web.QueuedFor != "feed" || !strings.HasPrefix(result.FollowUp, "list_node_actions with action_ids [901] and wait") {
 		t.Fatalf("result = %+v", result)
 	}
 	// A filter narrows the services named: the one it leaves out is told.

@@ -3,7 +3,9 @@ package core
 import (
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestListNodeActionsCleansTheQueue(t *testing.T) {
@@ -120,7 +122,7 @@ func TestRunNodeActionTakesOnlyTheChangingActions(t *testing.T) {
 		return `{"data":[{"node_id":"n-1","nodename":"lab01"}],"meta":{"total":1}}`
 	}}
 	queued, err := newTestService(collector).RunNodeAction(t.Context(), NodeActionOptions{Action: "drain", NodeSelection: NodeSelection{Nodes: []string{"lab01"}}})
-	if err != nil || queued.Changed != 1 || queued.Nodes[0].ActionID != 902 || queued.FollowUp != `list_node_actions with node "lab01", command "drain": an action is done when its status is done, with its exit code and output` {
+	if err != nil || queued.Changed != 1 || queued.Nodes[0].ActionID != 902 || !strings.HasPrefix(queued.FollowUp, "list_node_actions with action_ids [902] and wait") {
 		t.Fatalf("queued = %+v, %v", queued, err)
 	}
 	// reboot and shutdown are actions of the former agent: om3 answers them
@@ -133,17 +135,19 @@ func TestRunNodeActionTakesOnlyTheChangingActions(t *testing.T) {
 	}
 }
 
-func TestCancelNodeActionsCancelsOnlyWhatNoAgentTook(t *testing.T) {
-	statuses := map[string]string{"/actions/1": "W", "/actions/2": "S", "/actions/3": "C", "/actions/4": "N"}
+func TestCancelNodeActionsLeavesTheDecisionToTheCollector(t *testing.T) {
+	// 1 waits and 2 runs: the collector cancels both; 3 is done and 9
+	// unknown: it refuses them, with 200 and an error.
+	answers := []string{
+		`{"id":1,"status":"C","command":"freeze --local"}`,
+		`{"id":2,"status":"C","command":"pushasset"}`,
+		`{"error":"Can not cancel action 3 in T state"}`,
+		`{"error":"Action 9 does not exist in action queue"}`,
+	}
+	var posts int
 	collector := &fakeCollector{answer: func(path string, query url.Values) string {
-		if query == nil {
-			return `{"id":1,"status":"C"}`
-		}
-		status, ok := statuses[path]
-		if !ok {
-			return `{"data":[]}`
-		}
-		return `{"data":[{"id":1,"status":"` + status + `","command":"freeze --local","nodes.nodename":"lab01"}]}`
+		posts++
+		return answers[posts-1]
 	}}
 	result, err := newTestService(collector).CancelNodeActions(t.Context(), []int{1, 2, 3, 9, 1})
 	if err != nil {
@@ -153,37 +157,18 @@ func TestCancelNodeActionsCancelsOnlyWhatNoAgentTook(t *testing.T) {
 	for _, action := range result.Actions {
 		outcomes = append(outcomes, action.Outcome)
 	}
-	if strings.Join(outcomes, ",") != "cancelled,refused,already_cancelled,refused" || result.Cancelled != 1 || result.Refused != 2 ||
-		!strings.Contains(result.Actions[1].Reason, "would not stop it") || result.Actions[0].Nodename != "lab01" {
+	if strings.Join(outcomes, ",") != "cancelled,cancelled,refused,refused" || result.Cancelled != 2 || result.Refused != 2 ||
+		result.Actions[1].Command != "pushasset" || !strings.Contains(result.Actions[2].Reason, "T state") {
 		t.Fatalf("result = %+v", result)
 	}
-	var posts int
-	for _, request := range collector.requests {
-		if request.method == "POST" {
-			posts++
-			if request.path != "/actions" || request.body["status"] != "C" || request.body["id"] != float64(1) {
-				t.Fatalf("post = %+v", request)
-			}
+	// One request per action, a cancellation each, without a read first.
+	for index, request := range collector.requests {
+		if request.method != "POST" || request.path != "/actions" || request.body["status"] != "C" || request.body["id"] != float64([]int{1, 2, 3, 9}[index]) {
+			t.Fatalf("request %d = %+v", index, request)
 		}
 	}
-	if posts != 1 {
-		t.Fatalf("%d posts", posts)
-	}
-	// The collector answers a refusal with 200 and an error.
-	collector = &fakeCollector{answer: func(path string, query url.Values) string {
-		if query == nil {
-			return `{"error":"Can not cancel action 4 in T state"}`
-		}
-		return `{"data":[{"id":4,"status":"N"}]}`
-	}}
-	result, err = newTestService(collector).CancelNodeActions(t.Context(), []int{4})
-	if err != nil || result.Actions[0].Outcome != "refused" || !strings.Contains(result.Actions[0].Reason, "Can not cancel") {
-		t.Fatalf("refusal = %+v, %v", result, err)
-	}
-	for _, ids := range [][]int{nil, {0}, make([]int, 51)} {
-		if _, err := newTestService(&fakeCollector{}).CancelNodeActions(t.Context(), ids); err == nil {
-			t.Fatalf("ids %v accepted", ids)
-		}
+	if len(collector.requests) != 4 {
+		t.Fatalf("%d requests", len(collector.requests))
 	}
 }
 
@@ -206,5 +191,111 @@ func TestListNodeActionsFiltersAService(t *testing.T) {
 		if request.path == "/actions" && request.query.Get("filter") != "svc_id:eq:s-1" {
 			t.Fatalf("actions query = %v", request.query)
 		}
+	}
+}
+
+func TestListNodeActionsWaitsForTheActionsNamed(t *testing.T) {
+	interval := actionWaitInterval
+	actionWaitInterval = 10 * time.Millisecond
+	t.Cleanup(func() { actionWaitInterval = interval })
+	// 7 waits then runs, 8 runs, then both are done; 9 is not found.
+	var reads atomic.Int32
+	collector := &fakeCollector{answer: func(path string, query url.Values) string {
+		if path != "/actions" {
+			return `{"data":[]}`
+		}
+		if strings.Join(query["filter"], " ") != "id:in:7,8,9" || query.Get("limit") != "100" {
+			t.Errorf("actions query = %v", query)
+		}
+		switch reads.Add(1) {
+		case 1:
+			return `{"data":[{"id":8,"status":"R","action_type":"feed"},{"id":7,"status":"W","action_type":"feed"}],"meta":{"total":2}}`
+		case 2:
+			return `{"data":[{"id":8,"status":"T","ret":0,"action_type":"feed"},{"id":7,"status":"R","action_type":"feed"}],"meta":{"total":2}}`
+		}
+		return `{"data":[{"id":8,"status":"T","ret":0,"action_type":"feed"},{"id":7,"status":"T","ret":1,"stderr":"failed","action_type":"feed"}],"meta":{"total":2}}`
+	}}
+	list, err := newTestService(collector).ListNodeActions(t.Context(), ListNodeActionsOptions{ActionIDs: []int{7, 8, 9, 7}, Wait: 30})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reads.Load() != 3 || list.Pending != 0 || list.Waited > 1 || len(list.NotFound) != 1 || list.NotFound[0] != 9 ||
+		list.Actions[1].Status != "done" || list.Actions[1].Ret == nil || *list.Actions[1].Ret != 1 {
+		t.Fatalf("list = %+v, reads %d", list, reads.Load())
+	}
+	// Without wait, one read, which tells the pending actions.
+	reads.Store(0)
+	list, err = newTestService(collector).ListNodeActions(t.Context(), ListNodeActionsOptions{ActionIDs: []int{7, 8, 9}})
+	if err != nil || reads.Load() != 1 || list.Pending != 2 || list.Waited != 0 {
+		t.Fatalf("list = %+v, %v, reads %d", list, err, reads.Load())
+	}
+}
+
+func TestListNodeActionsEndsTheWait(t *testing.T) {
+	interval := actionWaitInterval
+	actionWaitInterval = 100 * time.Millisecond
+	t.Cleanup(func() { actionWaitInterval = interval })
+	collector := &fakeCollector{answer: func(path string, query url.Values) string {
+		return `{"data":[{"id":7,"status":"W","action_type":"feed"}],"meta":{"total":1}}`
+	}}
+	started := time.Now()
+	list, err := newTestService(collector).ListNodeActions(t.Context(), ListNodeActionsOptions{ActionIDs: []int{7}, Wait: 1})
+	if err != nil || list.Pending != 1 || list.Waited != 1 || time.Since(started) < time.Second || time.Since(started) > 4*time.Second {
+		t.Fatalf("list = %+v, %v, after %v", list, err, time.Since(started))
+	}
+	for _, options := range []ListNodeActionsOptions{
+		{Wait: maxActionWait + 1},
+		{Wait: -1},
+		{ActionIDs: []int{0}},
+		{ActionIDs: make([]int, maxListNodeActionsLimit+1)},
+	} {
+		collector := &fakeCollector{answer: func(string, url.Values) string { return `{"data":[],"meta":{"total":0}}` }}
+		if _, err := newTestService(collector).ListNodeActions(t.Context(), options); err == nil || len(collector.requests) != 0 {
+			t.Fatalf("options %+v accepted", options)
+		}
+	}
+	// More actions than a page are followed by their filter.
+	if follow := followActions(make([]int, maxListNodeActionsLimit+1), true, `command "start"`); follow != `list_node_actions with command "start"` {
+		t.Fatalf("follow = %s", follow)
+	}
+}
+
+func TestListNodeActionsWaitsForTheAgentsOnly(t *testing.T) {
+	interval := actionWaitInterval
+	actionWaitInterval = 10 * time.Millisecond
+	t.Cleanup(func() { actionWaitInterval = interval })
+	// 7, queued for pull, waits until cancelled: the wait ends without it.
+	collector := &fakeCollector{answer: func(path string, query url.Values) string {
+		return `{"data":[{"id":7,"status":"W","action_type":"pull"}],"meta":{"total":1}}`
+	}}
+	list, err := newTestService(collector).ListNodeActions(t.Context(), ListNodeActionsOptions{ActionIDs: []int{7}, Wait: 30})
+	if err != nil || len(collector.requests) != 1 || list.Pending != 1 || list.PendingNotFeed != 1 {
+		t.Fatalf("list = %+v, %v, requests %d", list, err, len(collector.requests))
+	}
+	// The node is resolved, and each user read, once for the whole wait.
+	var reads atomic.Int32
+	collector = &fakeCollector{answer: func(path string, query url.Values) string {
+		switch path {
+		case "/nodes/dev2n1":
+			return `{"data":[{"node_id":"n-1","nodename":"dev2n1"}]}`
+		case "/users":
+			return `{"data":[{"id":168,"first_name":"Jane","last_name":"Doe"}]}`
+		}
+		if reads.Add(1) < 3 {
+			return `{"data":[{"id":8,"status":"R","action_type":"feed","user_id":168}],"meta":{"total":1}}`
+		}
+		return `{"data":[{"id":8,"status":"T","ret":0,"action_type":"feed","user_id":168}],"meta":{"total":1}}`
+	}}
+	list, err = newTestService(collector).ListNodeActions(t.Context(), ListNodeActionsOptions{Node: "dev2n1", Wait: 30})
+	counts := map[string]int{}
+	for _, request := range collector.requests {
+		counts[request.path]++
+	}
+	if err != nil || list.Pending != 0 || list.Node == nil || list.Actions[0].User == "" || counts["/actions"] != 3 || counts["/nodes/dev2n1"] != 1 || counts["/users"] != 1 {
+		t.Fatalf("list = %+v, %v, requests %v", list, err, counts)
+	}
+	// Actions no om3 agent reads are followed without wait.
+	if follow := followActions([]int{9}, false, `command "pushasset"`); follow != "list_node_actions with action_ids [9]" {
+		t.Fatalf("follow = %s", follow)
 	}
 }

@@ -1135,6 +1135,18 @@ func TestNodeActionQueueTools(t *testing.T) {
 	if result.IsError || len(actions) != 1 || actions[0].(map[string]any)["nodename"] != "lab01" || actions[0].(map[string]any)["status"] != "waiting" {
 		t.Fatalf("list_node_actions = %+v", list)
 	}
+	// The follow-up waits for the action queued; a wait on it, still
+	// waiting, ends with the wait, and an unknown ID is told.
+	if !strings.Contains(fmt.Sprint(queued["follow_up"]), "action_ids [901] and wait") {
+		t.Fatalf("queue_node_action follow_up = %v", queued["follow_up"])
+	}
+	result, list = call("list_node_actions", map[string]any{"action_ids": []int{901, 902}, "wait": 1})
+	if result.IsError || list["pending"] != float64(1) || list["waited_seconds"] != float64(1) || fmt.Sprint(list["not_found"]) != "[902]" || list["pending_not_feed"] != nil {
+		t.Fatalf("list_node_actions with wait = %+v", list)
+	}
+	if result, _ := call("list_node_actions", map[string]any{"action_ids": []int{901}, "wait": 121}); !result.IsError {
+		t.Fatal("list_node_actions accepted wait 121")
+	}
 	if result, _ := call("queue_node_action", map[string]any{"action": "reboot", "nodes": []string{"lab01"}}); !result.IsError {
 		t.Fatal("queue_node_action accepted reboot")
 	}
@@ -1150,10 +1162,8 @@ func TestNodeChangingActionTools(t *testing.T) {
 		case "PUT /actions":
 			_ = json.NewDecoder(r.Body).Decode(&put)
 			_, _ = w.Write([]byte(`{"data":[{"id":903,"status":"W","action_type":"pull"}]}`))
-		case "GET /actions/903":
-			_, _ = w.Write([]byte(`{"data":[{"id":903,"status":"W","command":"thaw --local","nodes.nodename":"lab01"}]}`))
 		case "POST /actions":
-			_, _ = w.Write([]byte(`{"id":903,"status":"C"}`))
+			_, _ = w.Write([]byte(`{"id":903,"status":"C","command":"thaw --local"}`))
 		default:
 			notFound(w, "missing")
 		}

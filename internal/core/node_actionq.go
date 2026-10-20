@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -16,7 +17,19 @@ const (
 	// maxActionOutputBytes bounds the standard output and error given for
 	// one action.
 	maxActionOutputBytes = 2000
+	// maxActionWait bounds how long list_node_actions waits for the
+	// actions it reads to end, in seconds, within the write timeout of the
+	// MCP.
+	maxActionWait = 120
 )
+
+// actionWaitInterval is how often list_node_actions reads the actions again
+// while it waits.
+var actionWaitInterval = 3 * time.Second
+
+// pendingActionStatuses are the statuses of an action not yet over: queued,
+// taken or running.
+var pendingActionStatuses = []string{"W", "N", "Q", "S", "R"}
 
 // actionStatuses are the statuses of the action queue entries, as the MCP
 // names them, and the codes the collector stores.
@@ -45,6 +58,11 @@ var ChangingNodeActions = []string{"freeze", "thaw", "drain", "compliance_fix"}
 var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
 
 type ListNodeActionsOptions struct {
+	// ActionIDs keeps those actions only.
+	ActionIDs []int
+	// Wait is how long to wait, in seconds, for the actions of the page
+	// to end.
+	Wait    int
 	Node    string
 	Service string
 	Status  string
@@ -61,8 +79,13 @@ type NodeActionList struct {
 	Total      int                `json:"total" jsonschema:"the number of actions matching, as the collector counts them"`
 	Count      int                `json:"count" jsonschema:"the number of actions returned in this page"`
 	Actions    []NodeQueuedAction `json:"actions" jsonschema:"the actions, the most recently queued first"`
-	NextCursor string             `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
-	Truncated  bool               `json:"truncated" jsonschema:"whether matching actions remain after this page"`
+	Pending    int                `json:"pending" jsonschema:"the number of actions of this page not over: waiting, notified, queued, sent or running"`
+	// PendingNotFeed are the pending actions no om3 agent reads.
+	PendingNotFeed int    `json:"pending_not_feed,omitempty" jsonschema:"of pending, those queued for pull or push, which no om3 agent reads: they wait until cancelled, and wait does not wait for them"`
+	Waited         int    `json:"waited_seconds,omitempty" jsonschema:"with wait, how long the MCP waited for the actions to end, in seconds"`
+	NotFound       []int  `json:"not_found,omitempty" jsonschema:"with action_ids, those the collector holds no action for, among those the caller sees"`
+	NextCursor     string `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
+	Truncated      bool   `json:"truncated" jsonschema:"whether matching actions remain after this page"`
 }
 
 type NodeQueuedAction struct {
@@ -102,21 +125,90 @@ type collectorQueuedAction struct {
 }
 
 // ListNodeActions reads one page of the agent actions of the collector
-// queue the caller sees, the most recently queued first.
+// queue the caller sees, the most recently queued first. With Wait, it
+// reads the page again until none of its actions an om3 agent reads is
+// pending, or the wait ends: the agents take an action within seconds, and
+// run it, when it is not behind others in the queue of their node. An
+// action queued for pull or push stays waiting until cancelled: the wait
+// ends without it.
 func (s *Service) ListNodeActions(ctx context.Context, options ListNodeActionsOptions) (NodeActionList, error) {
-	for name, value := range map[string]string{"command": options.Command} {
-		if err := validateFilterValue(name, value); err != nil {
-			return NodeActionList{}, err
-		}
+	if options.Wait < 0 || options.Wait > maxActionWait {
+		return NodeActionList{}, fmt.Errorf("wait must be between 0 and %d seconds", maxActionWait)
 	}
-	if err := validateCollectorDate("since", options.Since); err != nil {
-		return NodeActionList{}, err
-	}
-	limit, err := pageLimit(options.Limit, defaultListNodeActionsLimit, maxListNodeActionsLimit)
+	page, err := s.actionPage(ctx, options)
 	if err != nil {
 		return NodeActionList{}, err
 	}
-	var filters []string
+	started := time.Now()
+	deadline := started.Add(time.Duration(options.Wait) * time.Second)
+	for {
+		result, err := s.readActionPage(ctx, page)
+		if err != nil {
+			return NodeActionList{}, err
+		}
+		if options.Wait > 0 {
+			result.Waited = int(time.Since(started).Round(time.Second) / time.Second)
+		}
+		remaining := time.Until(deadline)
+		if result.Pending == result.PendingNotFeed || remaining <= 0 {
+			return result, nil
+		}
+		select {
+		case <-ctx.Done():
+			return NodeActionList{}, ctx.Err()
+		case <-time.After(min(actionWaitInterval, remaining)):
+		}
+	}
+}
+
+// actionPage is a page of the queue to read, its filters resolved once for
+// the reads of a wait.
+type actionPage struct {
+	ids         []int
+	filters     []string
+	limit       int
+	offset      int
+	fingerprint string
+	node        *NodeReference
+	service     *ServiceReference
+	// users are the names of the users read, kept between the reads.
+	users map[string]string
+}
+
+// actionPage checks the options of a page of the queue and resolves its
+// filters.
+func (s *Service) actionPage(ctx context.Context, options ListNodeActionsOptions) (*actionPage, error) {
+	for name, value := range map[string]string{"command": options.Command} {
+		if err := validateFilterValue(name, value); err != nil {
+			return nil, err
+		}
+	}
+	if err := validateCollectorDate("since", options.Since); err != nil {
+		return nil, err
+	}
+	// Every action named fits in one page.
+	if len(options.ActionIDs) > 0 && options.Limit == 0 {
+		options.Limit = maxListNodeActionsLimit
+	}
+	limit, err := pageLimit(options.Limit, defaultListNodeActionsLimit, maxListNodeActionsLimit)
+	if err != nil {
+		return nil, err
+	}
+	if len(options.ActionIDs) > maxListNodeActionsLimit {
+		return nil, fmt.Errorf("pass at most %d action_ids", maxListNodeActionsLimit)
+	}
+	page := &actionPage{limit: limit, users: map[string]string{}}
+	for _, id := range options.ActionIDs {
+		if id <= 0 {
+			return nil, fmt.Errorf("action_ids must be action IDs, as the action tools return them")
+		}
+		if !slices.Contains(page.ids, id) {
+			page.ids = append(page.ids, id)
+		}
+	}
+	if len(page.ids) > 0 {
+		page.filters = append(page.filters, "id:in:"+joinInts(page.ids))
+	}
 	if options.Status != "" {
 		code := ""
 		for key, name := range actionStatuses {
@@ -125,55 +217,61 @@ func (s *Service) ListNodeActions(ctx context.Context, options ListNodeActionsOp
 			}
 		}
 		if code == "" {
-			return NodeActionList{}, fmt.Errorf("status must be one of %s", actionStatusNames)
+			return nil, fmt.Errorf("status must be one of %s", actionStatusNames)
 		}
-		filters = append(filters, filterEquals("status", code))
+		page.filters = append(page.filters, filterEquals("status", code))
 	}
 	if options.Command != "" {
-		filters = append(filters, filterContains("command", options.Command))
+		page.filters = append(page.filters, filterContains("command", options.Command))
 	}
 	if options.Since != "" {
-		filters = append(filters, "date_queued:gte:"+options.Since)
+		page.filters = append(page.filters, "date_queued:gte:"+options.Since)
 	}
-	result := NodeActionList{Actions: []NodeQueuedAction{}}
 	if options.Node != "" {
 		node, err := s.lookupNode(ctx, options.Node, []string{"node_id", "nodename", "cluster_id"})
 		if err != nil {
-			return NodeActionList{}, err
+			return nil, err
 		}
-		result.Node = &NodeReference{NodeID: node.NodeID, Nodename: node.Nodename, ClusterID: node.ClusterID}
-		filters = append(filters, filterEquals("node_id", node.NodeID))
+		page.node = &NodeReference{NodeID: node.NodeID, Nodename: node.Nodename, ClusterID: node.ClusterID}
+		page.filters = append(page.filters, filterEquals("node_id", node.NodeID))
 	}
 	if options.Service != "" {
 		service, err := s.lookupService(ctx, options.Service, []string{"svc_id", "svcname", "cluster_id"})
 		if err != nil {
-			return NodeActionList{}, err
+			return nil, err
 		}
-		result.Service = &ServiceReference{SvcID: service.SvcID, Svcname: service.Svcname, ClusterID: service.ClusterID}
-		filters = append(filters, filterEquals("svc_id", service.SvcID))
+		page.service = &ServiceReference{SvcID: service.SvcID, Svcname: service.Svcname, ClusterID: service.ClusterID}
+		page.filters = append(page.filters, filterEquals("svc_id", service.SvcID))
 	}
-	fingerprint := listFingerprint(url.Values{"filter": filters})
-	offset, err := decodeListCursor(options.Cursor, fingerprint)
-	if err != nil {
-		return NodeActionList{}, err
+	page.fingerprint = listFingerprint(url.Values{"filter": page.filters})
+	if page.offset, err = decodeListCursor(options.Cursor, page.fingerprint); err != nil {
+		return nil, err
 	}
+	return page, nil
+}
+
+// readActionPage reads one page of the agent actions of the collector
+// queue the caller sees.
+func (s *Service) readActionPage(ctx context.Context, page *actionPage) (NodeActionList, error) {
+	result := NodeActionList{Node: page.node, Service: page.service, Actions: []NodeQueuedAction{}}
 	// The node and service names come from the joins of the queue, with the
 	// visibility of the caller.
 	props := []string{"id", "status", "command", "date_queued", "date_dequeued", "ret", "stdout", "stderr", "action_type", "user_id", "node_id", "svc_id", "connect_to", "nodes.nodename", "services.svcname"}
 	var response collectorList[collectorQueuedAction]
-	if err := s.client.GetJSON(ctx, "/actions", pageQuery(props, "-id", filters, limit, offset), &response); err != nil {
+	if err := s.client.GetJSON(ctx, "/actions", pageQuery(props, "-id", page.filters, page.limit, page.offset), &response); err != nil {
 		return NodeActionList{}, fmt.Errorf("list actions: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
+	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > page.limit {
 		return NodeActionList{}, fmt.Errorf("list actions: unexpected collector response")
 	}
 	result.Total, result.Count = *response.Meta.Total, len(response.Data)
 
-	// The queue names its users by ID, without a join: their names are read
-	// once for the page.
+	// The queue names its users by ID, without a join: the names not read
+	// yet are read once for the page.
 	var userIDs []string
 	for _, row := range response.Data {
-		if id := anyText(row.UserID); id != "" && id != "0" && !slices.Contains(userIDs, id) {
+		id := anyText(row.UserID)
+		if _, read := page.users[id]; id != "" && id != "0" && !read && !slices.Contains(userIDs, id) {
 			userIDs = append(userIDs, id)
 		}
 	}
@@ -181,15 +279,24 @@ func (s *Service) ListNodeActions(ctx context.Context, options ListNodeActionsOp
 	if err != nil {
 		return NodeActionList{}, err
 	}
+	for _, id := range userIDs {
+		page.users[id] = users[id]
+	}
 	for _, row := range response.Data {
 		id, _ := strconv.Atoi(anyText(row.ID))
 		action := NodeQueuedAction{
 			ID: id, NodeID: row.NodeID, Nodename: row.Nodename, SvcID: row.SvcID, Svcname: row.Svcname, Command: agentCommand(row.Command),
 			Status: actionStatuses[row.Status], Queued: zeroDate(row.Queued), Dequeued: zeroDate(row.Dequeued),
-			User: users[anyText(row.UserID)], ActionType: row.Type,
+			User: page.users[anyText(row.UserID)], ActionType: row.Type,
 		}
 		if action.Status == "" {
 			action.Status = row.Status
+		}
+		if slices.Contains(pendingActionStatuses, row.Status) {
+			result.Pending++
+			if !readByAgent(row.Type) {
+				result.PendingNotFeed++
+			}
 		}
 		if row.Status == "T" {
 			if ret, err := strconv.Atoi(anyText(row.Ret)); err == nil {
@@ -202,12 +309,28 @@ func (s *Service) ListNodeActions(ctx context.Context, options ListNodeActionsOp
 		}
 		result.Actions = append(result.Actions, action)
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
-		result.NextCursor = encodeListCursor(next, fingerprint)
+	if next := page.offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+		result.NextCursor = encodeListCursor(next, page.fingerprint)
 		result.Truncated = true
+	}
+	// An action named that the page lacks is told, when the page holds
+	// every match: the collector has none the caller sees.
+	if len(page.ids) > 0 && !result.Truncated && page.offset == 0 {
+		for _, id := range page.ids {
+			if !slices.ContainsFunc(result.Actions, func(action NodeQueuedAction) bool { return action.ID == id }) {
+				result.NotFound = append(result.NotFound, id)
+			}
+		}
 	}
 	result.Provenance = s.newProvenance()
 	return result, nil
+}
+
+// readByAgent tells an action an agent reads from its queue: feed, read by
+// an om3 agent, not pull or push, the means of the former agent, which no
+// om3 agent reads.
+func readByAgent(actionType string) bool {
+	return actionType != "pull" && actionType != "push"
 }
 
 type NodeActionOptions struct {
@@ -220,6 +343,26 @@ type NodeActionQueueing struct {
 	Action     string     `json:"action" jsonschema:"the action queued"`
 	NodeChangeSummary
 	FollowUp string `json:"follow_up,omitempty" jsonschema:"the call that tells whether the queued actions ran, and their result"`
+}
+
+// followActions tells the call of list_node_actions that follows the
+// actions queued: by their IDs, with a wait for their end, or by filter
+// when they do not fit in one page.
+func followActions(ids []int, waitable bool, filter string) string {
+	var known []int
+	for _, id := range ids {
+		if id > 0 {
+			known = append(known, id)
+		}
+	}
+	if len(known) == 0 || len(known) > maxListNodeActionsLimit {
+		return "list_node_actions with " + filter
+	}
+	// An action no om3 agent reads waits until cancelled: no wait for it.
+	if !waitable {
+		return fmt.Sprintf("list_node_actions with action_ids [%s]", joinInts(known))
+	}
+	return fmt.Sprintf("list_node_actions with action_ids [%s] and wait, such as 60 seconds, at most %d, to read them once they end, in one call; pending tells those still not over, which the user hears of, without reading them again at once", joinInts(known), maxActionWait)
 }
 
 // actionCommandFilters are the command filters list_node_actions finds the
@@ -275,14 +418,19 @@ func (s *Service) queueNodeAction(ctx context.Context, options NodeActionOptions
 			command = filter
 		}
 		node := ""
-		if summary.Changed == 1 {
-			for _, outcome := range summary.Nodes {
-				if outcome.Outcome == ChangeQueued {
-					node = fmt.Sprintf(" node %q,", outcome.Nodename)
-				}
+		var ids []int
+		waitable := false
+		for _, outcome := range summary.Nodes {
+			if outcome.Outcome == ChangeQueued {
+				node = fmt.Sprintf("node %q, command %q", outcome.Nodename, command)
+				ids = append(ids, outcome.ActionID)
+				waitable = waitable || readByAgent(outcome.QueuedFor)
 			}
 		}
-		result.FollowUp = fmt.Sprintf("list_node_actions with%s command %q: an action is done when its status is done, with its exit code and output", node, command)
+		if summary.Changed != 1 {
+			node = fmt.Sprintf("command %q", command)
+		}
+		result.FollowUp = followActions(ids, waitable, node) + ": an action is done when its status is done, with its exit code and output"
 	}
 	return result, nil
 }
@@ -347,11 +495,6 @@ func anyText(value any) string {
 // maxCancelActions bounds the actions cancelled in one call.
 const maxCancelActions = 50
 
-// cancellableStatuses are the statuses of an action no agent has taken yet:
-// the collector also cancels a sent or running action, which the agent
-// goes on running.
-var cancellableStatuses = []string{"W", "N", "Q"}
-
 type NodeActionCancellation struct {
 	Provenance Provenance             `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Cancelled  int                    `json:"cancelled" jsonschema:"the number of actions cancelled"`
@@ -363,13 +506,13 @@ type NodeActionCancelling struct {
 	ID       int    `json:"id" jsonschema:"the ID of the action in the queue"`
 	Nodename string `json:"nodename,omitempty" jsonschema:"the name of the node of the action"`
 	Command  string `json:"command,omitempty" jsonschema:"the command of the action"`
-	Outcome  string `json:"outcome" jsonschema:"cancelled, already_cancelled, or refused"`
-	Reason   string `json:"reason,omitempty" jsonschema:"with refused, why: an action already taken by its agent, done, unknown, or refused by the collector"`
+	Outcome  string `json:"outcome" jsonschema:"cancelled, or refused by the collector"`
+	Reason   string `json:"reason,omitempty" jsonschema:"with refused, the reason the collector gave, such as an action done or unknown"`
 }
 
-// CancelNodeActions cancels actions of the queue no agent has taken yet:
-// waiting, notified or queued. The collector also cancels a sent or running
-// action, which its agent goes on running: the MCP refuses them.
+// CancelNodeActions cancels actions of the queue, as the collector does: it
+// refuses a done action only. A sent or running action is cancelled in the
+// queue, and its agent goes on running it.
 func (s *Service) CancelNodeActions(ctx context.Context, ids []int) (NodeActionCancellation, error) {
 	if len(ids) == 0 || len(ids) > maxCancelActions {
 		return NodeActionCancellation{}, fmt.Errorf("pass 1 to %d action IDs, as list_node_actions gives them", maxCancelActions)
@@ -387,7 +530,7 @@ func (s *Service) CancelNodeActions(ctx context.Context, ids []int) (NodeActionC
 		outcome := s.cancelNodeAction(ctx, id)
 		if outcome.Outcome == "cancelled" {
 			result.Cancelled++
-		} else if outcome.Outcome == "refused" {
+		} else {
 			result.Refused++
 		}
 		result.Actions = append(result.Actions, outcome)
@@ -398,32 +541,13 @@ func (s *Service) CancelNodeActions(ctx context.Context, ids []int) (NodeActionC
 
 func (s *Service) cancelNodeAction(ctx context.Context, id int) NodeActionCancelling {
 	outcome := NodeActionCancelling{ID: id, Outcome: "refused"}
-	var found collectorList[collectorQueuedAction]
-	err := s.client.GetJSON(ctx, "/actions/"+strconv.Itoa(id), url.Values{"props": {"id,status,command,nodes.nodename"}}, &found)
-	if err != nil && !isNotFound(err) {
-		outcome.Reason = err.Error()
-		return outcome
-	}
-	if err != nil || len(found.Data) != 1 {
-		outcome.Reason = "not found in the queue, or not visible to the caller"
-		return outcome
-	}
-	action := found.Data[0]
-	outcome.Nodename, outcome.Command = action.Nodename, agentCommand(action.Command)
-	switch {
-	case action.Status == "C":
-		outcome.Outcome = "already_cancelled"
-		return outcome
-	case !slices.Contains(cancellableStatuses, action.Status):
-		outcome.Reason = "the action is " + actionStatuses[action.Status] + ": its agent took it, and a cancellation would not stop it"
-		return outcome
-	}
 	var response map[string]any
 	if err := s.client.PostJSON(ctx, "/actions", map[string]any{"id": id, "status": "C"}, &response); err != nil {
 		outcome.Reason = err.Error()
 		return outcome
 	}
-	// The collector answers a refusal with 200 and an error.
+	// The collector answers a refusal, such as of a done or unknown action,
+	// with 200 and an error.
 	if text := propText(response, "error"); text != "" {
 		outcome.Reason = text
 		return outcome
@@ -433,5 +557,6 @@ func (s *Service) cancelNodeAction(ctx context.Context, id int) NodeActionCancel
 		return outcome
 	}
 	outcome.Outcome = "cancelled"
+	outcome.Nodename, outcome.Command = propText(response, "nodes.nodename"), agentCommand(propText(response, "command"))
 	return outcome
 }
