@@ -394,6 +394,9 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 	); err != nil {
 		return err
 	}
+	if err := registerServiceSLATools(registrar, service); err != nil {
+		return err
+	}
 	if err := registerServiceDowntimeTools(registrar, service); err != nil {
 		return err
 	}

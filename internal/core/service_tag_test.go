@@ -43,7 +43,8 @@ func TestAttachServiceTagByFilters(t *testing.T) {
 			t.Fatalf("selection request = %+v", request)
 		}
 	}
-	for _, selection := range []ServiceSelection{{}, {Services: []string{"a"}, Filters: ServiceFilters{App: "x"}}, {Node: "n1", Filters: ServiceFilters{Tag: "x"}},
+	for _, selection := range []ServiceSelection{{}, {Services: []string{"a"}, Filters: ServiceFilters{App: "x"}}, {Node: "n1", OnNodes: &NodeFilters{Status: "x"}},
+		{OnNodes: &NodeFilters{}}, {Instance: InstanceState{Availability: "a\x00"}},
 		{Filters: ServiceFilters{Topology: "ring"}}, {Services: make([]string, 51)}} {
 		collector := serviceTagCollector(`{"data":[]}`, nil)
 		if _, err := newTestService(collector).AttachServiceTag(t.Context(), ServiceTagOptions{Tag: "backup-nightly", ServiceSelection: selection}); err == nil || len(collector.requests) != 0 {
@@ -66,7 +67,7 @@ func TestDetachServiceTagFromTheServicesOfANode(t *testing.T) {
 	}
 	for _, request := range collector.requests {
 		if request.path == "/services_instances" &&
-			(strings.Join(request.query["filter"], " ") != "node_id:eq:n-1 services.svc_topology:eq:failover" || request.query.Get("props") != "svc_id,services.svcname,services.cluster_id") {
+			(strings.Join(request.query["filter"], " ") != "node_id:eq:n-1 services.svc_topology:eq:failover" || request.query.Get("props") != "svc_id,services.svcname,services.cluster_id,services.svc_sla,services.svc_availability,node_id") {
 			t.Fatalf("selection request = %+v", request)
 		}
 	}

@@ -7,24 +7,12 @@ import (
 	"github.com/opensvc/oc3-mcp/internal/core"
 )
 
-// ServiceSelectionInput selects the services of a compliance change:
-// services, or the filters of list_services and count_services.
-type ServiceSelectionInput struct {
-	Services []string `json:"services,omitempty" jsonschema:"optional exact service names or service IDs, at most 50; not with filters"`
-	ServiceFiltersInput
-	Node string `json:"node,omitempty" jsonschema:"optional exact node name or node ID; keeps only the services with an instance on that node; not with tag, filterset, ruleset or moduleset"`
-}
-
-func (input ServiceSelectionInput) selection() core.ServiceSelection {
-	return core.ServiceSelection{Services: input.Services, Filters: input.ServiceFiltersInput.core(), Node: input.Node}
-}
-
 type ServiceRulesetInput struct {
 	Ruleset string `json:"ruleset" jsonschema:"one exact compliance ruleset name or ruleset ID"`
 	ServiceSelectionInput
 	// FilterRuleset is the ruleset filter of list_services, whose name
 	// ruleset is the ruleset changed here.
-	FilterRuleset string `json:"filter_ruleset,omitempty" jsonschema:"optional exact explicit ruleset name or ruleset ID; keeps only the services it is attached to, the ruleset filter of list_services and count_services; to detach a ruleset from every service holding it, pass the same ruleset; a contextual one is refused here: pass its services; not with tag, filterset, moduleset or node"`
+	FilterRuleset string `json:"filter_ruleset,omitempty" jsonschema:"optional exact explicit ruleset name or ruleset ID; keeps only the services it is attached to, the ruleset filter of list_services and count_services; to detach a ruleset from every service holding it, pass the same ruleset; a contextual one is refused here: pass its services; not with tag, filterset or moduleset"`
 }
 
 func (input ServiceRulesetInput) selection() core.ServiceSelection {
@@ -38,7 +26,7 @@ type ServiceModulesetInput struct {
 	ServiceSelectionInput
 	// FilterModuleset is the moduleset filter of list_services, whose name
 	// moduleset is the moduleset changed here.
-	FilterModuleset string `json:"filter_moduleset,omitempty" jsonschema:"optional exact moduleset name or moduleset ID; keeps only the services it is attached to directly, the moduleset filter of list_services and count_services; to detach a moduleset from every service holding it, pass the same moduleset; not with tag, filterset, ruleset or node"`
+	FilterModuleset string `json:"filter_moduleset,omitempty" jsonschema:"optional exact moduleset name or moduleset ID; keeps only the services it is attached to directly, the moduleset filter of list_services and count_services; to detach a moduleset from every service holding it, pass the same moduleset; not with tag, filterset or ruleset"`
 }
 
 func (input ServiceModulesetInput) selection() core.ServiceSelection {
@@ -54,8 +42,7 @@ type ServiceModulesetOutput = core.ServiceModulesetChange
 // serviceComplianceSelection tells how a change of a ruleset or a moduleset,
 // the kind, selects its services.
 func serviceComplianceSelection(kind string) string {
-	return "Pass the services, at most 50 exact names or IDs, or at least one of the filters of list_services and count_services, the " + kind + " filter given here as filter_" + kind + ", or node, to select up to 1000 services; a larger selection is refused, and nothing is changed. " +
-		"An unknown name, or one several clusters hold, refuses the whole call, before anything is changed. The MCP sends one request per service: the change is not atomic, and the result gives the outcome on each service, with the reason of each refusal. " +
+	return serviceSelection(kind) +
 		"The change is that of the service itself, not of its encapsulated services. " +
 		"Requires to be responsible for the services, by their app; the collector attaches only what is published to a group responsible for the app of the service, or to Everybody."
 }

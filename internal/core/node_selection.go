@@ -28,6 +28,9 @@ const (
 	ChangeDetached        = "detached"
 	ChangeAlreadyDetached = "already_detached"
 	ChangeQueued          = "queued"
+	ChangeSet             = "set"
+	ChangeRemoved         = "removed"
+	ChangeUnchanged       = "unchanged"
 	ChangeRefused         = "refused"
 	ChangeNotAttempted    = "not_attempted"
 )
