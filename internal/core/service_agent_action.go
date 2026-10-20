@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"reflect"
 	"sort"
 	"strconv"
@@ -28,6 +29,10 @@ type serviceAgentAction struct {
 	// destination is an action on the instance of the services selected
 	// on one node, their destination.
 	destination bool
+	// compliance is a compliance run on an instance, of the modules of the
+	// modulesets attached to the service, which the collector queues
+	// without --local: the agent runs it on its instance only.
+	compliance bool
 	// local is an action the collector queues with --local on an
 	// instance, when the agent version of its node is 1.9 or later, and
 	// bare else: the agent then acts on the whole service.
@@ -49,6 +54,9 @@ var serviceAgentActions = map[string]serviceAgentAction{
 	"giveback": {service: true},
 	"takeover": {instance: true, destination: true},
 	"abort":    {service: true},
+	// The compliance runs need the CompExec privilege, NodeExec else.
+	"compliance_check": {instance: true, compliance: true},
+	"compliance_fix":   {instance: true, compliance: true},
 }
 
 // ServiceAgentActionOptions queue an agent action on the selected services,
@@ -86,7 +94,7 @@ type ServiceAgentActionOutcome struct {
 	ActionID  int    `json:"action_id,omitempty" jsonschema:"with queued, the ID of the action in the queue, which list_node_actions follows"`
 	Command   string `json:"command,omitempty" jsonschema:"with queued, the command the agent runs after om svc -s <service>"`
 	QueuedFor string `json:"queued_for,omitempty" jsonschema:"with queued, how the node reads its queue: feed, read by an om3 agent; pull or push, the means of the former agent"`
-	Warning   string `json:"warning,omitempty" jsonschema:"with queued, why the action may never run; tell the user"`
+	Warning   string `json:"warning,omitempty" jsonschema:"with queued, why the action may never run or do nothing; tell the user"`
 }
 
 // serviceAgentTarget is a service, or with local an instance, an action is
@@ -218,6 +226,12 @@ func (s *Service) QueueServiceAgentAction(ctx context.Context, options ServiceAg
 		return targets[i].nodename < targets[j].nodename
 	})
 
+	// A compliance run of a service without moduleset attached runs no
+	// module: told, not refused.
+	unattached := map[string]bool{}
+	if spec.compliance {
+		unattached = s.servicesWithoutModuleset(ctx, targets)
+	}
 	outcomes := make([]ServiceAgentActionOutcome, len(targets))
 	forEachSelected(ctx, len(targets), func(index int) {
 		outcomes[index] = s.queueServiceAgentAction(ctx, options.Action, spec, targets[index])
@@ -226,7 +240,10 @@ func (s *Service) QueueServiceAgentAction(ctx context.Context, options ServiceAg
 		outcomes[index] = ServiceAgentActionOutcome{SvcID: target.service.SvcID, Svcname: target.service.Svcname, ClusterID: target.service.ClusterID, NodeID: target.node, Nodename: target.nodename, Outcome: ChangeNotAttempted}
 	})
 	services := map[string]string{}
-	for _, outcome := range outcomes {
+	for index, outcome := range outcomes {
+		if outcome.Outcome == ChangeQueued && unattached[outcome.SvcID] {
+			outcomes[index].Warning = strings.TrimSpace(outcome.Warning + " service " + outcome.Svcname + " has no moduleset attached: the run checks or fixes nothing; attach_service_moduleset attaches one")
+		}
 		switch outcome.Outcome {
 		case ChangeQueued:
 			result.Queued++
@@ -241,16 +258,53 @@ func (s *Service) QueueServiceAgentAction(ctx context.Context, options ServiceAg
 	if result.Queued > 0 {
 		// The actions of one service are followed by its name, those of
 		// several by the command, which a restart also holds.
-		filter := fmt.Sprintf("command %q", options.Action)
+		command := options.Action
+		if words, ok := actionCommandFilters[command]; ok {
+			command = words
+		}
+		filter, service := fmt.Sprintf("command %q", command), ""
 		if len(services) == 1 {
 			for _, name := range services {
-				filter = fmt.Sprintf("service %q", name)
+				filter, service = fmt.Sprintf("service %q", name), fmt.Sprintf(" with service %q", name)
 			}
 		}
 		result.FollowUp = fmt.Sprintf("list_node_actions with %s: an agent takes the action within seconds; done with exit code 0 means the agent accepted it, an orchestration of start, stop, switch, giveback or takeover then going on; get_service gives the state of the instances, which the collector receives 10 to 20 seconds later", filter)
+		if spec.compliance {
+			// A compliance run is not orchestrated: done, it is over, and
+			// its modules report to the collector.
+			result.FollowUp = fmt.Sprintf("list_node_actions with %s: the agent runs the modules within seconds, and the action is done when they are, with exit code 0 when every module passed; list_compliance_runs%s gives the run of each module, and list_compliance_status%s the state", filter, service, service)
+		}
 	}
 	result.Provenance = s.newProvenance()
 	return result, nil
+}
+
+// servicesWithoutModuleset tells the services of targets with no moduleset
+// attached, a few at a time; a read that fails tells nothing.
+func (s *Service) servicesWithoutModuleset(ctx context.Context, targets []serviceAgentTarget) map[string]bool {
+	var ids []string
+	seen := map[string]bool{}
+	for _, target := range targets {
+		if target.missing == "" && !seen[target.service.SvcID] {
+			seen[target.service.SvcID] = true
+			ids = append(ids, target.service.SvcID)
+		}
+	}
+	none := make([]bool, len(ids))
+	forEachSelected(ctx, len(ids), func(index int) {
+		var response collectorList[collectorModuleset]
+		path := "/services/" + url.PathEscape(ids[index]) + "/compliance/modulesets"
+		if err := s.client.GetJSON(ctx, path, url.Values{"props": {"id"}, "limit": {"1"}}, &response); err == nil {
+			none[index] = len(response.Data) == 0
+		}
+	}, func(int) {})
+	result := map[string]bool{}
+	for index, id := range ids {
+		if none[index] {
+			result[id] = true
+		}
+	}
+	return result
 }
 
 // takeoverTargets gives, for the services of targets, their instances on the

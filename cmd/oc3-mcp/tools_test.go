@@ -811,6 +811,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"justify_service_downtime": true, "unjustify_service_downtime": true, "set_service_sla": true,
 			"freeze_service": false, "thaw_service": true, "start_service": false, "stop_service": true, "restart_service": true,
 			"switch_service": true, "giveback_service": true, "takeover_service": true, "abort_service_action": true,
+			"check_service_compliance": false, "fix_service_compliance": true,
 			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
@@ -897,7 +898,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				t.Fatalf("%s local input = %v", name, ok)
 			}
 		}
-		if len(found) != 36 {
+		if len(found) != 38 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -1380,6 +1381,11 @@ func TestServiceAgentActionTools(t *testing.T) {
 				_, _ = w.Write([]byte(`{"text":"user has no NodeExec privilege"}`))
 				return
 			}
+			if body["svc_id"] == "s-2" && body["action"] == "compliance_fix" {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"text":"user has no CompExec privilege"}`))
+				return
+			}
 			_, _ = w.Write([]byte(`{"data":[{"id":817,"status":"W","action_type":"feed","command":"freeze --local","node_id":"n-1"}]}`))
 		default:
 			notFound(w, "missing")
@@ -1411,6 +1417,23 @@ func TestServiceAgentActionTools(t *testing.T) {
 	}
 	if result, _ := call("stop_service", map[string]any{}); !result.IsError || len(bodies) != 5 {
 		t.Fatalf("a stop selecting nothing was accepted, bodies %v", bodies)
+	}
+	// A compliance check of the instances of dev2n1, each run by dev2n1.
+	result, queued = call("check_service_compliance", map[string]any{"node": "dev2n1"})
+	if result.IsError || queued["selected"] != float64(2) || len(bodies) != 7 || bodies[5]["action"] != "compliance_check" || bodies[5]["node_id"] != "n-1" ||
+		!strings.Contains(fmt.Sprint(queued["follow_up"]), "list_compliance_runs") {
+		t.Fatalf("check_service_compliance = %+v, bodies %v", queued, bodies)
+	}
+	if result, _ := call("fix_service_compliance", map[string]any{"services": []string{"foo"}}); !result.IsError || len(bodies) != 7 {
+		t.Fatalf("a fix without node was accepted, bodies %v", bodies)
+	}
+	// A compliance fix of the instances of dev2n1: bug1 refused by the
+	// collector for want of CompExec, foo queued.
+	result, queued = call("fix_service_compliance", map[string]any{"node": "dev2n1"})
+	actions, _ = queued["actions"].([]any)
+	if result.IsError || queued["queued"] != float64(1) || queued["refused"] != float64(1) || len(actions) != 2 || len(bodies) != 9 ||
+		bodies[7]["action"] != "compliance_fix" || bodies[7]["node_id"] != "n-1" || !strings.Contains(fmt.Sprint(actions[0].(map[string]any)["reason"]), "CompExec") {
+		t.Fatalf("fix_service_compliance = %+v, bodies %v", queued, bodies)
 	}
 }
 

@@ -73,6 +73,12 @@ const serviceAgentActionFollowUp = "The collector queues it for a node of each s
 
 const serviceAgentActionPrivilege = "Requires the NodeExec privilege and to be responsible for the services, by their app."
 
+// serviceComplianceFollowUp tells how a compliance run queued on instances
+// runs: not orchestrated, done when the modules are.
+const serviceComplianceFollowUp = "The collector queues it for the node of each instance, whose agent runs om svc -s <service> compliance check or fix, on that instance only, every module of the modulesets attached to the service, within seconds; a service without moduleset attached runs nothing, which a warning tells. " +
+	"Returns as soon as each action is queued: list_node_actions with the service tells when it is done, with exit code 0 when every module passed; list_compliance_runs with the service gives the run of each module, and list_compliance_status the state. Cancel an action before an agent takes it with cancel_node_action. " +
+	"Requires the CompExec privilege and to be responsible for the services, by their app."
+
 // startAfterStop warns of the om3 daemons choosing the node of a start right
 // after a stop of the whole service on the view they have of their peers.
 const startAfterStop = "Right after a stop of the whole service, the daemons may choose another node than the preferred one, or two: check the placement with get_service. "
@@ -139,6 +145,26 @@ func registerServiceAgentActionTools(registrar *Registrar, service *core.Service
 		return queue(ctx, "restart", true, input.targets())
 	}); err != nil {
 		return err
+	}
+	for _, declared := range []struct {
+		name, title, action, description string
+		destructive                      bool
+	}{
+		{"check_service_compliance", "Check service compliance", "compliance_check", "Check the compliance of the instances of OpenSVC services on the nodes given, through their agents: each node runs the modules attached to the service on its instance and reports whether it complies, changing nothing. Pass node or on_nodes, and services for some of their services only. " +
+			"To tell whether a service complies, read list_compliance_status first: run a check when the user asks for one, or for a fresh result. ", false},
+		{"fix_service_compliance", "Fix service compliance", "compliance_fix", "Fix the compliance of OpenSVC services, such as foo on node n1, on their instances on the nodes given: each node runs the modules attached to the service, which change the instance to the values of their rulesets, such as files or packages. Pass node or on_nodes, and services for some of their services only. " +
+			"list_compliance_status tells which modules of the service fail before a fix, and check_service_compliance gives a fresh state. ", true},
+	} {
+		declared := declared
+		if err := addTool(registrar, &mcp.Tool{
+			Name: declared.name, Title: declared.title,
+			Description: declared.description + serviceAgentSelection + serviceComplianceFollowUp,
+			Annotations: actionAnnotations(declared.destructive, true),
+		}, func(ctx context.Context, _ *mcp.CallToolRequest, input ServiceActionTargetsInput) (*mcp.CallToolResult, ServiceAgentActionOutput, error) {
+			return queue(ctx, declared.action, true, input.targets())
+		}); err != nil {
+			return err
+		}
 	}
 	return addTool(registrar, &mcp.Tool{
 		Name: "takeover_service", Title: "Take service over",

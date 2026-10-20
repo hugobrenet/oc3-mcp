@@ -10,6 +10,8 @@ tools:
   - giveback_service
   - takeover_service
   - abort_service_action
+  - check_service_compliance
+  - fix_service_compliance
 stability: experimental
 ---
 
@@ -37,6 +39,8 @@ Implementation:
 | `giveback_service` | `giveback` | services | destructive, idempotent |
 | `takeover_service` | `takeover` | the instances of one node | destructive, idempotent |
 | `abort_service_action` | `abort` | services | destructive, idempotent |
+| `check_service_compliance` | `compliance_check` | instances | not destructive, idempotent |
+| `fix_service_compliance` | `compliance_fix` | instances | destructive, idempotent |
 
 A freeze and a start are not destructive: a freeze stops no instance, and is
 undone by a thaw; a start stops none. A thaw is, as for the nodes: the
@@ -101,6 +105,7 @@ command the collector built:
 | `freeze`, `thaw`, `start`, `stop`, `restart` | `<action>` | `<action> --local` |
 | `takeover`, `switch` | `<action>` | `<action>` |
 | `giveback`, `abort` | `<action>` | not offered: the collector adds `--local`, which om3 refuses |
+| `compliance_check`, `compliance_fix` | not taken by the collector | `compliance check`, `compliance fix`, without `--local` |
 
 `--local` is a hidden flag of om3, the action inline on the local instance.
 The collector adds it only for an agent of version 1.9 or later, as the
@@ -127,6 +132,27 @@ on another node than the preferred one, or on two: the daemons choose the
 node on the view they have of their peers, which lags behind the stop
 flags they clear. The tool descriptions say so, to check the placement.
 
+## Compliance runs
+
+`check_service_compliance` and `fix_service_compliance` act on instances
+only: the collector takes `compliance_check` and `compliance_fix` with a
+`node_id` alone. It queues `compliance check` or `compliance fix`, without
+`--local` and without module or moduleset, which om3 refuses or the
+collector does not pass: the agent of the node runs, on its instance only,
+every module of the modulesets attached to the service. The MCP therefore
+checks no agent version for them. A compliance run is not orchestrated:
+when its action is done, the run is over, with exit code 0 when every module
+passed for a check, and when every fix did for a fix. The modules report
+their runs to the collector: `list_compliance_runs` and
+`list_compliance_status` with the service give them, and the `follow_up`
+points to both.
+
+A service with no moduleset attached runs no module: the MCP reads the
+modulesets attached to each service selected, one request each, and warns
+of the ones without, pointing to `attach_service_moduleset`; the action is
+queued all the same. The collector requires the CompExec privilege for
+them, not NodeExec.
+
 ## Collector API
 
 ```text
@@ -135,7 +161,8 @@ PUT    /api/actions   {"svc_id": …, "action": …}                 on a servic
 PUT    /api/actions   {"svc_id": …, "node_id": …, "action": …}   on an instance
 ```
 
-The collector requires the NodeExec privilege and the responsibility of the
+The collector requires the NodeExec privilege, CompExec for the compliance
+runs, and the responsibility of the
 service, by a group responsible for its app, or Manager, and refuses
 another with 403. It refuses an action on a service with no node seen in the
 last 15 minutes with 409. It logs each action, and answers with the row of

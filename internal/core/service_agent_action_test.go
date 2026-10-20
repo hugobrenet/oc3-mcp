@@ -160,6 +160,53 @@ func TestQueueServiceAgentActionTakesTheServicesOfANodeOver(t *testing.T) {
 	}
 }
 
+// A compliance run goes to the node of each instance without --local, so
+// whatever the agent version, and tells a service without moduleset.
+func TestQueueServiceComplianceRun(t *testing.T) {
+	collector := newServiceAgentCollector()
+	answer := collector.answer
+	collector.answer = func(path string, query url.Values) string {
+		switch path {
+		case "/services/s-1/compliance/modulesets":
+			return `{"data":[],"meta":{"total":0}}`
+		case "/actions":
+			return `{"data":[{"id":902,"status":"W","action_type":"feed","command":"compliance check","node_id":"n-2"}]}`
+		}
+		return answer(path, query)
+	}
+	result, err := New(collector).QueueServiceAgentAction(t.Context(), ServiceAgentActionOptions{Action: "compliance_check", ServiceSelection: ServiceSelection{Node: "n2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// n2 holds no agent version: no refusal, the collector adding no
+	// --local to a compliance run, and no warning of it.
+	queued := result.Actions[0]
+	if !result.Local || result.Queued != 1 || queued.Outcome != ChangeQueued || queued.Nodename != "n2" || strings.Contains(queued.Warning, "--local") ||
+		!strings.Contains(queued.Warning, "no moduleset attached") || !strings.Contains(result.FollowUp, "list_compliance_runs") {
+		t.Fatalf("result = %+v", result)
+	}
+	for _, request := range collector.requests {
+		if request.method == "PUT" && (request.body["action"] != "compliance_check" || request.body["node_id"] != "n-2" || request.body["svc_id"] != "s-1") {
+			t.Fatalf("queueing = %+v", request)
+		}
+	}
+	// Several services are followed by the command the collector queues.
+	collector = newServiceAgentCollector()
+	result, err = New(collector).QueueServiceAgentAction(t.Context(), ServiceAgentActionOptions{Action: "compliance_fix", ServiceSelection: ServiceSelection{Services: []string{"web"}, Node: "n1"}})
+	if err != nil || result.Queued != 1 || !strings.Contains(result.FollowUp, `service "web"`) {
+		t.Fatalf("result = %+v, %v", result, err)
+	}
+	for _, options := range []ServiceAgentActionOptions{
+		{Action: "compliance_check", ServiceSelection: ServiceSelection{Services: []string{"web"}}},
+		{Action: "compliance_fix", ServiceSelection: ServiceSelection{Filters: ServiceFilters{App: "WEB"}}},
+	} {
+		collector := newServiceAgentCollector()
+		if _, err := New(collector).QueueServiceAgentAction(t.Context(), options); err == nil || len(collector.requests) != 0 {
+			t.Fatalf("options %+v accepted", options)
+		}
+	}
+}
+
 // A selection over the bound queues nothing.
 func TestQueueServiceAgentActionBoundsTheSelection(t *testing.T) {
 	rows := make([]string, 201)

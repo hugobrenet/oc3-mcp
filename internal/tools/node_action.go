@@ -350,7 +350,7 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 		{"drain_node", "Drain node", "drain", "Drain one or several nodes: the agent of each runs om node drain, which freezes the node and stops every instance running on it, so that its services stop or fail over to other nodes. " +
 			"om node drain hands the drain to the daemon and returns: an action done with exit code 0 means the drain was accepted, not that the node is empty; get_node tells whether the node is frozen, and list_instances which instances stopped or moved. " +
 			"The node stays frozen after the drain: unfreeze_node gives it back to the automatic actions, to end a maintenance. ", true},
-		{"fix_node_compliance", "Fix node compliance", "compliance_fix", "Fix the compliance of one or several nodes: the agent of each runs om node compliance fix, and every module attached to the node changes the node to the values of its rulesets, such as files, packages or settings. ", true},
+		{"fix_node_compliance", "Fix node compliance", "compliance_fix", "Fix the compliance of the nodes themselves: the agent of each runs om node compliance fix, and every module attached to the node, not to its services, changes the node to the values of its rulesets, such as files, packages or settings. For the compliance of a service, use fix_service_compliance. ", true},
 	} {
 		declared := declared
 		privilege := "Requires the NodeExec privilege and to be responsible for the nodes."
