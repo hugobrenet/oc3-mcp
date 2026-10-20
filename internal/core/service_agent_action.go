@@ -271,6 +271,8 @@ func (s *Service) QueueServiceAgentAction(ctx context.Context, options ServiceAg
 		outcomes[index] = ServiceAgentActionOutcome{SvcID: target.service.SvcID, Svcname: target.service.Svcname, ClusterID: target.service.ClusterID, NodeID: target.node, Nodename: target.nodename, Outcome: ChangeNotAttempted}
 	})
 	services := map[string]string{}
+	var ids []int
+	waitable := false
 	for index, outcome := range outcomes {
 		if outcome.Outcome == ChangeQueued && unattached[outcome.SvcID] {
 			outcomes[index].Warning = strings.TrimSpace(outcome.Warning + " service " + outcome.Svcname + " has no moduleset attached: the run checks or fixes nothing; attach_service_moduleset attaches one")
@@ -279,6 +281,8 @@ func (s *Service) QueueServiceAgentAction(ctx context.Context, options ServiceAg
 		case ChangeQueued:
 			result.Queued++
 			services[outcome.SvcID] = outcome.Svcname
+			ids = append(ids, outcome.ActionID)
+			waitable = waitable || readByAgent(outcome.QueuedFor)
 		case ChangeUnchanged:
 			result.Unchanged++
 		default:
@@ -299,16 +303,17 @@ func (s *Service) QueueServiceAgentAction(ctx context.Context, options ServiceAg
 				filter, service = fmt.Sprintf("service %q", name), fmt.Sprintf(" with service %q", name)
 			}
 		}
-		result.FollowUp = fmt.Sprintf("list_node_actions with %s: an agent takes the action within seconds; done with exit code 0 means the agent accepted it, an orchestration of start, stop, switch, giveback or takeover then going on; get_service gives the state of the instances, which the collector receives 10 to 20 seconds later", filter)
+		follow := followActions(ids, waitable, filter)
+		result.FollowUp = fmt.Sprintf("%s: an agent takes the action within seconds; done with exit code 0 means the agent accepted it, an orchestration of start, stop, switch, giveback or takeover then going on; get_service gives the state of the instances, which the collector receives 10 to 20 seconds later", follow)
 		if len(resources) > 0 {
 			// An action on resources is not orchestrated: the agent runs
 			// it on its instance, and it is over when done.
-			result.FollowUp = fmt.Sprintf("list_node_actions with %s: the agent runs it on the resources of its instance within seconds, without orchestration, and the action is done when they are, with exit code 0 when it succeeded; list_service_resources%s gives their status, which the collector receives 10 to 20 seconds later", filter, service)
+			result.FollowUp = fmt.Sprintf("%s: the agent runs it on the resources of its instance within seconds, without orchestration, and the action is done when they are, with exit code 0 when it succeeded; list_service_resources%s gives their status, which the collector receives 10 to 20 seconds later", follow, service)
 		}
 		if spec.compliance {
 			// A compliance run is not orchestrated: done, it is over, and
 			// its modules report to the collector.
-			result.FollowUp = fmt.Sprintf("list_node_actions with %s: the agent runs the modules within seconds, and the action is done when they are, with exit code 0 when every module passed; list_compliance_runs%s gives the run of each module, and list_compliance_status%s the state", filter, service, service)
+			result.FollowUp = fmt.Sprintf("%s: the agent runs the modules within seconds, and the action is done when they are, with exit code 0 when every module passed; list_compliance_runs%s gives the run of each module, and list_compliance_status%s the state", follow, service, service)
 		}
 	}
 	result.Provenance = s.newProvenance()

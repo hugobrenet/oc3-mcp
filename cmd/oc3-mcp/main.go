@@ -30,8 +30,9 @@ const (
 	// writeTimeout bounds the processing and the response of a request, so
 	// that a client reading it slowly is cut off. It stays above the longest
 	// tool: a token exchange of up to 1 min (request_timeout), then collector
-	// requests of up to 30 s each, two for get_service.
-	writeTimeout    = 3 * time.Minute
+	// requests of up to 30 s each, two for get_service, and list_node_actions
+	// waiting up to 2 min for the actions it reads to end.
+	writeTimeout    = 4 * time.Minute
 	maxMCPBodyBytes = 1 << 20
 	shutdownTimeout = 30 * time.Second
 )

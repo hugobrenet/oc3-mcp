@@ -223,7 +223,7 @@ carries a warning.
 | `node`, `on_nodes_selected`, `on_nodes_filter`, `filter_tag`, `filterset`, `filter_ruleset`, `filter_moduleset` | The filters of the selection, resolved |
 | `selected`, `queued`, `unchanged`, `refused` | Services or instances selected, actions queued, left as they were, and not queued: refused or not attempted |
 | `actions[]` | `svc_id`, `svcname`, `cluster_id`, `node_id` and `nodename`, the node of the instance or the one the collector chose, `outcome` (`queued`, `unchanged`, `refused`, `not_attempted`), `reason`, `action_id`, `command`, `queued_for` and `warning`, sorted by service then node |
-| `follow_up` | How to follow the actions: `list_node_actions` with the `service` of one service, or the command, then `get_service` |
+| `follow_up` | How to follow the actions: `list_node_actions` with their `action_ids` and `wait`, or beyond 100 actions with the `service` of one service or the command, then `get_service` |
 
 The actions are followed and cancelled with the tools of the queue,
 `list_node_actions` and `cancel_node_action`, which take every action of

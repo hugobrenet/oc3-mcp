@@ -84,14 +84,14 @@ const serviceAgentSelection = "Select the services by services, exact names or I
 // serviceAgentActionFollowUp tells how an action queued on services runs.
 const serviceAgentActionFollowUp = "The collector queues it for a node of each service seen in the last 15 minutes, or with local for the node of each instance; the agent runs it as om svc -s <service> <action> when it reads its queue, within seconds. " +
 	"With local, an instance on a node for which the collector holds no agent version of 1.9 or later is refused: the collector would queue the action without --local, on the whole service. " +
-	"Returns as soon as each action is queued, with its action_id: follow it with list_node_actions and its service filter. Done with exit code 0 means the agent accepted the action, an orchestration then going on; get_service tells the state of the instances, the collector receiving it 10 to 20 seconds later. Cancel an action before an agent takes it with cancel_node_action. "
+	"Returns as soon as each action is queued, with its action_id: follow it with list_node_actions and its action_ids, with wait to its end. Done with exit code 0 means the agent accepted the action, an orchestration then going on; get_service tells the state of the instances, the collector receiving it 10 to 20 seconds later. Cancel an action with cancel_node_action. "
 
 const serviceAgentActionPrivilege = "Requires the NodeExec privilege and to be responsible for the services, by their app."
 
 // serviceComplianceFollowUp tells how a compliance run queued on instances
 // runs: not orchestrated, done when the modules are.
 const serviceComplianceFollowUp = "The collector queues it for the node of each instance, whose agent runs om svc -s <service> compliance check or fix, on that instance only, every module of the modulesets attached to the service, within seconds; a service without moduleset attached runs nothing, which a warning tells. " +
-	"Returns as soon as each action is queued: list_node_actions with the service tells when it is done, with exit code 0 when every module passed; list_compliance_runs with the service gives the run of each module, and list_compliance_status the state. Cancel an action before an agent takes it with cancel_node_action. " +
+	"Returns as soon as each action is queued, with its action_id: list_node_actions with its action_ids, and wait, tells when it is done, with exit code 0 when every module passed; list_compliance_runs with the service gives the run of each module, and list_compliance_status the state. Cancel an action with cancel_node_action. " +
 	"Requires the CompExec privilege and to be responsible for the services, by their app."
 
 // serviceResourceActions tells how an action acts on resources.
