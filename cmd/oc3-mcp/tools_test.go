@@ -812,7 +812,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"freeze_service": false, "thaw_service": true, "start_service": false, "stop_service": true, "restart_service": true,
 			"switch_service": true, "giveback_service": true, "takeover_service": true, "abort_service_action": true,
 			"check_service_compliance": false, "fix_service_compliance": true, "submit_form": true,
-			"create_form": false, "update_form": true, "delete_form": true, "attach_form_groups": false, "detach_form_groups": true,
+			"create_form": true, "update_form": true, "delete_form": true, "attach_form_groups": false, "detach_form_groups": true,
 			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
@@ -837,6 +837,20 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				inputs[input] = property.Description
 			}
 			return inputs
+		}
+		// The definitions of the forms are YAML, as their schemas tell the
+		// clients that show them, the confirmation of the agent among them.
+		for _, name := range []string{"create_form", "update_form"} {
+			data, _ := json.Marshal(found[name].InputSchema)
+			var schema struct {
+				Properties map[string]struct {
+					ContentMediaType string `json:"contentMediaType"`
+				} `json:"properties"`
+			}
+			_ = json.Unmarshal(data, &schema)
+			if schema.Properties["yaml"].ContentMediaType != "application/yaml" || schema.Properties["name"].ContentMediaType != "" {
+				t.Fatalf("%s schema = %s", name, data)
+			}
 		}
 		// The tag changed and the tag filter have their own names.
 		for _, name := range []string{"attach_node_tag", "detach_node_tag", "attach_service_tag", "detach_service_tag"} {

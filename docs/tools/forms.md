@@ -291,9 +291,18 @@ the email addresses. A secret under a key that names none stays in clear.
 ### `create_form`, `update_form` and `delete_form`
 
 Create, change and delete forms. Registered only when
-`OPENSVC_MCP_ACTIONS=enabled`. `create_form` is not destructive: a form
-does nothing until submitted, and `submit_form` is confirmed; `update_form`,
-which replaces the definition given, and `delete_form` are.
+`OPENSVC_MCP_ACTIONS=enabled`. The three are destructive, so that the
+agent asks the user to confirm each call: `create_form` too, though a form
+does nothing until submitted, for the user to approve the definition as
+sent, which the confirmation shows. A step where the model would show the
+YAML first was left out: it rests on the model, which replays showed
+skipping it in half the draws.
+
+The `yaml` input of `create_form` and `update_form` carries
+`"contentMediaType": "application/yaml"` in the input schema, the JSON
+Schema keyword of the media type of a text: the agent gives it in its
+confirmation, for the client to show the definition as YAML, its lines and
+indentation kept, rather than guess the format of a text.
 
 ```text
 POST   /api/forms        {"form_name": …, "form_yaml": …, "form_folder": …, "form_type": …}   create
