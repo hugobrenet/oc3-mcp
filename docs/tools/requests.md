@@ -48,6 +48,7 @@ started from, which the collector joins by its md5.
 | `id` | Optional exact request ID, to tell where one request stands |
 | `status` | Optional exact status: `pending` or `closed` |
 | `assignee` | Optional exact name of the team or user the last step was assigned to, case-insensitive |
+| `assigned` | Optional `team`: the pending requests whose last step is assigned to the full name of the caller or to one of their groups that grant no privilege, as the collector computes it from the groups of the caller; `tiers`: those the caller or their teams created that wait for someone else. Sent to the collector as the `assigned` query parameter, which refuses another value |
 | `creator` | Optional exact name of who created the request, case-insensitive |
 | `form` | Optional exact name of the form that started the request |
 | `created_since`, `updated_since` | Optional earliest creation or update date, included, in collector local time: `YYYY-MM-DD`, `YYYY-MM-DD HH:MM` or `YYYY-MM-DD HH:MM:SS` |

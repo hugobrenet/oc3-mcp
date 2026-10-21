@@ -18,9 +18,13 @@ var requestProps = []string{
 }
 
 type ListRequestsOptions struct {
-	ID           int
-	Status       string
-	Assignee     string
+	ID       int
+	Status   string
+	Assignee string
+	// Assigned keeps the pending requests of the team of the caller, as the
+	// collector computes it: team, those its last step is assigned to, or
+	// tiers, those it created that wait for someone else.
+	Assigned     string
 	Creator      string
 	Form         string
 	CreatedSince string
@@ -118,14 +122,18 @@ func (s *Service) ListRequests(ctx context.Context, options ListRequestsOptions)
 	if options.UpdatedUntil != "" {
 		filters = append(filters, "last_update:lt:"+options.UpdatedUntil)
 	}
-	fingerprint := listFingerprint(url.Values{"filter": filters})
+	fingerprint := listFingerprint(url.Values{"filter": filters, "assigned": {options.Assigned}})
 	offset, err := decodeListCursor(options.Cursor, fingerprint)
 	if err != nil {
 		return RequestList{}, err
 	}
 
 	var response collectorList[collectorRequest]
-	if err := s.client.GetJSON(ctx, "/workflows", pageQuery(requestProps, "-last_update,-id", filters, limit, offset), &response); err != nil {
+	query := pageQuery(requestProps, "-last_update,-id", filters, limit, offset)
+	if options.Assigned != "" {
+		query.Set("assigned", options.Assigned)
+	}
+	if err := s.client.GetJSON(ctx, "/workflows", query, &response); err != nil {
 		return RequestList{}, fmt.Errorf("list requests: %w", err)
 	}
 	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
