@@ -18,7 +18,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Events | `list_collector_events` | [Collector event tools](events.md) |
 | Compliance | `list_compliance_status`, `list_compliance_runs`, `count_compliance_runs`, `list_compliance_modulesets`, `get_compliance_moduleset`, `list_compliance_rulesets`, `get_compliance_ruleset` | [Compliance tools](compliance.md) |
 | IP addresses | `list_ips` | [IP tools](ips.md) |
-| Tags | `list_tags` | [Tag tools](tags.md) |
+| Tags | `list_tags`, `create_tag`, `update_tag`, `delete_tag` | [Tag tools](tags.md) |
 | Apps | `get_app` | [App tools](apps.md) |
 | Find | `find_objects` | [Find tools](find.md) |
 | Requests | `list_requests`, `get_request` | [Request tools](requests.md) |

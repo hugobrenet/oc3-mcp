@@ -402,6 +402,9 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 	if err := registerCheckThresholdWriteTools(registrar, service); err != nil {
 		return err
 	}
+	if err := registerTagWriteTools(registrar, service); err != nil {
+		return err
+	}
 	if err := registerServiceDowntimeTools(registrar, service); err != nil {
 		return err
 	}

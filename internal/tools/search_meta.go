@@ -48,10 +48,12 @@ var toolKeywords = map[string][]string{
 	"count_services":               {"how many services", "number", "distribution", "statistics", "services down"},
 	"create_form":                  {"new form", "create form", "write form", "form yaml", "form definition"},
 	"create_node":                  {"add node", "new node", "register node", "declare node", "inventory"},
+	"create_tag":                   {"new tag", "define tag", "make tag", "tag creation"},
 	"delete_form":                  {"remove form", "delete form", "drop form"},
 	"delete_node":                  {"remove node", "decommission", "purge node", "drop node"},
 	"delete_service":               {"remove service", "purge service", "decommission service", "clean inventory"},
 	"delete_service_instance":      {"remove instance", "stale instance", "orphan instance", "purge instance"},
+	"delete_tag":                   {"delete tag", "drop tag", "erase tag", "destroy tag", "tag deletion"},
 	"detach_form_groups":           {"unpublish form", "remove form publication", "remove form responsible", "restrict form"},
 	"detach_node_moduleset":        {"remove moduleset", "unassign moduleset", "disable compliance"},
 	"detach_node_ruleset":          {"remove ruleset", "unassign ruleset", "drop rules"},
@@ -134,6 +136,7 @@ var toolKeywords = map[string][]string{
 	"unjustify_service_downtime":   {"remove downtime justification", "count downtime again"},
 	"update_form":                  {"edit form", "change form", "modify form", "form yaml", "rename form"},
 	"update_node":                  {"modify node", "change node", "set app", "set status", "edit node", "node owner", "node location"},
+	"update_tag":                   {"rename tag", "edit tag", "change tag", "tag exclusion", "tag data"},
 }
 
 // searchMeta is the _meta of a tool for the tool search. Every tool has
