@@ -23,7 +23,7 @@ type ListChecksOutput = core.CheckList
 
 const checksDescription = "Each check holds its type, the instance it measures, the last value the agent reported, the low and high thresholds, whether the collector flags it out of bounds, where the thresholds come from (settings of the check on the node, a filterset, or the defaults of the type), and when it was last reported. " +
 	"Check types include fs_u (filesystem usage and free space), fs_i (inode usage), mpath (active multipath paths), vg_u (volume group usage), eth (link state) and zpool. " +
-	"Values are in the unit of the check type as the agent reports it. Checks out of bounds come first. At most 2000 checks are read. Collector dates are as it gives them."
+	"Values are in the unit of the check type as the agent reports it. Checks out of bounds come first. At most 2000 checks are read. Collector dates are as it gives them. get_check_threshold explains where the thresholds of one check come from."
 
 func RegisterCheckTools(registrar *Registrar, service *core.Service) error {
 	if err := addTool(
@@ -62,5 +62,5 @@ func RegisterCheckTools(registrar *Registrar, service *core.Service) error {
 	); err != nil {
 		return err
 	}
-	return nil
+	return registerCheckThresholdTools(registrar, service)
 }

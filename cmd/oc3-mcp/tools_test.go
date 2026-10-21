@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -839,7 +841,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"freeze_service": false, "thaw_service": true, "start_service": false, "stop_service": true, "restart_service": true,
 			"switch_service": true, "giveback_service": true, "takeover_service": true, "abort_service_action": true,
 			"check_service_compliance": false, "fix_service_compliance": true, "submit_form": true,
-			"create_form": true, "update_form": true, "delete_form": true, "attach_form_groups": false, "detach_form_groups": true, "rollback_form": true,
+			"create_form": true, "update_form": true, "delete_form": true, "attach_form_groups": false, "detach_form_groups": true, "rollback_form": true, "set_check_threshold": false, "unset_check_threshold": false,
 			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
@@ -946,7 +948,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				t.Fatalf("%s resources input = %v", name, ok)
 			}
 		}
-		if len(found) != 45 {
+		if len(found) != 47 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -1646,5 +1648,78 @@ func TestFormWriteTools(t *testing.T) {
 	}
 	if strings.Join(changes, ",") != "POST /forms,POST /forms/215,POST /forms/215/publications/2,POST /forms/215/publications/1,DELETE /forms/215/responsibles/2,POST /forms/215/rollback/b5fe254c,DELETE /forms/215" {
 		t.Fatalf("changes = %v", changes)
+	}
+}
+
+func TestCheckThresholdTools(t *testing.T) {
+	var mutex sync.Mutex
+	var changes []string
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.Method + " " + r.URL.EscapedPath()
+		filters := strings.Join(r.URL.Query()["filter"], ",")
+		body, _ := io.ReadAll(r.Body)
+		if r.Method != http.MethodGet {
+			mutex.Lock()
+			changes = append(changes, path+" "+string(body))
+			mutex.Unlock()
+		}
+		switch {
+		case path == "GET /nodes/dev2n1":
+			_, _ = w.Write([]byte(`{"data":[{"node_id":"n-1","nodename":"dev2n1","cluster_id":"c1"}]}`))
+		case path == "GET /checks/live" && strings.Contains(filters, "chk_instance:eq:/var"):
+			_, _ = w.Write([]byte(`{"data":[{"id":7,"node_id":"n-1","svc_id":"","chk_type":"fs_u","chk_instance":"/var","chk_value":96,"chk_low":0,"chk_high":95,"chk_err":0,"chk_threshold_provider":"settings"}],"meta":{"total":1}}`))
+		case path == "GET /checks/live":
+			_, _ = w.Write([]byte(`{"data":[{"svc_id":"","chk_type":"fs_u","chk_instance":"/"},{"svc_id":"","chk_type":"fs_u","chk_instance":"/var"}],"meta":{"total":2}}`))
+		case path == "GET /nodes/n-1/services":
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case path == "GET /checks/settings":
+			_, _ = w.Write([]byte(`{"data":[{"id":3,"node_id":"n-1","svc_id":"","chk_type":"fs_u","chk_instance":"/var","chk_low":0,"chk_high":95,"chk_changed_by":"jane@example.com","nodes.nodename":"dev2n1"}],"meta":{"total":1}}`))
+		case path == "GET /checks/defaults":
+			_, _ = w.Write([]byte(`{"data":[{"id":4,"chk_type":"fs_u","chk_inst":"","chk_low":0,"chk_high":98,"chk_prio":0}],"meta":{"total":1}}`))
+		case path == "GET /checks/contextual_settings":
+			_, _ = w.Write([]byte(`{"data":[],"meta":{"total":0}}`))
+		case path == "POST /checks/settings" && strings.Contains(string(body), `"/nosuch"`):
+			notFound(w, "check instance not found")
+		case path == "POST /checks/settings":
+			_, _ = w.Write([]byte(`{"info":"thresholds of check fs_u:/var set to 0 - 95"}`))
+		case path == "DELETE /checks/settings":
+			_, _ = w.Write([]byte(`{"info":"thresholds of check fs_u:/var reset"}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, details := call("get_check_threshold", map[string]any{"node": "dev2n1", "type": "fs_u", "instance": "/var"})
+	if result.IsError || details["check"].(map[string]any)["threshold_source"] != "settings" || details["without_settings"].(map[string]any)["source"] != "defaults" ||
+		strings.Contains(fmt.Sprint(details["settings"]), "jane@") {
+		t.Fatalf("get_check_threshold = %+v", details)
+	}
+	result, list := call("list_check_thresholds", map[string]any{"scope": "defaults", "type": "fs_u"})
+	if result.IsError || list["count"] != float64(1) {
+		t.Fatalf("list_check_thresholds = %+v", list)
+	}
+	result, set := call("set_check_threshold", map[string]any{"node": "dev2n1", "type": "fs_u", "instance": "/var", "high": 95})
+	if result.IsError || set["outcome"] != "set" || set["read_back"].(map[string]any)["high"] != float64(95) {
+		t.Fatalf("set_check_threshold = %+v", set)
+	}
+	// A threshold that is not an integer is refused by the schema.
+	if result, _ := call("set_check_threshold", map[string]any{"node": "dev2n1", "type": "fs_u", "instance": "/var", "high": 95.5}); !result.IsError {
+		t.Fatal("a decimal threshold was accepted")
+	}
+	result, _ = call("set_check_threshold", map[string]any{"node": "dev2n1", "type": "fs_u", "instance": "/nosuch", "high": 95})
+	if text := result.Content[0].(*mcp.TextContent).Text; !result.IsError || !strings.Contains(text, `the instances of its fs_u checks are: "/", "/var"`) {
+		t.Fatalf("set_check_threshold of an unknown check = %s", text)
+	}
+	result, unset := call("unset_check_threshold", map[string]any{"node": "dev2n1", "type": "fs_u", "instance": "/var"})
+	if result.IsError || unset["outcome"] != "removed" {
+		t.Fatalf("unset_check_threshold = %+v", unset)
+	}
+	want := []string{
+		`POST /checks/settings {"chk_high":95,"chk_instance":"/var","chk_type":"fs_u","node_id":"n-1"}`,
+		`POST /checks/settings {"chk_high":95,"chk_instance":"/nosuch","chk_type":"fs_u","node_id":"n-1"}`,
+		`DELETE /checks/settings {"chk_instance":"/var","chk_type":"fs_u","node_id":"n-1"}`,
+	}
+	if !slices.Equal(changes, want) {
+		t.Fatalf("changes = %q", changes)
 	}
 }

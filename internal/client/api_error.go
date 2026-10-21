@@ -37,6 +37,12 @@ func (e *APIError) Error() string {
 	return message
 }
 
+// HTTPStatus is the HTTP status the collector answered with.
+func (e *APIError) HTTPStatus() int { return e.StatusCode }
+
+// Message is the message of the collector problem body, empty when none.
+func (e *APIError) Message() string { return e.Text }
+
 // NotFound tells whether the collector found no such item, for the core to
 // suggest a search.
 func (e *APIError) NotFound() bool {

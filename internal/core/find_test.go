@@ -77,6 +77,10 @@ func (notFoundCollector) DeleteJSON(context.Context, string, url.Values, any) er
 	return fakeNotFound{}
 }
 
+func (notFoundCollector) DeleteJSONBody(context.Context, string, any, any) error {
+	return fakeNotFound{}
+}
+
 // An exact lookup that finds nothing suggests find_objects, whether the
 // collector answers 404 or an empty list.
 func TestLookupsSuggestFindObjects(t *testing.T) {
