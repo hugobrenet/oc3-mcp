@@ -203,8 +203,38 @@ one may expire while it runs.
 | Input | Meaning |
 |---|---|
 | `form` | One exact form name or form ID |
-| `data` | The values of the inputs, each under the `key` `get_form` gives, as the user gives them, as text: the collector compares the strict candidates and the forced keys as text, and refuses the number 2 for the candidate "2" |
+| `data` | The values of the inputs, each under the `key` `get_form` gives, as the user gives them, as text: the collector compares the strict candidates and the forced keys as text, and refuses the number 2 for the candidate "2"; an input that is not mandatory, such as a comment, is left out unless the user gives it |
 | `wait` | Optional seconds, 0 to 120, to wait for the outputs of an `Async` form to end |
+| `request` | Optional request ID: the form decides the pending step of that request, see [deciding a step](#deciding-a-step-of-a-request) |
+
+#### Deciding a step of a request
+
+The collector has no route to approve or reject a request: the form
+submitted after a step decides it, such as `sample-vm-approval` after
+`sample-vm-request`, its outputs running as any. With `request`, the MCP
+reads the last step of the request, `last_form_id` of `/api/workflows`, and
+sends it as `prev_wfid`:
+
+```text
+GET /api/workflows?props=id,last_form_id&filter=id:eq:<request>
+PUT /api/forms/<id>   {"data": {…}, "prev_wfid": <last_form_id>}
+```
+
+The collector checks the rest, Manager included: the form must be one of
+the `NextForms` of the step, else 403 `the <form> form is not a next step of
+workflow step <id>`, and the caller its assignee, by name or group, else
+403. A step already decided is answered 200, `QUEUED`, without
+`results_id`, the line `This step is already completed` under `submission`,
+and no output run. `submit_form` gives `next_step`, the forms a request waits
+for and their assignee, from the workflow output of the form submitted, or
+from the `Success` or `Error` branch of its `Scripts` by the return code, and
+its `follow_up` names the call that decides the step: the model needs no
+read of the request to go on with it. The assignee is the `NextAssignee` of
+the form; without one, the collector chooses, and `get_request` gives it.
+For a request started earlier, `get_request` gives its last form and its
+assignee, and `get_form` of that form its `next_steps`. On dev2, the
+approval of request 1376 closed it: `Workflow 1447 closed on last step
+sample-vm-approval with id 1449`.
 
 The internal forms of the collector, of negative IDs, are not found: the
 collector does not list them, nor give their inputs. They wait for a later
@@ -237,10 +267,11 @@ masked.
 | `returncode` | 0 when no output failed, else the sum of the failures |
 | `outputs[]` | In the order they run: `id`, or `submission` for the lines of the submission itself, such as a step already completed, which the collector logs under no output, `log[]` (`error`, `message`, its `%(key)s` fields filled, 1 KiB each, at most 50 lines), `lines_omitted`, `data` the output gave back and `sent`, the data a rest output sent, as text cut to 1 KiB, `truncated` |
 | `request` | The request a workflow output started or went on with: `id`, which `get_request` takes, and `step_id` |
+| `next_step` | `submit_form` only: what the request waits for next, as the definition of the form names it, `forms` and `assignee`; no `forms` when the step closed the request |
 | `values[]`, `values_omitted` | `get_form_result` only: the values submitted, as `get_request` gives them |
 | `definition_unavailable` | `get_form_result` only: whether the definition of the form could not be read |
 | `waited_seconds` | With `wait`, the time waited |
-| `follow_up` | `get_form_result` with `wait` while the outputs run, else `get_request` for a request |
+| `follow_up` | `get_form_result` with `wait` while the outputs run; for a request, the forms it waits for and `submit_form` with `request`, or that it is closed |
 
 `submit_form` does not give back the values it was given. The collector
 holds them in clear in the result, and gives them back in `submitted_data`,
