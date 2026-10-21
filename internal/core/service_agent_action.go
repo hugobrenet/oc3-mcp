@@ -92,12 +92,11 @@ type ServiceAgentActionQueueing struct {
 	To         *NodeReference `json:"to,omitempty" jsonschema:"with takeover_service, the destination node"`
 	Resources  []string       `json:"resources,omitempty" jsonschema:"the resource IDs the action acts on, on each instance"`
 	ServiceSelectionScope
-	Selected  int                         `json:"selected" jsonschema:"the number of services, or of instances with local, selected"`
-	Queued    int                         `json:"queued" jsonschema:"the number of actions queued"`
-	Unchanged int                         `json:"unchanged" jsonschema:"the number left as they were, such as a takeover of a failover service already running on its destination"`
-	Refused   int                         `json:"refused" jsonschema:"the number not queued: refused by the MCP or the collector, or not attempted when the call ended before"`
-	Actions   []ServiceAgentActionOutcome `json:"actions" jsonschema:"the outcome on each service or instance, sorted by service name then node name"`
-	FollowUp  string                      `json:"follow_up,omitempty" jsonschema:"how to tell whether the queued actions ran, and their result"`
+	Selected int                         `json:"selected" jsonschema:"the number of services, or of instances with local, selected"`
+	Queued   int                         `json:"queued" jsonschema:"the number of actions queued"`
+	Refused  int                         `json:"refused" jsonschema:"the number not queued: refused by the MCP or the collector, or not attempted when the call ended before"`
+	Actions  []ServiceAgentActionOutcome `json:"actions" jsonschema:"the outcome on each service or instance, sorted by service name then node name"`
+	FollowUp string                      `json:"follow_up,omitempty" jsonschema:"how to tell whether the queued actions ran, and their result"`
 }
 
 type ServiceAgentActionOutcome struct {
@@ -106,7 +105,7 @@ type ServiceAgentActionOutcome struct {
 	ClusterID string `json:"cluster_id,omitempty" jsonschema:"the ID of the OpenSVC cluster of the service"`
 	NodeID    string `json:"node_id,omitempty" jsonschema:"with local, the node of the instance; else the node the collector queued the action for"`
 	Nodename  string `json:"nodename,omitempty" jsonschema:"the name of that node"`
-	Outcome   string `json:"outcome" jsonschema:"queued, unchanged when already as asked, refused, or not_attempted when the call ended before"`
+	Outcome   string `json:"outcome" jsonschema:"queued, refused, or not_attempted when the call ended before"`
 	Reason    string `json:"reason,omitempty" jsonschema:"with refused, why"`
 	ActionID  int    `json:"action_id,omitempty" jsonschema:"with queued, the ID of the action in the queue, which list_node_actions follows"`
 	Command   string `json:"command,omitempty" jsonschema:"with queued, the command the agent runs after om svc -s <service>"`
@@ -119,8 +118,8 @@ type ServiceAgentActionOutcome struct {
 type serviceAgentTarget struct {
 	service        selectedService
 	node, nodename string
-	// availability and agentVersion are those of the instance and its node.
-	availability, agentVersion string
+	// agentVersion is that of the node of the instance.
+	agentVersion string
 	// missing is a service named with no instance selected: refused.
 	missing string
 	// warning is told on the action queued.
@@ -198,7 +197,7 @@ func (s *Service) QueueServiceAgentAction(ctx context.Context, options ServiceAg
 			found[instance.SvcID] = true
 			targets = append(targets, serviceAgentTarget{
 				service: instance.selectedService, node: instance.NodeID, nodename: instance.Nodename,
-				availability: instance.Availability, agentVersion: instance.AgentVersion,
+				agentVersion: instance.AgentVersion,
 			})
 		}
 	case narrowed:
@@ -283,8 +282,6 @@ func (s *Service) QueueServiceAgentAction(ctx context.Context, options ServiceAg
 			services[outcome.SvcID] = outcome.Svcname
 			ids = append(ids, outcome.ActionID)
 			waitable = waitable || readByAgent(outcome.QueuedFor)
-		case ChangeUnchanged:
-			result.Unchanged++
 		default:
 			result.Refused++
 		}
@@ -450,7 +447,7 @@ func (s *Service) takeoverTargets(ctx context.Context, destination string, targe
 				missing: fmt.Sprintf("service %s has no instance on node %s, the destination: nothing was queued for it", target.service.Svcname, node.Nodename)})
 		default:
 			moved = append(moved, serviceAgentTarget{service: instance.selectedService, node: instance.NodeID, nodename: instance.Nodename,
-				availability: instance.Availability, agentVersion: instance.AgentVersion})
+				agentVersion: instance.AgentVersion})
 		}
 	}
 	return moved, nil
@@ -468,11 +465,6 @@ func (s *Service) queueServiceAgentAction(ctx context.Context, action string, sp
 	// service. With resources, it adds --rid instead, whatever the version.
 	if target.node != "" && spec.local && rid == "" && !agentAtLeast19(target.agentVersion) {
 		outcome.Reason = fmt.Sprintf("the collector holds no agent version 1.9 or later for node %s, which pushasset reports, and would queue the action without --local, on the whole service: nothing was queued for it; queue_node_action pushasset on the node first", target.nodename)
-		return outcome
-	}
-	// A failover service running on the destination already stays there.
-	if spec.destination && target.service.Topology == "failover" && target.availability == "up" {
-		outcome.Outcome, outcome.Reason = ChangeUnchanged, fmt.Sprintf("service %s already runs on node %s", target.service.Svcname, target.nodename)
 		return outcome
 	}
 	// The agent switches a failover service to the next node it chooses: it

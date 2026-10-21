@@ -21,8 +21,8 @@ Implementation:
 
 | Tool | Annotations | Collector privilege |
 |---|---|---|
-| `justify_service_downtime` | destructive, idempotent | Responsible for the service, by its app |
-| `unjustify_service_downtime` | destructive, idempotent | Responsible for the service, by its app |
+| `justify_service_downtime` | not destructive, idempotent | Responsible for the service, by its app |
+| `unjustify_service_downtime` | not destructive, idempotent | Responsible for the service, by its app |
 
 A justification is a comment on a period of the status history of a
 service, the periods `get_service_status_history` gives, recorded with who
@@ -31,8 +31,10 @@ rate. A period left out of the rate is not counted as downtime: the rate the
 SLA of the service is compared with goes up. It is not a maintenance window:
 it snoozes no alert, and covers no time to come.
 
-`justify_service_downtime` is destructive: it replaces a justification
-already there. Removing one is too.
+Neither tool is destructive, so the agent asks no confirmation: a
+justification changes the availability rate and its comment only, which
+another call sets again; it replaces a justification already there, which
+the result gives back in `previous`.
 
 ## Periods
 
@@ -47,12 +49,23 @@ and sends the bounds of that period. It refuses, before any change:
 - a begin that is not `YYYY-MM-DD HH:MM:SS`, or no period begins at, or one
   more than about 363 days old: the history is read over 365 days at most,
   two of them a margin for the time zone;
-- a period the service was `up` or `stdby up`: there is no downtime to
-  justify;
 - the period still going on: the last one, ending less than 15 minutes
   before the collector time, as the collector tells the current status of a
   service. Its end moves with each status the agents send, and the
   justification would no longer match it.
+
+With `end`, the period is named by its two bounds, sent as is to the
+collector, which takes any bounds, begin first: the period of the history
+with these bounds when there is one, the period going on included, or the
+bounds alone. The history does not show a justification whose period grew
+since, on bounds no period has any more; with the bounds it was given,
+`unjustify_service_downtime` removes it, the collector answering not found
+when it holds none. Finding those bounds is for the collector to allow, by
+a list of the justifications of a service: none exists today.
+
+A period the service was `up` or `stdby up` is justified as the others, as
+the collector takes it: the availability rate leaves the up intervals out
+of the justified ones, so that the justification only adds a comment.
 
 The last period of a service whose agents stopped reporting more than 15
 minutes ago is justified. When they resume with the same status, the
@@ -92,7 +105,8 @@ availability of the service again at once.
 |---|---|
 | `service` | One exact service name or service ID |
 | `begin` | The begin of the period, as `get_service_status_history` gives it |
-| `comment` | `justify_service_downtime` only: why the service was down, as the user gives it, 1 to 1024 bytes of printable text; the MCP never makes it up |
+| `end` | Optional end of the period: with it, the period is named by both its bounds, sent as is |
+| `comment` | `justify_service_downtime` only: why the service was down, as the user gives it, sent as is; the collector refuses an empty one; the MCP never makes it up |
 | `counted` | `justify_service_downtime` only: true keeps the period in the availability rate, false leaves it out |
 
 ## Output

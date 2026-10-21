@@ -206,7 +206,7 @@ func registerServiceAgentActionTools(registrar *Registrar, service *core.Service
 		Name: "takeover_service", Title: "Take service over",
 		Description: "Move OpenSVC services to one node, through the agent of that node: it stops the instances running elsewhere and starts its own, as om svc switch --to that node. " +
 			"Pass to, the destination, and the services to move: services, or the filters, such as node for the services with an instance on a node, and instance_availability up for those running there; node dev2n1 and to dev2n2 move the services of dev2n1 to dev2n2. " +
-			"A service without instance on the destination is refused before anything is queued, a failover service already running there is left as it is, and the agent refuses a destination whose instance is not provisioned, its action then done with exit code 1. " +
+			"A service without instance on the destination is refused before anything is queued; the agent leaves a service already placed there as it is, and refuses a destination whose instance is not provisioned, its action then done with exit code 1. " +
 			serviceAgentSelection + serviceAgentActionFollowUp + serviceAgentActionPrivilege,
 		Annotations: actionAnnotations(true, true),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input TakeoverActionInput) (*mcp.CallToolResult, ServiceAgentActionOutput, error) {

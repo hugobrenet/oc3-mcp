@@ -95,15 +95,24 @@ func TestQueueServiceAgentActionChecksEachInstance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// web already runs on n1: it is queued as the others, the agent seeing
+	// its target reached.
 	flex, web := result.Actions[0], result.Actions[1]
-	if result.Selected != 2 || result.Unchanged != 1 || result.Refused != 1 || result.To == nil || result.To.Nodename != "n1" || flex.Outcome != ChangeRefused || !strings.Contains(flex.Reason, "no instance on node n1, the destination") ||
-		web.Outcome != ChangeUnchanged || !strings.Contains(web.Reason, "already runs") {
+	if result.Selected != 2 || result.Queued != 1 || result.Refused != 1 || result.To == nil || result.To.Nodename != "n1" || flex.Outcome != ChangeRefused || !strings.Contains(flex.Reason, "no instance on node n1, the destination") ||
+		web.Outcome != ChangeQueued {
 		t.Fatalf("result = %+v", result)
 	}
+	var puts int
 	for _, request := range collector.requests {
 		if request.method == "PUT" {
-			t.Fatalf("nothing should be queued: %+v", request)
+			puts++
+			if request.body["svc_id"] != "s-1" || request.body["node_id"] != "n-1" || request.body["action"] != "takeover" {
+				t.Fatalf("queueing = %+v", request)
+			}
 		}
+	}
+	if puts != 1 {
+		t.Fatalf("%d actions queued", puts)
 	}
 }
 
@@ -153,9 +162,10 @@ func TestQueueServiceAgentActionTakesTheServicesOfANodeOver(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// web runs on n2 already, as the instances answer: left as it is.
+	// web runs on n2 already, as the instances answer: queued all the same,
+	// for the agent of n2.
 	if result.To == nil || result.To.Nodename != "n2" || result.Node == nil || result.Node.Nodename != "n1" || result.Selected != 1 ||
-		result.Actions[0].Nodename != "n2" || result.Actions[0].Outcome != ChangeUnchanged {
+		result.Actions[0].Nodename != "n2" || result.Actions[0].Outcome != ChangeQueued {
 		t.Fatalf("result = %+v", result)
 	}
 }

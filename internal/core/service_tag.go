@@ -23,11 +23,6 @@ type ServiceTagChange struct {
 // AttachServiceTag attaches a tag to the selected services, one request per
 // service: the collector has no bulk route, and a change is not atomic.
 func (s *Service) AttachServiceTag(ctx context.Context, options ServiceTagOptions) (ServiceTagChange, error) {
-	if options.AttachData != nil {
-		if err := validateTagAttachData(*options.AttachData); err != nil {
-			return ServiceTagChange{}, err
-		}
-	}
 	return s.changeServiceTag(ctx, options, true)
 }
 

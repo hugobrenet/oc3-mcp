@@ -14,7 +14,7 @@ type AckServiceActionInput struct {
 	Action            string  `json:"action,omitempty" jsonschema:"optional exact action, such as start, stop or provision"`
 	Since             string  `json:"since,omitempty" jsonschema:"optional earliest begin, in collector local time: YYYY-MM-DD, YYYY-MM-DD HH:MM or YYYY-MM-DD HH:MM:SS"`
 	AllUnacknowledged bool    `json:"all_unacknowledged,omitempty" jsonschema:"optional; true selects every failed action not acknowledged the user sees, without filters"`
-	Comment           string  `json:"comment" jsonschema:"the reason of the acknowledgement, 1 to 1024 bytes, which the collector records with the user and the date; ask the user for it, never invent it"`
+	Comment           string  `json:"comment,omitempty" jsonschema:"optional reason of the acknowledgement, which the collector records with the user and the date; ask the user for it, never invent it"`
 }
 
 type AckServiceActionOutput = core.ServiceActionAcknowledgement

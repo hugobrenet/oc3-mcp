@@ -27,8 +27,8 @@ type ServiceSLAChange struct {
 // services, which the collector shows beside the availability it computes
 // over 30 days. The agents never send it: the value stays. One request per
 // service whose target differs: the collector has no bulk route, and a
-// change is not atomic. A service already as asked is left as it is, with
-// no request and no log entry.
+// change is not atomic. A service already as asked is changed all the same,
+// the collector logging it, and told unchanged.
 func (s *Service) SetServiceSLA(ctx context.Context, options ServiceSLAOptions) (ServiceSLAChange, error) {
 	switch {
 	case options.SLA != nil && options.Remove:
@@ -54,8 +54,7 @@ func (s *Service) SetServiceSLA(ctx context.Context, options ServiceSLAOptions) 
 	summary, err := s.changeSelectedServices(ctx, options.ServiceSelection, func(ctx context.Context, service selectedService) ServiceChangeOutcome {
 		result := ServiceChangeOutcome{SvcID: service.SvcID, Svcname: service.Svcname, ClusterID: service.ClusterID, Outcome: outcome, Availability: service.Availability}
 		if (target == nil && service.SLA == nil) || (target != nil && service.SLA != nil && *service.SLA == *target) {
-			result.Outcome, result.SLA = ChangeUnchanged, service.SLA
-			return result
+			result.Outcome = ChangeUnchanged
 		}
 		var response struct {
 			Data []struct {

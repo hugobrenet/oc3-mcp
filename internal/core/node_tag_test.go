@@ -159,13 +159,32 @@ func TestResolveNodesReadsEveryPage(t *testing.T) {
 	}
 }
 
-func TestValidateTagAttachData(t *testing.T) {
-	for data, ok := range map[string]bool{`{"hostname":"web1"}`: true, `"text"`: true, "": false, "not json": false, `{"a":` + strings.Repeat("1", 4096) + `}`: false} {
-		if err := validateTagAttachData(data); (err == nil) != ok {
-			t.Errorf("validateTagAttachData(%.40q) = %v, want ok %v", data, err, ok)
+// The data of an attachment goes as given, any text: an empty one clears
+// it, and none leaves it out of the request.
+func TestAttachNodeTagSendsItsDataAsGiven(t *testing.T) {
+	for _, data := range []*string{new(string), ptrTo("not json"), nil} {
+		collector := tagCollector(t, `[{"node_id":"n-1","nodename":"a"}]`, 1, map[string]string{"n-1": `{"info":"node 'n-1' tag 'tag-mcp' attached"}`})
+		if _, err := newTestService(collector).AttachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", AttachData: data, NodeSelection: NodeSelection{Filters: NodeFilters{Status: "In service"}}}); err != nil {
+			t.Fatal(err)
+		}
+		posts := 0
+		for _, request := range collector.requests {
+			if request.method != "POST" {
+				continue
+			}
+			posts++
+			value, sent := request.body["tag_attach_data"]
+			if (data == nil) == sent || (data != nil && value != *data) {
+				t.Fatalf("data %v: request = %+v", data, request)
+			}
+		}
+		if posts != 1 {
+			t.Fatalf("data %v: %d posts", data, posts)
 		}
 	}
 }
+
+func ptrTo[T any](value T) *T { return &value }
 
 func TestTagOutcome(t *testing.T) {
 	for _, test := range []struct {

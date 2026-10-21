@@ -193,17 +193,16 @@ The actions are given one of two ways:
   time, without reading each back: the result gives each action as the
   selection read it. On dev2, the 814 failures not acknowledged are one call.
 
-The comment is required, though the collector takes an empty one: the
-acknowledgement is worth its reason, which the description tells the model
-to ask the user rather than invent. It is 1 to 1024 bytes of printable text,
-the collector column having no bound.
+The comment is optional, as the collector takes any, an empty one included,
+and goes as the user gives it: the acknowledgement is worth its reason,
+which the description tells the model to ask the user rather than invent.
 
 | Input | Meaning |
 |---|---|
 | `action_ids` | Optional, at most 50 action IDs, as `list_service_actions` gives them; not with filters |
 | `service`, `node`, `action`, `since` | Optional filters of the failed actions not acknowledged |
 | `all_unacknowledged` | Optional: every failed action not acknowledged, without filters |
-| `comment` | The reason of the acknowledgement |
+| `comment` | Optional reason of the acknowledgement, as the user gives it |
 
 | Output field | Meaning |
 |---|---|

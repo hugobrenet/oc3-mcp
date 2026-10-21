@@ -80,8 +80,9 @@ for the services with an instance on a node. `{"node": "dev2n1", "to":
 action for the destination, whose agent runs `om svc -s <service>
 takeover`: om3 orchestrates `placed@` to the local node, as `om svc switch
 --to` that node. A service without instance on the destination is refused,
-before anything is queued, with the reason. A failover service already
-running there is left as it is, `unchanged`. The agent refuses a
+before anything is queued, with the reason. A service already running
+there is queued as the others: om3 sees its target reached and does
+nothing, with exit code 0. The agent refuses a
 destination whose instance is not provisioned, which the collector does not
 tell: the action is then done with exit code 1 and the reason.
 `switch_service` takes no destination, which the collector does not pass:
@@ -221,8 +222,8 @@ carries a warning.
 | `provenance` | Collector API source and MCP collection time |
 | `action`, `local`, `to`, `resources` | The action, whether it acts on instances, the destination of a takeover, and the resources acted on |
 | `node`, `on_nodes_selected`, `on_nodes_filter`, `filter_tag`, `filterset`, `filter_ruleset`, `filter_moduleset` | The filters of the selection, resolved |
-| `selected`, `queued`, `unchanged`, `refused` | Services or instances selected, actions queued, left as they were, and not queued: refused or not attempted |
-| `actions[]` | `svc_id`, `svcname`, `cluster_id`, `node_id` and `nodename`, the node of the instance or the one the collector chose, `outcome` (`queued`, `unchanged`, `refused`, `not_attempted`), `reason`, `action_id`, `command`, `queued_for` and `warning`, sorted by service then node |
+| `selected`, `queued`, `refused` | Services or instances selected, actions queued, and not queued: refused or not attempted |
+| `actions[]` | `svc_id`, `svcname`, `cluster_id`, `node_id` and `nodename`, the node of the instance or the one the collector chose, `outcome` (`queued`, `refused`, `not_attempted`), `reason`, `action_id`, `command`, `queued_for` and `warning`, sorted by service then node |
 | `follow_up` | How to follow the actions: `list_node_actions` with their `action_ids` and `wait`, or beyond 100 actions with the `service` of one service or the command, then `get_service` |
 
 The actions are followed and cancelled with the tools of the queue,
