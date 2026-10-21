@@ -267,3 +267,25 @@ func maskFormSecrets(text string, secrets []string) string {
 	}
 	return maskEmails(text)
 }
+
+// maskFormDiff masks a change of the definition of a form, as git shows it:
+// each line of the definition, added, removed or kept, as maskFormYAML masks
+// a line, with the masked default values, and the email addresses, then cuts
+// it. A line holds no context of
+// the lines around it: the value of a sensitive key alone on its line, on
+// the more indented lines below, stays in clear.
+func maskFormDiff(text string, masked []string) (string, bool) {
+	lines := strings.Split(text, "\n")
+	for index, line := range lines {
+		switch {
+		case strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---"):
+			lines[index] = maskEmails(line)
+		case strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-") || strings.HasPrefix(line, " "):
+			kept, _ := maskFormYAML(line[1:], masked)
+			lines[index] = line[:1] + kept
+		default:
+			lines[index] = maskEmails(line)
+		}
+	}
+	return truncateUTF8(strings.Join(lines, "\n"), maxFormYAML)
+}
