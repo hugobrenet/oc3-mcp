@@ -405,6 +405,9 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 	if err := registerServiceComplianceTools(registrar, service); err != nil {
 		return err
 	}
+	if err := registerFormSubmitTools(registrar, service); err != nil {
+		return err
+	}
 	if err := registerServiceTagTools(registrar, service); err != nil {
 		return err
 	}

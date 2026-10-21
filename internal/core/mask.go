@@ -211,3 +211,59 @@ func maskServiceConfig(text string) (string, bool) {
 	}
 	return truncateUTF8(strings.Join(lines, "\n"), maxServiceConfig)
 }
+
+// minFormSecret is the shortest value submitted for a sensitive input that
+// the results of a form mask wherever it shows: a shorter one would mask
+// common words.
+const minFormSecret = 4
+
+// formSecrets gives the values submitted for the inputs that may hold a
+// secret or an email address, by the definition of the form or by their key:
+// the outputs of a form may give them back, in their logs or their data.
+func formSecrets(submitted any, definitions []map[string]any) []string {
+	sensitive := map[string]bool{}
+	for _, definition := range definitions {
+		id, _ := definition["Id"].(string)
+		key, _ := definition["Key"].(string)
+		label, _ := definition["Label"].(string)
+		kind, _ := definition["Type"].(string)
+		if key == "" {
+			key = id
+		}
+		if key != "" && sensitiveName(id, key, label, kind) {
+			sensitive[key] = true
+		}
+	}
+	var entries []map[string]any
+	switch value := submitted.(type) {
+	case map[string]any:
+		entries = []map[string]any{value}
+	case []any:
+		for _, item := range value {
+			if entry, ok := item.(map[string]any); ok {
+				entries = append(entries, entry)
+			}
+		}
+	}
+	var secrets []string
+	for _, entry := range entries {
+		for key, value := range entry {
+			text, ok := value.(string)
+			if ok && len(text) >= minFormSecret && (sensitive[key] || sensitiveName(key)) && !slices.Contains(secrets, text) {
+				secrets = append(secrets, text)
+			}
+		}
+	}
+	// The longest first: a secret holding another is masked whole.
+	slices.SortFunc(secrets, func(a, b string) int { return len(b) - len(a) })
+	return secrets
+}
+
+// maskFormSecrets masks, in a text the outputs of a form give back, the
+// secrets submitted and the email addresses.
+func maskFormSecrets(text string, secrets []string) string {
+	for _, secret := range secrets {
+		text = strings.ReplaceAll(text, secret, maskedRequestValue)
+	}
+	return maskEmails(text)
+}

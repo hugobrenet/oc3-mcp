@@ -21,7 +21,9 @@ import (
 
 const (
 	maxResponseBodySize = 10 << 20
-	requestTimeout      = 30 * time.Second
+	// requestTimeout bounds a request, its response read included, unless
+	// the caller gives another bound.
+	requestTimeout = 30 * time.Second
 )
 
 // Client reads the collector API under one base URL.
@@ -74,9 +76,10 @@ func NewHTTPClient(rawBaseURL string, caFile string) (*http.Client, error) {
 		MaxIdleConns:        4,
 		MaxIdleConnsPerHost: 4,
 	}
+	// Each request is bounded by its context, requestTimeout or the bound
+	// its caller gives, rather than by the client.
 	return &http.Client{
 		Transport:     bearerTransport{base: transport, origin: baseURL.Scheme + "://" + baseURL.Host},
-		Timeout:       requestTimeout,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}, nil
 }
@@ -111,29 +114,38 @@ func (t bearerTransport) RoundTrip(request *http.Request) (*http.Response, error
 // GetJSON reads a bounded JSON response. path is relative to the base URL,
 // starts with "/" and has its segments already escaped by the caller.
 func (c *Client) GetJSON(ctx context.Context, path string, query url.Values, output any) error {
-	return c.do(ctx, http.MethodGet, path, query, nil, output)
+	return c.do(ctx, http.MethodGet, path, query, nil, output, requestTimeout)
 }
 
 // PostJSON sends input as a JSON body and reads the bounded JSON response.
 // It changes the collector state: only the action tools call it.
 func (c *Client) PostJSON(ctx context.Context, path string, input any, output any) error {
-	return c.do(ctx, http.MethodPost, path, nil, input, output)
+	return c.do(ctx, http.MethodPost, path, nil, input, output, requestTimeout)
 }
 
 // PutJSON sends input as a JSON body with PUT and reads the bounded JSON
 // response. It changes the collector state: only the action tools call it.
 func (c *Client) PutJSON(ctx context.Context, path string, input any, output any) error {
-	return c.do(ctx, http.MethodPut, path, nil, input, output)
+	return c.do(ctx, http.MethodPut, path, nil, input, output, requestTimeout)
+}
+
+// PutJSONWithin is PutJSON bounded by timeout instead of requestTimeout:
+// for a request the collector answers once it ran what it starts, such as
+// the outputs of a form.
+func (c *Client) PutJSONWithin(ctx context.Context, path string, input any, output any, timeout time.Duration) error {
+	return c.do(ctx, http.MethodPut, path, nil, input, output, timeout)
 }
 
 // DeleteJSON sends a DELETE request, with query when the route names what it
 // deletes there, and reads the bounded JSON response. It changes the
 // collector state: only the action tools call it.
 func (c *Client) DeleteJSON(ctx context.Context, path string, query url.Values, output any) error {
-	return c.do(ctx, http.MethodDelete, path, query, nil, output)
+	return c.do(ctx, http.MethodDelete, path, query, nil, output, requestTimeout)
 }
 
-func (c *Client) do(ctx context.Context, method, path string, query url.Values, input any, output any) error {
+func (c *Client) do(ctx context.Context, method, path string, query url.Values, input any, output any, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	if !strings.HasPrefix(path, "/") || strings.ContainsAny(path, "?#") {
 		return fmt.Errorf("OpenSVC collector path %q is invalid", path)
 	}

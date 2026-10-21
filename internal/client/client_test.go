@@ -171,3 +171,21 @@ func callerContext(t testing.TB) context.Context {
 	t.Cleanup(cancel)
 	return ctx
 }
+
+// A request is bounded by its own timeout: a submission that runs longer
+// than the default bound of a request completes within its own.
+func TestPutJSONWithinBoundsTheRequestByItsTimeout(t *testing.T) {
+	collector := testutil.NewCollector(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"COMPLETED"}`))
+	}))
+	client := newTestClient(t, collector)
+	var output map[string]any
+	if err := client.PutJSONWithin(callerContext(t), "/forms/7", map[string]any{"data": map[string]any{}}, &output, 50*time.Millisecond); err == nil || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a request beyond its timeout = %v", err)
+	}
+	if err := client.PutJSONWithin(callerContext(t), "/forms/7", map[string]any{"data": map[string]any{}}, &output, 5*time.Second); err != nil || output["status"] != "COMPLETED" {
+		t.Fatalf("output = %v, %v", output, err)
+	}
+}

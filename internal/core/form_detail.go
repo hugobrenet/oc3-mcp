@@ -66,38 +66,10 @@ type collectorFormDetail struct {
 // definition text, the values that may be a secret or an email address
 // masked.
 func (s *Service) GetForm(ctx context.Context, form string) (FormDetails, error) {
-	if form == "" {
-		return FormDetails{}, fmt.Errorf("form must be one exact form name or form ID")
-	}
-	if err := validateFilterValue("form", form); err != nil {
+	row, err := s.findForm(ctx, form, formDetailProps)
+	if err != nil {
 		return FormDetails{}, err
 	}
-	// A number is an ID first, then a name: a form may be named 42.
-	filters := []string{filterEquals("form_name", form)}
-	if _, err := strconv.Atoi(form); err == nil {
-		filters = []string{filterEquals("id", form), filterEquals("form_name", form)}
-	}
-	var response collectorList[collectorFormDetail]
-	for _, filter := range filters {
-		if err := s.client.GetJSON(ctx, "/forms", pageQuery(formDetailProps, "id", []string{filter}, maxFormNameMatches, 0), &response); err != nil {
-			return FormDetails{}, fmt.Errorf("get form %s: %w", form, err)
-		}
-		if len(response.Data) > 0 {
-			break
-		}
-	}
-	switch len(response.Data) {
-	case 0:
-		return FormDetails{}, fmt.Errorf("get form %s: not found among the forms the caller may see%s", form, findFormsHint)
-	case 1:
-	default:
-		ids := make([]string, 0, len(response.Data))
-		for _, item := range response.Data {
-			ids = append(ids, strconv.Itoa(item.ID)+" ("+item.FormFolder+")")
-		}
-		return FormDetails{}, fmt.Errorf("get form %s: the name matches several forms, pass one form ID: %s", form, strings.Join(ids, ", "))
-	}
-	row := response.Data[0]
 	result := FormDetails{Form: formOf(row.collectorForm)}
 	definition, _ := parseFormDefinition(row.FormDefinition)
 	var masked []string
@@ -124,6 +96,41 @@ func (s *Service) GetForm(ctx context.Context, form string) (FormDetails, error)
 	result.YAML, result.YAMLTruncated = maskFormYAML(row.FormYAML, masked)
 	result.Provenance = s.newProvenance()
 	return result, nil
+}
+
+// findForm reads one form by its exact name or ID, with props.
+func (s *Service) findForm(ctx context.Context, form string, props []string) (collectorFormDetail, error) {
+	if form == "" {
+		return collectorFormDetail{}, fmt.Errorf("form must be one exact form name or form ID")
+	}
+	if err := validateFilterValue("form", form); err != nil {
+		return collectorFormDetail{}, err
+	}
+	// A number is an ID first, then a name: a form may be named 42.
+	filters := []string{filterEquals("form_name", form)}
+	if _, err := strconv.Atoi(form); err == nil {
+		filters = []string{filterEquals("id", form), filterEquals("form_name", form)}
+	}
+	var response collectorList[collectorFormDetail]
+	for _, filter := range filters {
+		if err := s.client.GetJSON(ctx, "/forms", pageQuery(props, "id", []string{filter}, maxFormNameMatches, 0), &response); err != nil {
+			return collectorFormDetail{}, fmt.Errorf("get form %s: %w", form, err)
+		}
+		if len(response.Data) > 0 {
+			break
+		}
+	}
+	switch len(response.Data) {
+	case 0:
+		return collectorFormDetail{}, fmt.Errorf("get form %s: not found among the forms the caller may see%s", form, findFormsHint)
+	case 1:
+		return response.Data[0], nil
+	}
+	ids := make([]string, 0, len(response.Data))
+	for _, item := range response.Data {
+		ids = append(ids, strconv.Itoa(item.ID)+" ("+item.FormFolder+")")
+	}
+	return collectorFormDetail{}, fmt.Errorf("get form %s: the name matches several forms, pass one form ID: %s", form, strings.Join(ids, ", "))
 }
 
 // findFormsHint follows the error of a form lookup that found nothing.
