@@ -21,11 +21,6 @@ const (
 // time without a zone.
 const collectorTimeLayout = "2006-01-02 15:04:05"
 
-// availableStatuses are the availability statuses of a service during
-// which it is available, as the collector counts them: no downtime to
-// justify.
-var availableStatuses = map[string]bool{"up": true, "stdby up": true}
-
 // periodBeginPattern is the begin of a period, as the status history gives
 // it: the collector takes the exact bounds only.
 var periodBeginPattern = regexp.MustCompile(`^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$`)
@@ -40,6 +35,8 @@ const currentPeriodWindow = 15 * time.Minute
 type JustifyServiceDowntimeOptions struct {
 	Service string
 	Begin   string
+	// End, when given, names the period by both its bounds, sent as is.
+	End     string
 	Comment string
 	// Counted keeps the period in the availability rate.
 	Counted bool
@@ -48,6 +45,8 @@ type JustifyServiceDowntimeOptions struct {
 type UnjustifyServiceDowntimeOptions struct {
 	Service string
 	Begin   string
+	// End, when given, names the period by both its bounds, sent as is.
+	End string
 }
 
 type ServiceDowntimeChange struct {
@@ -69,18 +68,14 @@ type ServiceDowntimeChange struct {
 // shows it on the period of the same bounds only: the MCP takes the bounds
 // of a period of the history, and refuses a begin that names none.
 func (s *Service) JustifyServiceDowntime(ctx context.Context, options JustifyServiceDowntimeOptions) (ServiceDowntimeChange, error) {
-	comment, err := checkUserComment(options.Comment, "the reason of the downtime")
+	// The comment goes as the user gives it: the collector refuses an empty
+	// one.
+	comment := options.Comment
+	period, err := s.findStatusPeriod(ctx, options.Service, options.Begin, options.End)
 	if err != nil {
 		return ServiceDowntimeChange{}, err
 	}
-	period, err := s.findStatusPeriod(ctx, options.Service, options.Begin)
-	if err != nil {
-		return ServiceDowntimeChange{}, err
-	}
-	if availableStatuses[period.period.Status] {
-		return ServiceDowntimeChange{}, fmt.Errorf("service %s was %s from %s to %s: there is no downtime to justify; nothing was changed", period.service.Svcname, period.period.Status, period.period.Begin, period.period.End)
-	}
-	if period.current {
+	if period.current && options.End == "" {
 		return ServiceDowntimeChange{}, fmt.Errorf("the period of service %s begun at %s is still going on: its end moves with each status the agents send, and the justification would no longer match it; nothing was changed; justify it once it ended", period.service.Svcname, period.period.Begin)
 	}
 	body := map[string]any{"begin": period.period.Begin, "end": period.period.End, "comment": comment, "account": options.Counted}
@@ -101,11 +96,13 @@ func (s *Service) JustifyServiceDowntime(ctx context.Context, options JustifySer
 // service, named by its begin: the period counts again in the availability
 // rate.
 func (s *Service) UnjustifyServiceDowntime(ctx context.Context, options UnjustifyServiceDowntimeOptions) (ServiceDowntimeChange, error) {
-	period, err := s.findStatusPeriod(ctx, options.Service, options.Begin)
+	period, err := s.findStatusPeriod(ctx, options.Service, options.Begin, options.End)
 	if err != nil {
 		return ServiceDowntimeChange{}, err
 	}
-	if period.period.Ack == nil {
+	// A justification whose period grew lies on bounds no period has any
+	// more: with end, it is removed all the same.
+	if period.period.Ack == nil && !period.unmatched {
 		return ServiceDowntimeChange{
 			Provenance: s.newProvenance(), Service: period.reference(), Outcome: DowntimeNotJustified,
 			Period: period.summary(), Availability: period.availability,
@@ -130,6 +127,8 @@ type foundStatusPeriod struct {
 	period       collectorStatusPeriod
 	current      bool
 	availability *ServiceAvailabilityWindow
+	// unmatched is a period named by bounds no period of the history has.
+	unmatched bool
 }
 
 func (p foundStatusPeriod) reference() ServiceReference {
@@ -141,10 +140,15 @@ func (p foundStatusPeriod) summary() StatusPeriod {
 }
 
 // findStatusPeriod reads the status history of a service back to begin, and
-// gives the period begun then.
-func (s *Service) findStatusPeriod(ctx context.Context, service, begin string) (foundStatusPeriod, error) {
+// gives the period begun then. With end, it gives the period of these
+// bounds, or these bounds when no period of the history has them, as the
+// collector takes them.
+func (s *Service) findStatusPeriod(ctx context.Context, service, begin, end string) (foundStatusPeriod, error) {
 	if !periodBeginPattern.MatchString(begin) {
 		return foundStatusPeriod{}, fmt.Errorf("begin must be the begin of a period, YYYY-MM-DD HH:MM:SS, as get_service_status_history gives it")
+	}
+	if end != "" && !periodBeginPattern.MatchString(end) {
+		return foundStatusPeriod{}, fmt.Errorf("end must be YYYY-MM-DD HH:MM:SS, in collector local time")
 	}
 	start, err := time.Parse(collectorTimeLayout, begin)
 	if err != nil {
@@ -169,7 +173,7 @@ func (s *Service) findStatusPeriod(ctx context.Context, service, begin string) (
 	}
 	result.availability = log.availabilityWindow()
 	for index, period := range log.Data {
-		if period.Begin != begin {
+		if period.Begin != begin || (end != "" && period.End != end) {
 			continue
 		}
 		result.period = period
@@ -180,6 +184,10 @@ func (s *Service) findStatusPeriod(ctx context.Context, service, begin string) (
 			now, nowErr := time.Parse(collectorTimeLayout, log.Availability.To)
 			result.current = endErr == nil && nowErr == nil && now.Sub(end) < currentPeriodWindow
 		}
+		return result, nil
+	}
+	if end != "" {
+		result.period, result.unmatched = collectorStatusPeriod{Begin: begin, End: end}, true
 		return result, nil
 	}
 	return foundStatusPeriod{}, fmt.Errorf("no period of service %s begins at %s in its status history; nothing was changed; get_service_status_history gives the periods and their begin", found.Svcname, begin)

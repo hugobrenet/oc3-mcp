@@ -77,7 +77,8 @@ func TestSetServiceSLAOnTheServicesOfTheNodesSelected(t *testing.T) {
 	}
 	// The three services once each, though web has an instance on two
 	// nodes read in two chunks of nodes, sorted db, lab, web: db already
-	// at 99.9 is left as it is, lab is refused, web is set.
+	// at 99.9 is set all the same and told unchanged, lab is refused, web
+	// is set.
 	db, lab, web := change.Services[0], change.Services[1], change.Services[2]
 	if change.OnNodes == nil || *change.OnNodes != 60 || change.Selected != 3 || change.Changed != 1 || change.Unchanged != 1 || change.Refused != 1 ||
 		db.Outcome != ChangeUnchanged || lab.Outcome != ChangeRefused || !strings.Contains(lab.Reason, "not responsible") ||
@@ -94,9 +95,7 @@ func TestSetServiceSLAOnTheServicesOfTheNodesSelected(t *testing.T) {
 			if !strings.HasPrefix(request.query.Get("filter"), "node_id:in:") {
 				t.Fatalf("instance selection = %+v", request)
 			}
-		case request.method == "POST" && request.path == "/services/s-2":
-			t.Fatalf("a service already as asked was changed: %+v", request)
-		case request.method == "POST" && request.path == "/services/s-1" && request.body["svc_sla"] != "99.9":
+		case request.method == "POST" && request.path != "/services/s-3" && request.body["svc_sla"] != "99.9":
 			t.Fatalf("change = %+v", request)
 		}
 	}

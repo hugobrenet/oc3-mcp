@@ -24,12 +24,12 @@ func registerServiceSLATools(registrar *Registrar, service *core.Service) error 
 		&mcp.Tool{
 			Name:  "set_service_sla",
 			Title: "Set service SLA",
-			Description: "Set the SLA of one or several OpenSVC services, the availability target in percent the collector shows beside the availability it computes over 30 days, or remove it. The value replaces the one the services had; the agents never send it. A service already as asked is left as it is. " +
+			Description: "Set the SLA of one or several OpenSVC services, the availability target in percent the collector shows beside the availability it computes over 30 days, or remove it. The value replaces the one the services had; the agents never send it. A service already as asked is told unchanged. " +
 				"Nothing follows from the SLA in the collector: no alert and no report when a service falls below it. The result gives the SLA and the availability of each service, and get_service those of one. " +
 				"The target is rounded to three decimals, as the collector stores it. " +
 				serviceSelection("") +
 				"Requires to be responsible for the services, by their app.",
-			Annotations: actionAnnotations(true, true),
+			Annotations: actionAnnotations(false, true),
 		},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input SetServiceSLAInput) (*mcp.CallToolResult, SetServiceSLAOutput, error) {
 			result, err := service.SetServiceSLA(ctx, core.ServiceSLAOptions{SLA: input.SLA, Remove: input.Remove, ServiceSelection: input.selection()})

@@ -86,7 +86,7 @@ func (input NodeTagInput) options() core.NodeTagOptions {
 
 type AttachNodeTagInput struct {
 	NodeTagInput
-	AttachData *string `json:"attach_data,omitempty" jsonschema:"optional data of the attachment, such as the fields of the form of a tag, as JSON text"`
+	AttachData *string `json:"attach_data,omitempty" jsonschema:"optional data of the attachment, as the collector stores it, often JSON text such as the fields of the form of a tag; an empty string clears the data of an attachment already there, which leaving it out keeps"`
 }
 
 type NodeTagOutput = core.NodeTagChange

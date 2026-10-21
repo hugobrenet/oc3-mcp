@@ -29,7 +29,7 @@ func (input ServiceTagInput) options() core.ServiceTagOptions {
 
 type AttachServiceTagInput struct {
 	ServiceTagInput
-	AttachData *string `json:"attach_data,omitempty" jsonschema:"optional data of the attachment, such as the fields of the form of a tag, as JSON text"`
+	AttachData *string `json:"attach_data,omitempty" jsonschema:"optional data of the attachment, as the collector stores it, often JSON text such as the fields of the form of a tag; an empty string clears the data of an attachment already there, which leaving it out keeps"`
 }
 
 type ServiceTagOutput = core.ServiceTagChange

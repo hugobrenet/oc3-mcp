@@ -92,7 +92,7 @@ not responsible for with 403, and logs each change.
 | `tag` | One exact tag name, case-insensitive, or tag ID |
 | `services` | Optional, see [selection](#selection) |
 | filters, `filter_tag`, `node`, `on_nodes`, `instance_availability`, `instance_overall`, `instance_frozen` | Optional, see [selection](#selection) |
-| `attach_data` | `attach_service_tag` only: optional data of the attachment, JSON text of 1 to 4096 bytes; left out, the data of an attachment already there is kept |
+| `attach_data` | `attach_service_tag` only: optional data of the attachment, sent as is, as the collector stores any text; often JSON; an empty string clears the data of an attachment already there; left out, the data is kept |
 
 ## Output
 

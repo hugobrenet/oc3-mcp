@@ -2,11 +2,9 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
-	"unicode/utf8"
 )
 
 // NodeTagOptions are a tag change: the tag, the selected nodes and, when
@@ -26,11 +24,6 @@ type NodeTagChange struct {
 // AttachNodeTag attaches a tag to the selected nodes, one request per node:
 // the collector has no bulk route, and a change is not atomic.
 func (s *Service) AttachNodeTag(ctx context.Context, options NodeTagOptions) (NodeTagChange, error) {
-	if options.AttachData != nil {
-		if err := validateTagAttachData(*options.AttachData); err != nil {
-			return NodeTagChange{}, err
-		}
-	}
 	return s.changeNodeTag(ctx, options, true)
 }
 
@@ -102,13 +95,4 @@ func tagOutcome(err error, info string, attach bool) (outcome, reason string) {
 		return ChangeAlreadyDetached, ""
 	}
 	return ChangeDetached, ""
-}
-
-// validateTagAttachData checks the data of an attachment, free JSON text:
-// an empty one would clear the data of an attachment already there.
-func validateTagAttachData(data string) error {
-	if data == "" || len(data) > 4096 || !utf8.ValidString(data) || !json.Valid([]byte(data)) {
-		return fmt.Errorf("attach_data must be 1 to 4096 bytes of JSON text; leave it out to keep the data of an attachment already there")
-	}
-	return nil
 }

@@ -19,7 +19,7 @@ Implementation:
 
 | Tool | Annotations | Collector privilege |
 |---|---|---|
-| `set_service_sla` | destructive, idempotent | Responsible for each service, by its app |
+| `set_service_sla` | not destructive, idempotent | Responsible for each service, by its app |
 
 The SLA of a service is its availability target, a percent between 0 and
 100. The collector stores it beside the availability it computes over 30
@@ -28,11 +28,13 @@ SLA. Nothing else in the collector reads it: no alert, no report. The agents
 never send it, unlike the app, the environment or the comment of a service,
 which their configuration rewrites: the value set stays.
 
-The tool is destructive: the value replaces the one the services had. A
+The tool is not destructive, so the agent asks no confirmation: the value
+replaces the one the services had, which another call sets again. A
 service already as asked, at the target asked or without a target to
-remove, is left as it is: no request is sent for it, and the collector
-writes no log entry. The selection reads the target and the availability of
-each service, so that it costs no request more.
+remove, is changed all the same, as the collector decides, and told
+`unchanged`: the collector writes a log entry for it. The selection reads
+the target and the availability of each service, so that it costs no
+request more.
 
 The collector stores three decimals and rounds the others away: the MCP
 rounds the target to three decimals before it sends it, so that the value

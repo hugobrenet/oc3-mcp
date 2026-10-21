@@ -6,15 +6,11 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 )
 
 const (
 	// maxAckActions bounds the actions acknowledged in one call.
 	maxAckActions = 50
-	// maxAckCommentBytes bounds the comment of an acknowledgement: the
-	// collector column has no bound.
-	maxAckCommentBytes = 1024
 )
 
 // Outcomes of an acknowledgement.
@@ -67,10 +63,9 @@ type AckServiceActionsOptions struct {
 // node, and updates the action errors alert of the instance. An
 // acknowledgement is not withdrawn.
 func (s *Service) AckServiceActions(ctx context.Context, options AckServiceActionsOptions) (ServiceActionAcknowledgement, error) {
-	comment, err := checkUserComment(options.Comment, "the reason of the acknowledgement")
-	if err != nil {
-		return ServiceActionAcknowledgement{}, err
-	}
+	// The comment goes as the user gives it: the collector takes any, an
+	// empty one included.
+	comment := options.Comment
 	byFilters := options.Service != "" || options.Node != "" || options.Action != "" || options.Since != ""
 	switch {
 	case len(options.IDs) > 0 && (byFilters || options.AllUnacknowledged):
@@ -102,17 +97,6 @@ func (s *Service) AckServiceActions(ctx context.Context, options AckServiceActio
 	result.Selected = len(result.Actions)
 	result.Provenance = s.newProvenance()
 	return result, nil
-}
-
-// checkUserComment trims a comment the user gives, of what, and refuses one
-// empty, too long, or holding control characters but newlines.
-func checkUserComment(comment, what string) (string, error) {
-	comment = strings.TrimSpace(comment)
-	if comment == "" || len(comment) > maxAckCommentBytes || !utf8.ValidString(comment) ||
-		strings.ContainsFunc(comment, func(r rune) bool { return r < ' ' && r != '\n' || r == 0x7f }) {
-		return "", fmt.Errorf("comment must be 1 to %d bytes of printable text: %s, which the user gives", maxAckCommentBytes, what)
-	}
-	return comment, nil
 }
 
 func (r *ServiceActionAcknowledgement) count(check ServiceActionAckCheck) {

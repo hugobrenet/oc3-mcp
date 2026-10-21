@@ -808,7 +808,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"freeze_node": false, "unfreeze_node": true, "drain_node": true, "fix_node_compliance": true, "cancel_node_action": false,
 			"attach_service_tag": false, "detach_service_tag": true,
 			"attach_service_ruleset": true, "detach_service_ruleset": true, "attach_service_moduleset": true, "detach_service_moduleset": true,
-			"justify_service_downtime": true, "unjustify_service_downtime": true, "set_service_sla": true,
+			"justify_service_downtime": false, "unjustify_service_downtime": false, "set_service_sla": false,
 			"freeze_service": false, "thaw_service": true, "start_service": false, "stop_service": true, "restart_service": true,
 			"switch_service": true, "giveback_service": true, "takeover_service": true, "abort_service_action": true,
 			"check_service_compliance": false, "fix_service_compliance": true,
@@ -1299,15 +1299,6 @@ func TestServiceDowntimeTools(t *testing.T) {
 		ack == nil || strings.Contains(fmt.Sprint(ack["acked_by"]), "@") {
 		t.Fatalf("justify_service_downtime = %+v, body %v", change, body)
 	}
-	// A period the service was up, or no comment: refused before any change.
-	for _, arguments := range []map[string]any{
-		{"service": "web", "begin": "2026-10-03 00:46:18", "comment": "maintenance", "counted": false},
-		{"service": "web", "begin": "2026-10-03 00:46:03", "comment": " ", "counted": false},
-	} {
-		if result, _ := call("justify_service_downtime", arguments); !result.IsError || len(requests) != 1 {
-			t.Fatalf("justify_service_downtime %v was accepted, requests %v", arguments, requests)
-		}
-	}
 	result, change = call("unjustify_service_downtime", map[string]any{"service": "web", "begin": "2026-10-03 00:46:03"})
 	if result.IsError || change["outcome"] != "removed" || len(requests) != 2 || !strings.Contains(requests[1], "begin=2026-10-03+00%3A46%3A03") {
 		t.Fatalf("unjustify_service_downtime = %+v, requests %v", change, requests)
@@ -1338,22 +1329,27 @@ func TestSetServiceSLATool(t *testing.T) {
 		case "POST /services/s-2":
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte(`{"text":"user is not responsible for service s-2"}`))
-		case "POST /services/s-1":
+		case "POST /services/s-1", "POST /services/s-3":
 			var body map[string]any
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			mutex.Lock()
 			bodies = append(bodies, body)
 			mutex.Unlock()
+			if path == "POST /services/s-3" {
+				_, _ = w.Write([]byte(`{"info":"changed","data":[{"svc_sla":99.95,"svc_availability":98.5}]}`))
+				return
+			}
 			_, _ = w.Write([]byte(`{"info":"changed","data":[{"svc_sla":99.95}]}`))
 		default:
 			notFound(w, "missing")
 		}
 	})
 	result, change := call("set_service_sla", map[string]any{"sla": 99.95, "on_nodes": map[string]any{"status": "Maintenance"}, "instance_availability": "down", "env": "PRD"})
-	// Sorted db, lab, web: db refused, lab already at 99.95, web set.
+	// Sorted db, lab, web: db refused, lab already at 99.95, set all the
+	// same and told unchanged, web set.
 	services, _ := change["services"].([]any)
 	if result.IsError || change["changed"] != float64(1) || change["refused"] != float64(1) || change["unchanged"] != float64(1) ||
-		len(bodies) != 1 || bodies[0]["svc_sla"] != "99.95" || len(services) != 3 || change["on_nodes_selected"] != float64(1) {
+		len(bodies) != 2 || bodies[0]["svc_sla"] != "99.95" || bodies[1]["svc_sla"] != "99.95" || len(services) != 3 || change["on_nodes_selected"] != float64(1) {
 		t.Fatalf("set_service_sla = %+v, bodies %v", change, bodies)
 	}
 	db, lab, web := services[0].(map[string]any), services[1].(map[string]any), services[2].(map[string]any)
@@ -1367,7 +1363,7 @@ func TestSetServiceSLATool(t *testing.T) {
 		{"sla": 99},
 		{"sla": 99, "on_nodes": map[string]any{}},
 	} {
-		if result, _ := call("set_service_sla", arguments); !result.IsError || len(bodies) != 1 {
+		if result, _ := call("set_service_sla", arguments); !result.IsError || len(bodies) != 2 {
 			t.Fatalf("set_service_sla %v was accepted, bodies %v", arguments, bodies)
 		}
 	}
@@ -1482,8 +1478,9 @@ func TestAckServiceActionTool(t *testing.T) {
 		ack["actions"].([]any)[0].(map[string]any)["action"].(map[string]any)["acknowledged"] != true {
 		t.Fatalf("ack_service_action = %+v, body %v", ack, body)
 	}
-	if result, _ := call("ack_service_action", map[string]any{"action_ids": []int{7}, "comment": ""}); !result.IsError {
-		t.Fatal("ack_service_action accepted an empty comment")
+	// The collector takes an acknowledgement without comment.
+	if result, _ := call("ack_service_action", map[string]any{"action_ids": []int{7}}); result.IsError || body["acked_comment"] != "" {
+		t.Fatalf("ack_service_action without comment = %+v, body %v", result, body)
 	}
 	if result, _ := call("ack_service_action", map[string]any{"comment": "known issue"}); !result.IsError {
 		t.Fatal("ack_service_action accepted a call selecting no action")
