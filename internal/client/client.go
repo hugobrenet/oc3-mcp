@@ -143,6 +143,13 @@ func (c *Client) DeleteJSON(ctx context.Context, path string, query url.Values, 
 	return c.do(ctx, http.MethodDelete, path, query, nil, output, requestTimeout)
 }
 
+// DeleteJSONBody sends a DELETE request with input as a JSON body, for a
+// route that names what it deletes there, and reads the bounded JSON
+// response. It changes the collector state: only the action tools call it.
+func (c *Client) DeleteJSONBody(ctx context.Context, path string, input any, output any) error {
+	return c.do(ctx, http.MethodDelete, path, nil, input, output, requestTimeout)
+}
+
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, input any, output any, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()

@@ -6,14 +6,15 @@ import (
 	"time"
 )
 
-// CollectorClient is the collector API the core uses. PostJSON, PutJSON
-// and DeleteJSON change the collector state: only the action use cases call
-// them.
+// CollectorClient is the collector API the core uses. PostJSON, PutJSON,
+// DeleteJSON and DeleteJSONBody change the collector state: only the action
+// use cases call them.
 type CollectorClient interface {
 	GetJSON(context.Context, string, url.Values, any) error
 	PostJSON(context.Context, string, any, any) error
 	PutJSON(context.Context, string, any, any) error
 	DeleteJSON(context.Context, string, url.Values, any) error
+	DeleteJSONBody(context.Context, string, any, any) error
 }
 
 // Service holds the collector use cases. It reads the collector through

@@ -74,6 +74,17 @@ func (f *fakeCollector) DeleteJSON(_ context.Context, path string, query url.Val
 	return f.reply(path, nil, output)
 }
 
+func (f *fakeCollector) DeleteJSONBody(_ context.Context, path string, input any, output any) error {
+	payload, _ := json.Marshal(input)
+	var body map[string]any
+	_ = json.Unmarshal(payload, &body)
+	f.record(fakeRequest{method: "DELETE", path: path, body: body})
+	if f.err != nil {
+		return f.err
+	}
+	return f.reply(path, nil, output)
+}
+
 func (f *fakeCollector) record(request fakeRequest) {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()

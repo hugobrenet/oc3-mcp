@@ -13,7 +13,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Services | `list_services`, `count_services`, `get_service`, `get_service_status_history`, `list_service_resources`, `get_service_resource_history`, `list_instances`, `count_instances` | [Service tools](services.md) |
 | Service actions | `list_service_actions`, `count_service_actions`, `get_service_action_logs`, `ack_service_action` | [Service action tools](service-actions.md) |
 | Alerts | `list_alerts` | [Alert tools](alerts.md) |
-| Checks | `list_node_checks`, `list_service_checks` | [Check tools](checks.md) |
+| Checks | `list_node_checks`, `list_service_checks`, `get_check_threshold`, `list_check_thresholds` | [Check tools](checks.md) |
 | Packages | `list_node_packages`, `list_package_differences` | [Package tools](packages.md) |
 | Events | `list_collector_events` | [Collector event tools](events.md) |
 | Compliance | `list_compliance_status`, `list_compliance_runs`, `count_compliance_runs`, `list_compliance_modulesets`, `get_compliance_moduleset`, `list_compliance_rulesets`, `get_compliance_ruleset` | [Compliance tools](compliance.md) |
@@ -33,6 +33,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Service compliance | `attach_service_ruleset`, `detach_service_ruleset`, `attach_service_moduleset`, `detach_service_moduleset` | [Service compliance tools](service-compliance.md) |
 | Service downtime | `justify_service_downtime`, `unjustify_service_downtime` | [Service downtime tools](service-downtime.md) |
 | Service SLA | `set_service_sla` | [Service SLA tool](service-sla.md) |
+| Check thresholds | `set_check_threshold`, `unset_check_threshold` | [Check tools](checks.md#set_check_threshold-and-unset_check_threshold) |
 | Service agent actions | `freeze_service`, `thaw_service`, `start_service`, `stop_service`, `restart_service`, `switch_service`, `giveback_service`, `takeover_service`, `abort_service_action`, `check_service_compliance`, `fix_service_compliance` | [Service agent action tools](service-agent-actions.md) |
 | Service deletion | `delete_service`, `delete_service_instance` | [Service deletion tools](service-delete.md) |
 

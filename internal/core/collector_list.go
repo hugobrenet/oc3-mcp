@@ -107,6 +107,16 @@ func filterEquals(prop string, value string) string {
 	return prop + ":eq:" + value
 }
 
+// filterEqualsOrEmpty matches prop equal to value, or, for an empty value,
+// without value: null or empty, as rows of the historical collector hold
+// either.
+func filterEqualsOrEmpty(prop string, value string) string {
+	if value == "" {
+		return prop + ":empty"
+	}
+	return filterEquals(prop, value)
+}
+
 // filterEqualsTrimmed matches prop equal to value, case-insensitively,
 // whatever the spaces around it: the collector stores some names with stray
 // spaces, such as the " Manager" of a user without a first name.
