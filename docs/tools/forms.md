@@ -1,10 +1,15 @@
 ---
 domain: form
 tools:
+  - attach_form_groups
+  - create_form
+  - delete_form
+  - detach_form_groups
   - get_form
   - get_form_result
   - list_forms
   - submit_form
+  - update_form
 stability: experimental
 ---
 
@@ -22,7 +27,9 @@ Implementation:
   masking rules of `internal/core/mask.go`;
 - submission: `internal/core/form_submit.go`, with the masks of
   `internal/core/mask.go`;
-- MCP definitions: `internal/tools/form.go` and `internal/tools/form_submit.go`.
+- changes of the forms and their groups: `internal/core/form_write.go`;
+- MCP definitions: `internal/tools/form.go`, `internal/tools/form_submit.go`
+  and `internal/tools/form_write.go`.
 
 Visibility is that of the collector account of the caller: a manager sees
 every form, the others the forms published to one of their groups.
@@ -280,4 +287,78 @@ and data of the outputs. The MCP masks, in the four, the values of the
 inputs the definition or their key tells sensitive, by the rules of
 `get_request`, wherever such a value of at least 4 characters shows, and
 the email addresses. A secret under a key that names none stays in clear.
+
+### `create_form`, `update_form` and `delete_form`
+
+Create, change and delete forms. Registered only when
+`OPENSVC_MCP_ACTIONS=enabled`. `create_form` is not destructive: a form
+does nothing until submitted, and `submit_form` is confirmed; `update_form`,
+which replaces the definition given, and `delete_form` are.
+
+```text
+POST   /api/forms        {"form_name": …, "form_yaml": …, "form_folder": …, "form_type": …}   create
+POST   /api/forms/<id>   {the fields given}                                                   change
+DELETE /api/forms/<id>                                                                        delete
+GET    /api/forms?…&filter=id:eq:<id>, /publications, /responsibles                          read back
+```
+
+The collector requires the FormsManager or the Manager privilege for the
+three, and to be responsible for the form for the deletion, not for the
+change. It checks only that `form_yaml` is YAML: a key it does not know,
+or an output without a `Dest` it runs, is ignored, and the form does
+nothing on submission, as `test-mcp` on dev2 shows. The MCP sends the
+definition as given, and reads the form back after the change as
+`get_form` gives it, its inputs and outputs as the collector reads them:
+an output missing shows there, and the descriptions tell the model to tell
+the user. The descriptions point the model to the definition of a similar
+form, which `get_form` gives, rather than its memory; a reference of the
+format, as a resource of the MCP, comes in a later lot.
+
+A creation answers 409 for a name already taken. The collector sets the
+author and the date, publishes the form to the default group of the
+creator and makes that group responsible for it, and commits the YAML in
+its git history, as it does for each change of the definition. A change
+answers with the old and new values of each field, which the MCP does not
+give back: `outcome` is `unchanged` when the collector lists none. A
+deletion removes the publications and responsibles of the form; the
+requests it started keep their steps.
+
+| Input | Meaning |
+|---|---|
+| `name` | `create_form`: the name, unique; `update_form`: optional new name |
+| `yaml` | The definition; for `update_form`, optional, and it replaces the whole definition |
+| `folder`, `type` | Optional folder, and form type, which the collector only stores |
+| `form` | `update_form` and `delete_form`: one exact form name or form ID |
+
+| Output field | Meaning |
+|---|---|
+| `outcome` | `created`, `changed`, `unchanged` or `deleted` |
+| `id`, `name` | The form |
+| `read_back` | `create_form` and `update_form`: the form read back, as `get_form` gives it |
+| `warning` | Why the form read back is not what was asked, the change being made: not read back, or a definition in which the collector reads no form, such as a scalar or a list, which it stores all the same |
+
+### `attach_form_groups` and `detach_form_groups`
+
+Publish a form to groups, whose members may submit it, and make groups
+responsible for it, whose members may change it; or withdraw them.
+Attaching is not destructive; detaching is, as it withdraws a right.
+
+```text
+GET         /api/groups/<group>                                 by name or ID
+POST/DELETE /api/forms/<id>/publications/<group_id>
+POST/DELETE /api/forms/<id>/responsibles/<group_id>
+```
+
+The MCP resolves each group, then sends one request per group, publications
+first, at most 50 groups in all, and gives the outcome on each:
+`attached`, `already_attached`, `detached`, `already_detached`, read from
+the message the collector answers with 200, or `refused` with the reason.
+The collector requires FormsManager and to be responsible for the form,
+refuses a privilege group, such as Manager, with 403, and to a caller not a
+Manager a group they are not a member of.
+
+After a detachment of responsibles, the MCP reads back the groups still
+responsible, `responsibles`, and `warning` tells when none is left: only a
+Manager may then change, publish or delete the form, the caller included
+if not a Manager. The detachment is made all the same.
 

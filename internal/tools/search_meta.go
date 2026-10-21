@@ -32,6 +32,7 @@ var coreTools = []string{"count_nodes", "list_nodes", "get_node", "count_service
 var toolKeywords = map[string][]string{
 	"abort_service_action":         {"abort orchestration", "cancel orchestration", "stuck service action"},
 	"ack_service_action":           {"acknowledge", "ack failure", "ack error", "clear action errors", "acknowledge failed action"},
+	"attach_form_groups":           {"publish form", "form publication", "form responsible", "who can submit", "share form"},
 	"attach_node_moduleset":        {"add moduleset", "assign moduleset", "compliance modules", "enable compliance"},
 	"attach_node_ruleset":          {"add ruleset", "assign ruleset", "compliance rules", "apply ruleset"},
 	"attach_node_tag":              {"add tag", "tag nodes", "label nodes", "set tag", "bulk tag", "mass tag"},
@@ -45,10 +46,13 @@ var toolKeywords = map[string][]string{
 	"count_nodes":                  {"how many nodes", "number", "distribution", "statistics", "fleet", "inventory", "servers", "hosts"},
 	"count_service_actions":        {"how many failures", "number of failed actions", "unacknowledged failures", "action errors count", "failures by node"},
 	"count_services":               {"how many services", "number", "distribution", "statistics", "services down"},
+	"create_form":                  {"new form", "create form", "write form", "form yaml", "form definition"},
 	"create_node":                  {"add node", "new node", "register node", "declare node", "inventory"},
+	"delete_form":                  {"remove form", "delete form", "drop form"},
 	"delete_node":                  {"remove node", "decommission", "purge node", "drop node"},
 	"delete_service":               {"remove service", "purge service", "decommission service", "clean inventory"},
 	"delete_service_instance":      {"remove instance", "stale instance", "orphan instance", "purge instance"},
+	"detach_form_groups":           {"unpublish form", "remove form publication", "remove form responsible", "restrict form"},
 	"detach_node_moduleset":        {"remove moduleset", "unassign moduleset", "disable compliance"},
 	"detach_node_ruleset":          {"remove ruleset", "unassign ruleset", "drop rules"},
 	"detach_node_tag":              {"remove tag", "untag", "untag nodes", "unset tag", "bulk untag"},
@@ -121,6 +125,7 @@ var toolKeywords = map[string][]string{
 	"thaw_service":                 {"thaw service", "unfreeze service", "resume ha"},
 	"unfreeze_node":                {"thaw", "unfreeze", "resume automatic actions", "end maintenance"},
 	"unjustify_service_downtime":   {"remove downtime justification", "count downtime again"},
+	"update_form":                  {"edit form", "change form", "modify form", "form yaml", "rename form"},
 	"update_node":                  {"modify node", "change node", "set app", "set status", "edit node", "node owner", "node location"},
 }
 
