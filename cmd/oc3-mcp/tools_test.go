@@ -841,7 +841,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"freeze_service": false, "thaw_service": true, "start_service": false, "stop_service": true, "restart_service": true,
 			"switch_service": true, "giveback_service": true, "takeover_service": true, "abort_service_action": true,
 			"check_service_compliance": false, "fix_service_compliance": true, "submit_form": true,
-			"create_form": true, "update_form": true, "delete_form": true, "attach_form_groups": false, "detach_form_groups": true, "rollback_form": true, "set_check_threshold": false, "unset_check_threshold": false,
+			"create_form": true, "update_form": true, "delete_form": true, "attach_form_groups": false, "detach_form_groups": true, "rollback_form": true, "set_check_threshold": false, "unset_check_threshold": false, "create_tag": false, "update_tag": true, "delete_tag": true,
 			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
@@ -948,7 +948,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				t.Fatalf("%s resources input = %v", name, ok)
 			}
 		}
-		if len(found) != 47 {
+		if len(found) != 50 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -1719,6 +1719,58 @@ func TestCheckThresholdTools(t *testing.T) {
 		`POST /checks/settings {"chk_high":95,"chk_instance":"/nosuch","chk_type":"fs_u","node_id":"n-1"}`,
 		`DELETE /checks/settings {"chk_instance":"/var","chk_type":"fs_u","node_id":"n-1"}`,
 	}
+	if !slices.Equal(changes, want) {
+		t.Fatalf("changes = %q", changes)
+	}
+}
+
+func TestTagWriteTools(t *testing.T) {
+	var mutex sync.Mutex
+	var changes []string
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.Method + " " + r.URL.EscapedPath()
+		body, _ := io.ReadAll(r.Body)
+		if r.Method != http.MethodGet {
+			mutex.Lock()
+			changes = append(changes, path+" "+string(body))
+			mutex.Unlock()
+		}
+		const tag = `{"tag_id":"t-1","tag_name":"mcp-test-tag","tag_created":"2026-10-21 16:00:00","tag_exclude":"","tag_data":null}`
+		switch path {
+		case "POST /tags":
+			if strings.Contains(string(body), `"taken"`) {
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte(`{"text":"tag 'taken' already exists"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"data":[` + tag + `]}`))
+		case "GET /tags", "GET /tags/t-1":
+			_, _ = w.Write([]byte(`{"data":[` + tag + `]}`))
+		case "POST /tags/t-1":
+			_, _ = w.Write([]byte(`{"data":[{"tag_id":"t-1","tag_name":"mcp-test-tag","tag_exclude":"^x$","tag_data":null}]}`))
+		case "DELETE /tags/t-1":
+			_, _ = w.Write([]byte(`{"info":"2 node attachments deleted, 0 service attachments deleted, tag 'mcp-test-tag' deleted"}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, created := call("create_tag", map[string]any{"name": "mcp-test-tag"})
+	if result.IsError || created["outcome"] != "created" || created["tag"].(map[string]any)["tag_id"] != "t-1" {
+		t.Fatalf("create_tag = %+v", created)
+	}
+	if result, _ := call("create_tag", map[string]any{"name": "taken"}); !result.IsError || !strings.Contains(result.Content[0].(*mcp.TextContent).Text, "already exists") {
+		t.Fatalf("create_tag of a name taken = %+v", result.Content)
+	}
+	result, updated := call("update_tag", map[string]any{"tag": "mcp-test-tag", "exclude": "^x$"})
+	if result.IsError || updated["outcome"] != "changed" || updated["tag"].(map[string]any)["exclude"] != "^x$" {
+		t.Fatalf("update_tag = %+v", updated)
+	}
+	result, deleted := call("delete_tag", map[string]any{"tag": "mcp-test-tag"})
+	if result.IsError || deleted["outcome"] != "deleted" || deleted["node_attachments_deleted"] != float64(2) || deleted["service_attachments_deleted"] != float64(0) {
+		t.Fatalf("delete_tag = %+v", deleted)
+	}
+	want := []string{`POST /tags {"tag_name":"mcp-test-tag"}`, `POST /tags {"tag_name":"taken"}`, `POST /tags/t-1 {"tag_exclude":"^x$"}`, `DELETE /tags/t-1 `}
 	if !slices.Equal(changes, want) {
 		t.Fatalf("changes = %q", changes)
 	}
