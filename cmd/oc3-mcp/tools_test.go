@@ -841,7 +841,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"freeze_service": false, "thaw_service": true, "start_service": false, "stop_service": true, "restart_service": true,
 			"switch_service": true, "giveback_service": true, "takeover_service": true, "abort_service_action": true,
 			"check_service_compliance": false, "fix_service_compliance": true, "submit_form": true,
-			"create_form": true, "update_form": true, "delete_form": true, "attach_form_groups": false, "detach_form_groups": true, "rollback_form": true, "set_check_threshold": false, "unset_check_threshold": false, "create_tag": false, "update_tag": true, "delete_tag": true,
+			"create_form": true, "update_form": true, "delete_form": true, "attach_form_groups": false, "detach_form_groups": true, "rollback_form": true, "set_check_threshold": false, "unset_check_threshold": false, "create_tag": false, "update_tag": true, "delete_tag": true, "create_filterset": false, "rename_filterset": false, "add_filterset_criterion": true, "remove_filterset_criterion": true, "delete_filterset": true,
 			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
@@ -948,7 +948,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				t.Fatalf("%s resources input = %v", name, ok)
 			}
 		}
-		if len(found) != 50 {
+		if len(found) != 55 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -1771,6 +1771,82 @@ func TestTagWriteTools(t *testing.T) {
 		t.Fatalf("delete_tag = %+v", deleted)
 	}
 	want := []string{`POST /tags {"tag_name":"mcp-test-tag"}`, `POST /tags {"tag_name":"taken"}`, `POST /tags/t-1 {"tag_exclude":"^x$"}`, `DELETE /tags/t-1 `}
+	if !slices.Equal(changes, want) {
+		t.Fatalf("changes = %q", changes)
+	}
+}
+
+func TestFiltersetWriteTools(t *testing.T) {
+	var mutex sync.Mutex
+	var changes []string
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.Method + " " + r.URL.EscapedPath()
+		body, _ := io.ReadAll(r.Body)
+		if r.Method != http.MethodGet {
+			mutex.Lock()
+			changes = append(changes, path+" "+string(body))
+			mutex.Unlock()
+		}
+		switch path {
+		case "POST /filtersets":
+			_, _ = w.Write([]byte(`{"data":[{"id":307,"fset_name":"mcp-test-fset"}]}`))
+		case "GET /filtersets/mcp-test-fset", "GET /filtersets/307":
+			_, _ = w.Write([]byte(`{"data":[{"id":307,"fset_name":"mcp-test-fset"}]}`))
+		case "GET /filtersets/307/export":
+			_, _ = w.Write([]byte(`{"filtersets":[{"id":307,"fset_name":"mcp-test-fset","filters":[{"f_log_op":"AND","f_order":1,"filter":{"f_table":"nodes","f_field":"nodename","f_op":"LIKE","f_value":"dev2n%"},"filterset":null}]}]}`))
+		case "GET /filtersets/307/filters":
+			_, _ = w.Write([]byte(`{"data":[{"id":236,"f_table":"nodes","f_field":"nodename","f_op":"LIKE","f_value":"dev2n%","f_log_op":"AND","f_order":1}],"meta":{"total":1}}`))
+		case "GET /filtersets/307/nodes":
+			_, _ = w.Write([]byte(`{"data":[{"nodename":"dev2n1"}],"meta":{"total":3}}`))
+		case "GET /filtersets/307/services", "GET /filters":
+			_, _ = w.Write([]byte(`{"data":[],"meta":{"total":0}}`))
+		case "GET /filtersets/307/usage":
+			_, _ = w.Write([]byte(`{"data":{}}`))
+		case "POST /filters":
+			_, _ = w.Write([]byte(`{"data":[{"id":256}]}`))
+		case "GET /filtersets/site-paris":
+			_, _ = w.Write([]byte(`{"data":[{"id":284,"fset_name":"site-paris"}]}`))
+		case "POST /filtersets/307/filters/256", "POST /filtersets/307/filtersets/284", "DELETE /filtersets/307/filters/236", "DELETE /filtersets/307":
+			_, _ = w.Write([]byte(`{"info":"ok"}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	criterion := map[string]any{"logic": "AND", "table": "nodes", "field": "nodename", "op": "LIKE", "value": "dev2n%"}
+	result, created := call("create_filterset", map[string]any{"name": "mcp-test-fset", "criteria": []any{criterion}})
+	if result.IsError || created["outcome"] != "created" || created["read_back"].(map[string]any)["nodes_count"] != float64(3) {
+		t.Fatalf("create_filterset = %+v", created)
+	}
+	// The schema takes the operators of the collector only.
+	if result, _ := call("create_filterset", map[string]any{"name": "x", "criteria": []any{map[string]any{"logic": "AND", "table": "nodes", "field": "nodename", "op": "!=", "value": "a"}}}); !result.IsError {
+		t.Fatal("an operator the collector refuses was accepted")
+	}
+	result, added := call("add_filterset_criterion", map[string]any{"filterset": "mcp-test-fset", "logic": "OR", "table": "nodes", "field": "loc_city", "op": "=", "value": "mcp-test-city"})
+	if result.IsError || added["outcome"] != "added" {
+		t.Fatalf("add_filterset_criterion = %+v", added)
+	}
+	// An included filterset, named apart from the filterset changed.
+	result, included := call("add_filterset_criterion", map[string]any{"filterset": "mcp-test-fset", "logic": "OR", "included_filterset": "site-paris"})
+	if result.IsError || included["outcome"] != "added" {
+		t.Fatalf("add_filterset_criterion of a filterset = %+v", included)
+	}
+	result, removed := call("remove_filterset_criterion", map[string]any{"filterset": "mcp-test-fset", "table": "nodes", "field": "nodename", "op": "LIKE", "value": "dev2n%"})
+	if result.IsError || removed["outcome"] != "removed" {
+		t.Fatalf("remove_filterset_criterion = %+v", removed)
+	}
+	result, deleted := call("delete_filterset", map[string]any{"filterset": "mcp-test-fset"})
+	if result.IsError || deleted["outcome"] != "deleted" {
+		t.Fatalf("delete_filterset = %+v", deleted)
+	}
+	want := []string{
+		`POST /filtersets {"entries":[{"f_field":"nodename","f_log_op":"AND","f_op":"LIKE","f_table":"nodes","f_value":"dev2n%"}],"fset_name":"mcp-test-fset"}`,
+		`POST /filters {"f_field":"loc_city","f_op":"=","f_table":"nodes","f_value":"mcp-test-city"}`,
+		`POST /filtersets/307/filters/256 {"f_log_op":"OR","f_order":2}`,
+		`POST /filtersets/307/filtersets/284 {"f_log_op":"OR","f_order":2}`,
+		`DELETE /filtersets/307/filters/236 `,
+		`DELETE /filtersets/307 `,
+	}
 	if !slices.Equal(changes, want) {
 		t.Fatalf("changes = %q", changes)
 	}
