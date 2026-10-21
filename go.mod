@@ -7,7 +7,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 )
 
-require go.yaml.in/yaml/v2 v2.4.3 // indirect
+require go.yaml.in/yaml/v2 v2.4.3
 
 require (
 	github.com/google/jsonschema-go v0.4.3

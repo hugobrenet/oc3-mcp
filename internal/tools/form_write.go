@@ -37,7 +37,7 @@ type FormGroupsOutput = core.FormGroupChange
 
 // formDefinitionWriting tells how the collector takes a definition.
 const formDefinitionWriting = "The collector checks only that the definition is YAML: a key it does not know, or an output without a Dest it runs (workflow, rest, script, mail or db), is ignored, and the form then does nothing on submission. " +
-	"Start from the definition of a similar form, which get_form gives, rather than from memory. " +
+	"Read the MCP resource oc3://docs/form-definition, the reference of the format, in the same turn as the call, and start from the definition of a similar form, which get_form gives, rather than from memory. " +
 	"The form comes back read as get_form reads it: check its inputs and outputs, and tell the user of an output missing. "
 
 // registerFormWriteTools registers the tools that create, change and

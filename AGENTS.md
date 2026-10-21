@@ -55,6 +55,9 @@ shared with `om3-mcp`.
   domain validation, private collector response shapes and bounded typed
   results. It stays one package: organize it by file, never by sub-package.
   Name files after their domain prefix (`node_*`, `service_*`…).
+- `internal/resources`: the MCP resources, reference texts embedded in the
+  binary that a client reads on demand, such as the format of the YAML of a
+  form.
 - `internal/tools`: MCP declarations, schemas, annotations and registrar.
   Handlers stay thin: typed input, one core use case, typed output.
 

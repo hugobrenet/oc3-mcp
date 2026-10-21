@@ -16,6 +16,7 @@ import (
 	"github.com/opensvc/oc3-mcp/internal/client"
 	"github.com/opensvc/oc3-mcp/internal/config"
 	"github.com/opensvc/oc3-mcp/internal/core"
+	"github.com/opensvc/oc3-mcp/internal/resources"
 	"github.com/opensvc/oc3-mcp/internal/tools"
 	"github.com/opensvc/osvc-auth-mcp/mcpauth"
 )
@@ -204,7 +205,7 @@ func newHandler(collector *client.Client, delegator *auth.Delegator, actions boo
 func newToolsHandler(collector *client.Client, actions bool, route ...mcp.Middleware) (http.Handler, error) {
 	service := core.New(collector)
 	server := mcp.NewServer(&mcp.Implementation{Name: serverName, Version: serverVersion}, &mcp.ServerOptions{
-		Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{}},
+		Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{}, Resources: &mcp.ResourceCapabilities{}},
 	})
 	registrar, err := tools.NewRegistrar(server)
 	if err != nil {
@@ -222,6 +223,9 @@ func newToolsHandler(collector *client.Client, actions bool, route ...mcp.Middle
 		if err := tools.RegisterNodeActionTools(registrar, service); err != nil {
 			return nil, err
 		}
+	}
+	if err := resources.Register(server); err != nil {
+		return nil, err
 	}
 	// Cross-origin browser requests are refused with 403, as the MCP SDK
 	// recommends, by the protection of net/http around its handler.
