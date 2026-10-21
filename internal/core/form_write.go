@@ -18,6 +18,8 @@ const (
 	FormChanged   = "changed"
 	FormUnchanged = "unchanged"
 	FormDeleted   = "deleted"
+	// FormRolledBack is a definition restored at an earlier revision.
+	FormRolledBack = "rolled_back"
 )
 
 type CreateFormOptions struct {
@@ -38,7 +40,7 @@ type UpdateFormOptions struct {
 
 type FormWrite struct {
 	Provenance Provenance   `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
-	Outcome    string       `json:"outcome" jsonschema:"created, changed, unchanged when the collector found nothing to change, or deleted"`
+	Outcome    string       `json:"outcome" jsonschema:"created, changed, unchanged when the collector found nothing to change, rolled_back, or deleted"`
 	ID         int          `json:"id" jsonschema:"the collector form ID"`
 	Name       string       `json:"name" jsonschema:"the form name"`
 	Form       *FormDetails `json:"read_back,omitempty" jsonschema:"with create_form and update_form, the form read back as get_form gives it: its inputs and outputs as the collector reads the definition, its groups and its definition text"`
@@ -129,6 +131,25 @@ func (s *Service) UpdateForm(ctx context.Context, options UpdateFormOptions) (Fo
 		name = *options.Name
 	}
 	return s.formWritten(ctx, outcome, form.ID, name), nil
+}
+
+// RollbackForm restores the definition of a form at an earlier revision:
+// the collector records a new revision for it, and the form is read back as
+// get_form gives it.
+func (s *Service) RollbackForm(ctx context.Context, form, revision string) (FormWrite, error) {
+	if !formRevisionPattern.MatchString(revision) {
+		return FormWrite{}, fmt.Errorf("revision must be a revision, as list_form_revisions gives it")
+	}
+	found, err := s.findForm(ctx, form, []string{"id", "form_name"})
+	if err != nil {
+		return FormWrite{}, err
+	}
+	// The collector answers with nothing.
+	var response any
+	if err := s.client.PostJSON(ctx, "/forms/"+strconv.Itoa(found.ID)+"/rollback/"+revision, nil, &response); err != nil {
+		return FormWrite{}, fmt.Errorf("roll form %s back to %s: %w", found.FormName, revision, err)
+	}
+	return s.formWritten(ctx, FormRolledBack, found.ID, found.FormName), nil
 }
 
 // DeleteForm deletes a form, with its publications and responsibles.

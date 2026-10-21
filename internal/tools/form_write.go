@@ -22,6 +22,11 @@ type UpdateFormInput struct {
 	Type   *string `json:"type,omitempty" jsonschema:"optional new form type: custo, generic or obj"`
 }
 
+type RollbackFormInput struct {
+	Form     string `json:"form" jsonschema:"one exact form name or form ID"`
+	Revision string `json:"revision" jsonschema:"the revision whose definition to restore, as list_form_revisions gives it"`
+}
+
 type DeleteFormInput struct {
 	Form string `json:"form" jsonschema:"one exact form name or form ID"`
 }
@@ -77,6 +82,20 @@ func registerFormWriteTools(registrar *Registrar, service *core.Service) error {
 		Annotations: actionAnnotations(true, true),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input UpdateFormInput) (*mcp.CallToolResult, FormWriteOutput, error) {
 		result, err := service.UpdateForm(ctx, core.UpdateFormOptions{Form: input.Form, Name: input.Name, YAML: input.YAML, Folder: input.Folder, Type: input.Type})
+		if err != nil {
+			return nil, FormWriteOutput{}, err
+		}
+		return nil, result, nil
+	}); err != nil {
+		return err
+	}
+	if err := addTool(registrar, &mcp.Tool{
+		Name: "rollback_form", Title: "Roll form back",
+		Description: "Restore the definition of a form of the OpenSVC collector at an earlier revision, as list_form_revisions gives it: the collector records it as a new revision, and the earlier ones stay; a rollback to the current definition records none. " +
+			"Compare the revision with the current definition with get_form_revision first. The form comes back read as get_form reads it. Requires the FormsManager or the Manager privilege, and to be responsible for the form.",
+		Annotations: actionAnnotations(true, true),
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, input RollbackFormInput) (*mcp.CallToolResult, FormWriteOutput, error) {
+		result, err := service.RollbackForm(ctx, input.Form, input.Revision)
 		if err != nil {
 			return nil, FormWriteOutput{}, err
 		}

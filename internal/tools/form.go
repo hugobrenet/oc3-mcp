@@ -28,6 +28,9 @@ func RegisterFormTools(registrar *Registrar, service *core.Service) error {
 	if err := registerFormResultTools(registrar, service); err != nil {
 		return err
 	}
+	if err := registerFormRevisionTools(registrar, service); err != nil {
+		return err
+	}
 	if err := addTool(
 		registrar,
 		&mcp.Tool{

@@ -22,7 +22,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Apps | `get_app` | [App tools](apps.md) |
 | Find | `find_objects` | [Find tools](find.md) |
 | Requests | `list_requests`, `get_request` | [Request tools](requests.md) |
-| Forms | `list_forms`, `get_form`, `get_form_result`, `submit_form`, `create_form`, `update_form`, `delete_form`, `attach_form_groups`, `detach_form_groups` | [Form tools](forms.md) |
+| Forms | `list_forms`, `get_form`, `get_form_result`, `submit_form`, `create_form`, `update_form`, `delete_form`, `attach_form_groups`, `detach_form_groups`, `list_form_revisions`, `get_form_revision`, `rollback_form` | [Form tools](forms.md) |
 | Sysreport | `list_node_sysreport_changes`, `get_node_sysreport_diff`, `list_node_sysreport_files`, `get_node_sysreport_file` | [Sysreport tools](sysreport.md) |
 | Filtersets | `list_filtersets`, `get_filterset` | [Filterset tools](filtersets.md) |
 | Groups and users | `list_groups`, `get_group`, `list_users` | [Group and user tools](groups.md) |

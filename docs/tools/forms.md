@@ -7,7 +7,10 @@ tools:
   - detach_form_groups
   - get_form
   - get_form_result
+  - get_form_revision
+  - list_form_revisions
   - list_forms
+  - rollback_form
   - submit_form
   - update_form
 stability: experimental
@@ -28,8 +31,10 @@ Implementation:
 - submission: `internal/core/form_submit.go`, with the masks of
   `internal/core/mask.go`;
 - changes of the forms and their groups: `internal/core/form_write.go`;
-- MCP definitions: `internal/tools/form.go`, `internal/tools/form_submit.go`
-  and `internal/tools/form_write.go`.
+- history of the definitions: `internal/core/form_revision.go`, the
+  rollback in `internal/core/form_write.go`;
+- MCP definitions: `internal/tools/form.go`, `internal/tools/form_submit.go`,
+  `internal/tools/form_revision.go` and `internal/tools/form_write.go`.
 
 Visibility is that of the collector account of the caller: a manager sees
 every form, the others the forms published to one of their groups.
@@ -358,10 +363,72 @@ requests it started keep their steps.
 
 | Output field | Meaning |
 |---|---|
-| `outcome` | `created`, `changed`, `unchanged` or `deleted` |
+| `outcome` | `created`, `changed`, `unchanged`, `rolled_back` (with `rollback_form`) or `deleted` |
 | `id`, `name` | The form |
-| `read_back` | `create_form` and `update_form`: the form read back, as `get_form` gives it |
+| `read_back` | `create_form`, `update_form` and `rollback_form`: the form read back, as `get_form` gives it |
 | `warning` | Why the form read back is not what was asked, the change being made: not read back, or a definition in which the collector reads no form, such as a scalar or a list, which it stores all the same |
+
+### `list_form_revisions`, `get_form_revision` and `rollback_form`
+
+The history of the definition of a form, which the collector keeps in a
+git repository: one revision at each creation, change of the definition
+or rollback, with its date and author.
+
+```text
+GET  /api/forms/<id>/revisions                     the revisions, most recent first, 300 at most
+GET  /api/forms/<id>/revisions/<revision>          {"data": {"oid": …, "content": "<the YAML>"}}
+GET  /api/forms/<id>/diff/<revision>[?other=<rev>] {"data": "<git show, or git diff with other>"}
+POST /api/forms/<id>/rollback/<revision>           null
+```
+
+`list_form_revisions` gives each `revision`, the git commit ID the other
+two take, its `date`, in collector local time, its `author`, and for a
+revision made by a rollback the message of the collector, `rollback to
+<date of the revision restored>`. The collector writes the author as
+`Name <email>`, or the email in place of a name the account has none of:
+the email addresses are masked by `mask.go`. `limit` defaults to 20, and
+goes to 300, the most the collector gives; `total` counts those it gives,
+`truncated` tells older ones were left out.
+
+`get_form_revision` gives the definition at a revision, `yaml`, masked as
+`get_form` masks it: the MCP reads the YAML of the revision as the
+collector reads it into its `form_definition`, for the default values of
+its sensitive inputs. `change` gives what the revision changed, as `git
+show` gives it, or with `compare_to` the differences from `revision` to
+`compare_to`, as `git diff` gives them: the `-` lines are those of
+`revision`, the `+` lines those of `compare_to`. `change` is masked line
+by line: the `+`, `-` and context lines as YAML, with the default values
+of the sensitive inputs of `revision`, and of `compare_to` when given,
+the others for their email addresses only. The mask of `change` is more
+partial than that of `yaml`: a key of a secret alone on its line leaves
+its value on the next lines in clear, and without `compare_to` the
+default of a sensitive input the revision removed, a `-` line of the
+revision before, is masked only under a key that names a secret. Both
+are cut to 32 KiB, `truncated` telling it. A revision, as `compare_to`,
+must be 4 to 64 hexadecimal characters, which the MCP checks so that no
+path or git reference goes to the collector; one the collector does not
+know answers 404 `revision <revision> not found`. A form whose creation
+the collector failed to commit in its history answers an empty `data`,
+which the MCP tells as `no history recorded for form <name>`.
+
+`rollback_form` restores the definition at an earlier revision: the
+collector commits it as a new revision, the earlier ones kept, so that a
+rollback is undone by another one. Registered only when
+`OPENSVC_MCP_ACTIONS=enabled`, and destructive, as it replaces the
+current definition. The collector requires FormsManager or Manager, and to
+be responsible for the form. The form is read back as `get_form` gives
+it, in `read_back`, with `outcome` `rolled_back`. A rollback to the
+current definition commits nothing, the collector having nothing to
+change: `outcome` is `rolled_back` all the same, and
+`list_form_revisions` shows no new revision, as the description of the
+tool tells the model.
+
+| Input | Meaning |
+|---|---|
+| `form` | One exact form name or form ID |
+| `limit` | `list_form_revisions`: the most recent revisions to return, 20 by default, 300 at most |
+| `revision` | `get_form_revision` and `rollback_form`: a revision, as `list_form_revisions` gives it |
+| `compare_to` | `get_form_revision`: optional other revision; `change` then gives the differences from `revision` to it |
 
 ### `attach_form_groups` and `detach_form_groups`
 

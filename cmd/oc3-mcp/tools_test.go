@@ -681,10 +681,29 @@ func TestFormToolsReadTheCollector(t *testing.T) {
 				"form_definition":{"Label":"Virtual machine request","Inputs":[{"Id":"hostname","Mandatory":true}],"Outputs":[{"Dest":"workflow"}]}}],"meta":{"total":1}}`))
 		case "/forms/198/publications", "/forms/198/responsibles":
 			_, _ = w.Write([]byte(`{"data":[{"role":"Infra Unix"}]}`))
+		case "/forms/198/revisions":
+			_, _ = w.Write([]byte(`{"data":[{"id":"416a","cid":"416abe30e080cafb","start":"2026-10-20T13:52:57","content":"Author: Jane Doe <jane@example.com>"}]}`))
+		case "/forms/198/revisions/416abe30e080cafb":
+			_, _ = w.Write([]byte(`{"data":{"oid":"0c3c","content":"Label: Virtual machine request\n"}}`))
+		case "/forms/198/diff/416abe30e080cafb":
+			_, _ = w.Write([]byte(`{"data":"diff --git a/forms b/forms\n--- a/forms\n+++ b/forms\n@@ -1 +1 @@\n-Label: VM\n+Label: Virtual machine request\n"}`))
+		case "/forms/198/revisions/0000beef":
+			notFound(w, "revision 0000beef not found")
 		default:
 			notFound(w, "missing")
 		}
 	})
+	result, revisions := call("list_form_revisions", map[string]any{"form": "sample-vm-request"})
+	if items, _ := revisions["revisions"].([]any); result.IsError || len(items) != 1 || items[0].(map[string]any)["revision"] != "416abe30e080cafb" || strings.Contains(fmt.Sprint(items), "jane@") {
+		t.Fatalf("list_form_revisions = %+v", revisions)
+	}
+	result, revision := call("get_form_revision", map[string]any{"form": "sample-vm-request", "revision": "416abe30e080cafb"})
+	if result.IsError || revision["yaml"] != "Label: Virtual machine request\n" || !strings.Contains(fmt.Sprint(revision["change"]), "+Label: Virtual machine request") {
+		t.Fatalf("get_form_revision = %+v", revision)
+	}
+	if result, _ := call("get_form_revision", map[string]any{"form": "sample-vm-request", "revision": "0000beef"}); !result.IsError {
+		t.Fatal("get_form_revision of an unknown revision succeeded")
+	}
 	result, form := call("get_form", map[string]any{"form": "sample-vm-request"})
 	inputs, _ := form["inputs"].([]any)
 	if result.IsError || len(inputs) != 1 || inputs[0].(map[string]any)["mandatory"] != true || form["yaml"] != "Label: Virtual machine request\n" {
@@ -820,7 +839,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"freeze_service": false, "thaw_service": true, "start_service": false, "stop_service": true, "restart_service": true,
 			"switch_service": true, "giveback_service": true, "takeover_service": true, "abort_service_action": true,
 			"check_service_compliance": false, "fix_service_compliance": true, "submit_form": true,
-			"create_form": true, "update_form": true, "delete_form": true, "attach_form_groups": false, "detach_form_groups": true,
+			"create_form": true, "update_form": true, "delete_form": true, "attach_form_groups": false, "detach_form_groups": true, "rollback_form": true,
 			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
@@ -927,7 +946,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				t.Fatalf("%s resources input = %v", name, ok)
 			}
 		}
-		if len(found) != 44 {
+		if len(found) != 45 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -1574,6 +1593,8 @@ func TestFormWriteTools(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":[{"id":215,"form_name":"mcp-lab-crud","form_definition":{"Inputs":[{"Id":"subject"}],"Outputs":[{"Dest":"workflow"}]},"form_yaml":"Label: x"}],"meta":{"total":1}}`))
 		case "POST /forms/215":
 			_, _ = w.Write([]byte(`{"info":"Form mcp-lab-crud change: form_folder: / => /mcp-lab"}`))
+		case "POST /forms/215/rollback/b5fe254c":
+			_, _ = w.Write([]byte(`null`))
 		case "DELETE /forms/215":
 			_, _ = w.Write([]byte(`{"info":"Form mcp-lab-crud deleted"}`))
 		case "GET /groups/Lab":
@@ -1615,11 +1636,15 @@ func TestFormWriteTools(t *testing.T) {
 	if result.IsError || detached["changed"] != float64(1) || fmt.Sprint(detached["responsibles"]) != "[Lab]" || detached["warning"] != nil {
 		t.Fatalf("detach_form_groups = %+v", detached)
 	}
+	result, rolled := call("rollback_form", map[string]any{"form": "mcp-lab-crud", "revision": "b5fe254c"})
+	if result.IsError || rolled["outcome"] != "rolled_back" || rolled["read_back"] == nil {
+		t.Fatalf("rollback_form = %+v", rolled)
+	}
 	result, deleted := call("delete_form", map[string]any{"form": "mcp-lab-crud"})
 	if result.IsError || deleted["outcome"] != "deleted" {
 		t.Fatalf("delete_form = %+v", deleted)
 	}
-	if strings.Join(changes, ",") != "POST /forms,POST /forms/215,POST /forms/215/publications/2,POST /forms/215/publications/1,DELETE /forms/215/responsibles/2,DELETE /forms/215" {
+	if strings.Join(changes, ",") != "POST /forms,POST /forms/215,POST /forms/215/publications/2,POST /forms/215/publications/1,DELETE /forms/215/responsibles/2,POST /forms/215/rollback/b5fe254c,DELETE /forms/215" {
 		t.Fatalf("changes = %v", changes)
 	}
 }
