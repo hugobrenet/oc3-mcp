@@ -58,3 +58,19 @@ func TestListRequestsByID(t *testing.T) {
 		t.Fatalf("requests = %+v, %v, %+v", requests, err, collector.requests)
 	}
 }
+
+// assigned goes to the collector as it is, which keeps the requests of the
+// team of the caller; a cursor is bound to it.
+func TestListRequestsAssignedToTheTeamOfTheCaller(t *testing.T) {
+	collector := &fakeCollector{body: `{"data":[{"id":1378,"status":"pending","last_assignee":"Manager"}],"meta":{"total":3}}`}
+	result, err := newTestService(collector).ListRequests(t.Context(), ListRequestsOptions{Assigned: "team", Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if query := collector.requests[0].query; query.Get("assigned") != "team" || len(query["filter"]) != 0 || result.NextCursor == "" {
+		t.Fatalf("query = %v, result = %+v", query, result)
+	}
+	if _, err := newTestService(&fakeCollector{body: `{"data":[],"meta":{"total":0}}`}).ListRequests(t.Context(), ListRequestsOptions{Assigned: "tiers", Cursor: result.NextCursor}); err == nil {
+		t.Fatal("a cursor of assigned team was taken for assigned tiers")
+	}
+}

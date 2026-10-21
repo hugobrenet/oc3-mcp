@@ -637,7 +637,11 @@ func TestFindObjectsReadsTheCollectorSearch(t *testing.T) {
 }
 
 func TestRequestToolsReadTheCollector(t *testing.T) {
+	var assigned []string
 	call := newToolCaller(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/workflows" {
+			assigned = append(assigned, r.URL.Query().Get("assigned"))
+		}
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
 		case "/workflows":
@@ -661,6 +665,10 @@ func TestRequestToolsReadTheCollector(t *testing.T) {
 	items, _ := list["requests"].([]any)
 	if result.IsError || len(items) != 1 || items[0].(map[string]any)["assignee"] != "Infra Unix" || items[0].(map[string]any)["creator"] != "Manager" {
 		t.Fatalf("list_requests = %+v", list)
+	}
+	// assigned goes to the collector as it is.
+	if result, _ := call("list_requests", map[string]any{"status": "pending", "assigned": "team"}); result.IsError || assigned[len(assigned)-1] != "team" {
+		t.Fatalf("list_requests assigned team = %+v, assigned %v", result, assigned)
 	}
 }
 
