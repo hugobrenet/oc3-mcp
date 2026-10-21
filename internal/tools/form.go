@@ -25,6 +25,9 @@ type GetFormInput struct {
 type GetFormOutput = core.FormDetails
 
 func RegisterFormTools(registrar *Registrar, service *core.Service) error {
+	if err := registerFormResultTools(registrar, service); err != nil {
+		return err
+	}
 	if err := addTool(
 		registrar,
 		&mcp.Tool{

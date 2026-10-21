@@ -811,7 +811,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"justify_service_downtime": false, "unjustify_service_downtime": false, "set_service_sla": false,
 			"freeze_service": false, "thaw_service": true, "start_service": false, "stop_service": true, "restart_service": true,
 			"switch_service": true, "giveback_service": true, "takeover_service": true, "abort_service_action": true,
-			"check_service_compliance": false, "fix_service_compliance": true,
+			"check_service_compliance": false, "fix_service_compliance": true, "submit_form": true,
 			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
@@ -904,7 +904,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				t.Fatalf("%s resources input = %v", name, ok)
 			}
 		}
-		if len(found) != 38 {
+		if len(found) != 39 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -1484,5 +1484,45 @@ func TestAckServiceActionTool(t *testing.T) {
 	}
 	if result, _ := call("ack_service_action", map[string]any{"comment": "known issue"}); !result.IsError {
 		t.Fatal("ack_service_action accepted a call selecting no action")
+	}
+}
+
+func TestFormSubmitTools(t *testing.T) {
+	var put map[string]any
+	result := `{"form_id":195,"results_id":621,"status":"COMPLETED","returncode":0,"outputs_order":["workflow"],
+		"submitted_data":{"hostname":"mcp-test-vm","admin_password":"s3cretpw"},"request_data":{},
+		"outputs":{"workflow":{"workflow_id":1376,"head_form_id":1447}},
+		"log":{"workflow":[[0,"New workflow %(form_name)s created with id %(id)d",{"form_name":"sample-vm-request","id":1447}]]}}`
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method + " " + r.URL.EscapedPath() {
+		case "GET /forms":
+			_, _ = w.Write([]byte(`{"data":[{"id":195,"form_name":"sample-vm-request","form_definition":{"Inputs":[{"Id":"hostname","Mandatory":true}],"Outputs":[{"Dest":"workflow"}]}}]}`))
+		case "PUT /forms/195":
+			_ = json.NewDecoder(r.Body).Decode(&put)
+			_, _ = w.Write([]byte(result))
+		case "GET /form_output_results/621":
+			_, _ = w.Write([]byte(result))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	outcome, run := call("submit_form", map[string]any{"form": "sample-vm-request", "data": map[string]any{"hostname": "mcp-test-vm"}})
+	outputs, _ := run["outputs"].([]any)
+	if outcome.IsError || run["result_id"] != float64(621) || run["returncode"] != float64(0) || run["status"] != "completed" || len(outputs) != 1 ||
+		run["request"].(map[string]any)["id"] != float64(1376) || run["values"] != nil || !strings.Contains(fmt.Sprint(run["follow_up"]), "get_request") ||
+		put["data"].(map[string]any)["hostname"] != "mcp-test-vm" {
+		t.Fatalf("submit_form = %+v, put %v", run, put)
+	}
+	if line := outputs[0].(map[string]any)["log"].([]any)[0].(map[string]any); line["message"] != "New workflow sample-vm-request created with id 1447" {
+		t.Fatalf("log = %v", line)
+	}
+	// The result read back gives the values submitted, the secret masked.
+	outcome, run = call("get_form_result", map[string]any{"result_id": 621})
+	if outcome.IsError || !strings.Contains(fmt.Sprint(run["values"]), "mcp-test-vm") || strings.Contains(fmt.Sprint(run["values"]), "s3cretpw") {
+		t.Fatalf("get_form_result = %+v", run)
+	}
+	if outcome, _ := call("submit_form", map[string]any{"form": "sample-vm-request"}); !outcome.IsError {
+		t.Fatal("submit_form accepted no data")
 	}
 }
