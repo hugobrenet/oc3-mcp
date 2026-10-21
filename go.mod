@@ -10,7 +10,7 @@ require (
 require go.yaml.in/yaml/v2 v2.4.3 // indirect
 
 require (
-	github.com/google/jsonschema-go v0.4.3 // indirect
+	github.com/google/jsonschema-go v0.4.3
 	github.com/opensvc/osvc-auth-mcp v0.5.0
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect

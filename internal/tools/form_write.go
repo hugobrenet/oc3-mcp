@@ -44,12 +44,22 @@ const formDefinitionWriting = "The collector checks only that the definition is 
 // delete forms and their groups. RegisterNodeActionTools calls it: they are
 // registered only when actions are enabled.
 func registerFormWriteTools(registrar *Registrar, service *core.Service) error {
+	// The definitions are YAML, which the confirmation shows as such.
+	createSchema, err := inputSchemaWithMediaTypes[CreateFormInput](map[string]string{"yaml": "application/yaml"})
+	if err != nil {
+		return err
+	}
+	updateSchema, err := inputSchemaWithMediaTypes[UpdateFormInput](map[string]string{"yaml": "application/yaml"})
+	if err != nil {
+		return err
+	}
 	if err := addTool(registrar, &mcp.Tool{
-		Name: "create_form", Title: "Create form",
+		Name: "create_form", Title: "Create form", InputSchema: createSchema,
 		Description: "Create a form of the OpenSVC collector from its name and its definition, the YAML of what a submission asks and runs, such as starting a request, calling an API or running a script. " +
 			formDefinitionWriting +
 			"The collector publishes the new form to the default group of the caller and makes that group responsible for it; attach_form_groups adds groups. A name already taken is refused. Requires the FormsManager or the Manager privilege.",
-		Annotations: actionAnnotations(false, false),
+		// The user confirms the definition as sent, after agreeing to it.
+		Annotations: actionAnnotations(true, false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input CreateFormInput) (*mcp.CallToolResult, FormWriteOutput, error) {
 		result, err := service.CreateForm(ctx, core.CreateFormOptions{Name: input.Name, YAML: input.YAML, Folder: input.Folder, Type: input.Type})
 		if err != nil {
@@ -60,7 +70,7 @@ func registerFormWriteTools(registrar *Registrar, service *core.Service) error {
 		return err
 	}
 	if err := addTool(registrar, &mcp.Tool{
-		Name: "update_form", Title: "Update form",
+		Name: "update_form", Title: "Update form", InputSchema: updateSchema,
 		Description: "Change a form of the OpenSVC collector: its definition, the YAML of its inputs and outputs, its name, folder or type; the fields not given are kept. " +
 			"A definition given replaces the whole definition: read it with get_form, and send it back changed. " + formDefinitionWriting +
 			"Each change of the definition is kept in the history of the collector. Requires the FormsManager or the Manager privilege.",

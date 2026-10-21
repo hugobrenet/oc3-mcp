@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -113,4 +115,23 @@ func validateToolDeclaration(tool *mcp.Tool) error {
 		return fmt.Errorf("tool %q custom metadata is unsupported", tool.Name)
 	}
 	return nil
+}
+
+// inputSchemaWithMediaTypes is the input schema of In with the media type of
+// some of its text properties, as JSON Schema writes it in
+// contentMediaType: a client, such as the confirmation of the agent, reads
+// it to show a value, a YAML definition kept as written for example.
+func inputSchemaWithMediaTypes[In any](types map[string]string) (*jsonschema.Schema, error) {
+	schema, err := jsonschema.For[In](&jsonschema.ForOptions{})
+	if err != nil {
+		return nil, err
+	}
+	for name, mediaType := range types {
+		property, ok := schema.Properties[name]
+		if !ok || (property.Type != "string" && !slices.Contains(property.Types, "string")) {
+			return nil, fmt.Errorf("input property %q is not a text", name)
+		}
+		property.ContentMediaType = mediaType
+	}
+	return schema, nil
 }
