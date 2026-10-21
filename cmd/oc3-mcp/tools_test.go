@@ -812,6 +812,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"freeze_service": false, "thaw_service": true, "start_service": false, "stop_service": true, "restart_service": true,
 			"switch_service": true, "giveback_service": true, "takeover_service": true, "abort_service_action": true,
 			"check_service_compliance": false, "fix_service_compliance": true, "submit_form": true,
+			"create_form": false, "update_form": true, "delete_form": true, "attach_form_groups": false, "detach_form_groups": true,
 			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
@@ -904,7 +905,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				t.Fatalf("%s resources input = %v", name, ok)
 			}
 		}
-		if len(found) != 39 {
+		if len(found) != 44 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -1530,5 +1531,73 @@ func TestFormSubmitTools(t *testing.T) {
 	// With request, the submission decides the pending step of the request.
 	if outcome, _ := call("submit_form", map[string]any{"form": "sample-vm-request", "data": map[string]any{"hostname": "x"}, "request": 1376}); outcome.IsError || put["prev_wfid"] != float64(1447) {
 		t.Fatalf("submit_form with request = %+v, put %v", outcome, put)
+	}
+}
+
+func TestFormWriteTools(t *testing.T) {
+	var mutex sync.Mutex
+	var changes []string
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.Method + " " + r.URL.EscapedPath()
+		mutex.Lock()
+		if r.Method != http.MethodGet {
+			changes = append(changes, path)
+		}
+		mutex.Unlock()
+		switch path {
+		case "POST /forms":
+			_, _ = w.Write([]byte(`{"data":[{"id":215,"form_name":"mcp-lab-crud"}]}`))
+		case "GET /forms":
+			_, _ = w.Write([]byte(`{"data":[{"id":215,"form_name":"mcp-lab-crud","form_definition":{"Inputs":[{"Id":"subject"}],"Outputs":[{"Dest":"workflow"}]},"form_yaml":"Label: x"}],"meta":{"total":1}}`))
+		case "POST /forms/215":
+			_, _ = w.Write([]byte(`{"info":"Form mcp-lab-crud change: form_folder: / => /mcp-lab"}`))
+		case "DELETE /forms/215":
+			_, _ = w.Write([]byte(`{"info":"Form mcp-lab-crud deleted"}`))
+		case "GET /groups/Lab":
+			_, _ = w.Write([]byte(`{"data":[{"id":2,"role":"Lab","privilege":"F"}]}`))
+		case "POST /forms/215/publications/2":
+			_, _ = w.Write([]byte(`{"info":"Form 215 published to group Lab"}`))
+		case "DELETE /forms/215/responsibles/2":
+			_, _ = w.Write([]byte(`{"info":"Form 215 responsibility to group 2 removed"}`))
+		case "GET /groups/Manager":
+			_, _ = w.Write([]byte(`{"data":[{"id":1,"role":"Manager","privilege":"T"}]}`))
+		case "POST /forms/215/publications/1":
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"text":"Operation not allowed on privilege group: Manager"}`))
+		case "GET /forms/215/publications", "GET /forms/215/responsibles":
+			_, _ = w.Write([]byte(`{"data":[{"role":"Lab"}]}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, created := call("create_form", map[string]any{"name": "mcp-lab-crud", "yaml": "Label: x"})
+	if result.IsError || created["outcome"] != "created" || created["id"] != float64(215) || created["read_back"].(map[string]any)["publications"] == nil {
+		t.Fatalf("create_form = %+v", created)
+	}
+	result, updated := call("update_form", map[string]any{"form": "mcp-lab-crud", "folder": "/mcp-lab"})
+	if result.IsError || updated["outcome"] != "changed" {
+		t.Fatalf("update_form = %+v", updated)
+	}
+	result, attached := call("attach_form_groups", map[string]any{"form": "mcp-lab-crud", "publications": []string{"Lab"}})
+	if result.IsError || attached["changed"] != float64(1) {
+		t.Fatalf("attach_form_groups = %+v", attached)
+	}
+	// The collector refuses a privilege group; a detachment of responsibles
+	// reads back those left.
+	result, refused := call("attach_form_groups", map[string]any{"form": "mcp-lab-crud", "publications": []string{"Manager"}})
+	if result.IsError || refused["refused"] != float64(1) || !strings.Contains(fmt.Sprint(refused["groups"]), "privilege group") {
+		t.Fatalf("attach_form_groups Manager = %+v", refused)
+	}
+	result, detached := call("detach_form_groups", map[string]any{"form": "mcp-lab-crud", "responsibles": []string{"Lab"}})
+	if result.IsError || detached["changed"] != float64(1) || fmt.Sprint(detached["responsibles"]) != "[Lab]" || detached["warning"] != nil {
+		t.Fatalf("detach_form_groups = %+v", detached)
+	}
+	result, deleted := call("delete_form", map[string]any{"form": "mcp-lab-crud"})
+	if result.IsError || deleted["outcome"] != "deleted" {
+		t.Fatalf("delete_form = %+v", deleted)
+	}
+	if strings.Join(changes, ",") != "POST /forms,POST /forms/215,POST /forms/215/publications/2,POST /forms/215/publications/1,DELETE /forms/215/responsibles/2,DELETE /forms/215" {
+		t.Fatalf("changes = %v", changes)
 	}
 }
