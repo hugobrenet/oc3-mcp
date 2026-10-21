@@ -298,6 +298,23 @@ sent, which the confirmation shows. A step where the model would show the
 YAML first was left out: it rests on the model, which replays showed
 skipping it in half the draws.
 
+#### The reference of the format: `oc3://docs/form-definition`
+
+The MCP serves the reference of the YAML of a form as an MCP resource,
+`oc3://docs/form-definition`, in Markdown
+([`internal/resources/form_definition.md`](../../internal/resources/form_definition.md),
+embedded in the binary by the `internal/resources` package), served
+whatever `OPENSVC_MCP_ACTIONS`. Read from the collector code, it gives the keys of a
+form, of its inputs and of its outputs; for each input key, whether the
+collector checks it at submission or only the web interface reads it; the
+syntax of the conditions; what each `Dest` runs, and that an output without
+one does nothing; and three examples. The descriptions of `create_form` and
+`update_form` tell the model to read it in the same turn as the call: the OpenSVC
+AI agent keeps no string longer than 256 bytes of the earlier turns, so
+that a reference read in one turn is gone in the next. A test keeps the
+examples honest: each parses, and uses only the keys the reference
+documents.
+
 The `yaml` input of `create_form` and `update_form` carries
 `"contentMediaType": "application/yaml"` in the input schema, the JSON
 Schema keyword of the media type of a text: the agent gives it in its
