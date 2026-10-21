@@ -12,7 +12,7 @@ import (
 // submission: a workflow output, and a rest output whose log, data and sent
 // data hold the password and an email address.
 func newFormRunCollector(status string, reads *atomic.Int32) *fakeCollector {
-	definition := `{"Inputs":[{"Id":"hostname"},{"Id":"pwd","Type":"password"}],"Outputs":[{"Dest":"workflow"}]}`
+	definition := `{"Inputs":[{"Id":"hostname"},{"Id":"pwd","Type":"password"}],"Outputs":[{"Dest":"workflow","NextAssignee":"Infra Unix","NextForms":["vm-approval"]}]}`
 	result := func(status string) string {
 		return `{"form_id":7,"results_id":9,"status":"` + status + `","returncode":1,"outputs_order":["workflow","rest"],
 			"submitted_data":{"hostname":"web1","pwd":"s3cretpw"},
@@ -28,6 +28,8 @@ func newFormRunCollector(status string, reads *atomic.Int32) *fakeCollector {
 			return `{"data":[{"id":7,"form_name":"vm","form_definition":` + definition + `}]}`
 		case path == "/forms/7":
 			return result(status)
+		case path == "/workflows" && query.Get("filter") == "id:eq:1376":
+			return `{"data":[{"id":1376,"last_form_id":1447}]}`
 		case path == "/form_output_results/9":
 			if reads != nil && reads.Add(1) < 2 {
 				return result("RUNNING")
@@ -51,7 +53,8 @@ func TestSubmitFormGivesTheOutputsMasked(t *testing.T) {
 	}
 	workflow, rest := run.Outputs[0], run.Outputs[1]
 	if run.Form.Name != "vm" || run.ResultID != 9 || run.Status != "completed" || run.ReturnCode != 1 || run.Request == nil || run.Request.ID != 1376 || run.Request.StepID != 1447 ||
-		!strings.Contains(run.FollowUp, "get_request with id 1376") || run.Values != nil || len(run.Outputs) != 3 {
+		run.NextStep == nil || strings.Join(run.NextStep.Forms, ",") != "vm-approval" || run.NextStep.Assignee != "Infra Unix" ||
+		!strings.Contains(run.FollowUp, "request 1376 now waits for vm-approval, assigned to Infra Unix: submit_form with one of these forms and request 1376") || run.Values != nil || len(run.Outputs) != 3 {
 		t.Fatalf("run = %+v", run)
 	}
 	if workflow.ID != "workflow" || workflow.Log[0].Message != "New workflow vm created with id 1447" || workflow.Log[0].Error {
@@ -124,5 +127,48 @@ func TestGetFormResultMasksTheValuesSubmitted(t *testing.T) {
 	}
 	if _, err := New(collector).GetFormResult(t.Context(), GetFormResultOptions{}); err == nil {
 		t.Fatal("a result without ID was read")
+	}
+}
+
+// With request, the submission decides the pending step of the request:
+// its last one, which the collector checks the form and the caller against.
+func TestSubmitFormDecidesTheStepOfARequest(t *testing.T) {
+	collector := newFormRunCollector("COMPLETED", nil)
+	if _, err := New(collector).SubmitForm(t.Context(), SubmitFormOptions{Form: "vm", Data: map[string]any{"decision": "approved"}, Request: 1376}); err != nil {
+		t.Fatal(err)
+	}
+	put := collector.requests[len(collector.requests)-1]
+	if put.method != "PUT" || put.path != "/forms/7" || put.body["prev_wfid"] != float64(1447) {
+		t.Fatalf("submission = %+v", put)
+	}
+	// A request the caller does not see is refused before any submission.
+	collector = newFormRunCollector("COMPLETED", nil)
+	if _, err := New(collector).SubmitForm(t.Context(), SubmitFormOptions{Form: "vm", Data: map[string]any{}, Request: 9}); err == nil || !strings.Contains(err.Error(), "list_requests") {
+		t.Fatalf("an unknown request = %v", err)
+	}
+	for _, request := range collector.requests {
+		if request.method == "PUT" {
+			t.Fatalf("submission = %+v", request)
+		}
+	}
+}
+
+// The next step follows the Success or the Error branch of the scripts of the
+// workflow output, by the return code; a branch without forms closes the
+// request.
+func TestRequestNextStep(t *testing.T) {
+	outputs := []map[string]any{{"Dest": "rest"}, {"Dest": "workflow", "Scripts": map[string]any{
+		"Success": map[string]any{"NextForms": []any{"deliver"}, "NextAssignee": "Storage"},
+		"Error":   map[string]any{},
+	}}}
+	if next := requestNextStep(outputs, 0); next == nil || strings.Join(next.Forms, ",") != "deliver" || next.Assignee != "Storage" {
+		t.Fatalf("on success = %+v", next)
+	}
+	next := requestNextStep(outputs, 1)
+	if next == nil || len(next.Forms) != 0 || !strings.HasPrefix(requestFollowUp(9, *next), "this step closed request 9") {
+		t.Fatalf("on error = %+v", next)
+	}
+	if requestNextStep([]map[string]any{{"Dest": "mail"}}, 0) != nil {
+		t.Fatal("a form without workflow output gave a next step")
 	}
 }

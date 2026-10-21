@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -42,6 +43,9 @@ type SubmitFormOptions struct {
 	// Wait is how long to wait, in seconds, for the outputs of an Async
 	// form to end.
 	Wait int
+	// Request is the request whose pending step the submission decides,
+	// such as an approval.
+	Request int
 }
 
 type GetFormResultOptions struct {
@@ -57,6 +61,8 @@ type FormRun struct {
 	ReturnCode int             `json:"returncode" jsonschema:"0 when no output failed, else the sum of the failures: the collector answers a failed submission with success, and this tells it"`
 	Outputs    []FormRunOutput `json:"outputs" jsonschema:"the outputs of the form, in the order they run, with what each logged and gave back"`
 	Request    *FormRunRequest `json:"request,omitempty" jsonschema:"the request a workflow output started or went on with, which get_request reads"`
+	// NextStep is given by submit_form, from the definition of the form.
+	NextStep *FormRunNext `json:"next_step,omitempty" jsonschema:"with submit_form, what the request waits for next, as the definition of the form names it: no forms when this step closed it"`
 	// Values are given by get_form_result only: submit_form does not give
 	// back what it was given.
 	Values        []RequestValue `json:"values,omitempty" jsonschema:"with get_form_result, the values submitted, those that may be a secret or an email address masked"`
@@ -87,9 +93,14 @@ type FormRunLine struct {
 	Message string `json:"message" jsonschema:"the line, its fields filled, cut to 1 KiB"`
 }
 
+type FormRunNext struct {
+	Forms    []string `json:"forms,omitempty" jsonschema:"the forms one of which decides the next step, with request"`
+	Assignee string   `json:"assignee,omitempty" jsonschema:"the team or user the next step is assigned to; absent when the form names none, the collector then choosing; an email address is masked"`
+}
+
 type FormRunRequest struct {
 	ID     int `json:"id" jsonschema:"the request ID, which get_request takes"`
-	StepID int `json:"step_id,omitempty" jsonschema:"the ID of the first form of the request"`
+	StepID int `json:"step_id,omitempty" jsonschema:"the ID of the step the submission added to the request, its first one for a new request"`
 }
 
 // collectorFormResult is the results structure of a submission, as the
@@ -118,15 +129,29 @@ func (s *Service) SubmitForm(ctx context.Context, options SubmitFormOptions) (Fo
 	if options.Wait < 0 || options.Wait > maxFormWait {
 		return FormRun{}, fmt.Errorf("wait must be between 0 and %d seconds", maxFormWait)
 	}
+	if options.Request < 0 {
+		return FormRun{}, fmt.Errorf("request must be a request ID, as list_requests and get_request give it")
+	}
 	form, err := s.findForm(ctx, options.Form, formRunProps)
 	if err != nil {
 		return FormRun{}, err
+	}
+	body := map[string]any{"data": options.Data}
+	// A step of a request is decided by the form submitted after it: the
+	// collector checks that the step waits for the form, and that the
+	// caller is its assignee.
+	if options.Request > 0 {
+		step, err := s.pendingRequestStep(ctx, options.Request)
+		if err != nil {
+			return FormRun{}, err
+		}
+		body["prev_wfid"] = step
 	}
 	definition, _ := parseFormDefinition(form.FormDefinition)
 	started := time.Now()
 	var result collectorFormResult
 	path := "/forms/" + strconv.Itoa(form.ID)
-	if err := s.putLong(ctx, path, map[string]any{"data": options.Data}, &result, formSubmitTimeout); err != nil {
+	if err := s.putLong(ctx, path, body, &result, formSubmitTimeout); err != nil {
 		return FormRun{}, fmt.Errorf("submit form %s: %w", form.FormName, err)
 	}
 	result, err = s.waitFormResult(ctx, result, started, options.Wait)
@@ -135,6 +160,14 @@ func (s *Service) SubmitForm(ctx context.Context, options SubmitFormOptions) (Fo
 	}
 	run := formRunOf(result, definition.inputs, false)
 	run.Form, run.Provenance = FormReference{ID: form.ID, Name: form.FormName}, s.newProvenance()
+	// The next step of the request, from the definition, spares the model
+	// a read of the request to know what to submit next.
+	if run.Request != nil && run.Status == "completed" {
+		if next := requestNextStep(definition.outputs, run.ReturnCode); next != nil {
+			run.NextStep = next
+			run.FollowUp = requestFollowUp(run.Request.ID, *next)
+		}
+	}
 	if options.Wait > 0 {
 		run.Waited = int(time.Since(started).Round(time.Second) / time.Second)
 	}
@@ -176,6 +209,26 @@ func (s *Service) GetFormResult(ctx context.Context, options GetFormResultOption
 		run.Waited = int(time.Since(started).Round(time.Second) / time.Second)
 	}
 	return run, nil
+}
+
+// pendingRequestStep gives the last step of a request, the one the next
+// form submitted decides.
+func (s *Service) pendingRequestStep(ctx context.Context, id int) (int, error) {
+	var response collectorList[struct {
+		LastFormID any `json:"last_form_id"`
+	}]
+	query := pageQuery([]string{"id", "last_form_id"}, "id", []string{filterEquals("id", strconv.Itoa(id))}, 1, 0)
+	if err := s.client.GetJSON(ctx, "/workflows", query, &response); err != nil {
+		return 0, fmt.Errorf("get request %d: %w", id, err)
+	}
+	if len(response.Data) == 0 {
+		return 0, fmt.Errorf("get request %d: not found among the requests the caller takes part in; use list_requests to find one", id)
+	}
+	step, err := strconv.Atoi(anyText(response.Data[0].LastFormID))
+	if err != nil || step <= 0 {
+		return 0, fmt.Errorf("get request %d: unexpected collector response", id)
+	}
+	return step, nil
 }
 
 // longPutClient is a collector client that bounds a request otherwise than
@@ -320,6 +373,40 @@ func formRunText(value any, secrets []string) (string, bool) {
 	masked, _ := maskValue(value)
 	text, cut := valueText(masked)
 	return maskFormSecrets(text, secrets), cut
+}
+
+// requestNextStep is the next step the workflow output of a form names: its
+// NextForms and NextAssignee, or those of the Success or Error branch of its
+// Scripts, as the collector takes them by the return code.
+func requestNextStep(outputs []map[string]any, returnCode int) *FormRunNext {
+	for _, output := range outputs {
+		if formText(output["Dest"]) != "workflow" {
+			continue
+		}
+		branch := output
+		if scripts, ok := output["Scripts"].(map[string]any); ok {
+			name := "Success"
+			if returnCode != 0 {
+				name = "Error"
+			}
+			branch, _ = scripts[name].(map[string]any)
+		}
+		step := formNextStep(branch, "")
+		return &FormRunNext{Forms: step.Forms, Assignee: step.Assignee}
+	}
+	return nil
+}
+
+// requestFollowUp tells how to go on with a request after a submission.
+func requestFollowUp(id int, next FormRunNext) string {
+	if len(next.Forms) == 0 {
+		return fmt.Sprintf("this step closed request %d; get_request gives its steps", id)
+	}
+	assignee := "the team or user the collector chooses, which get_request gives"
+	if next.Assignee != "" {
+		assignee = next.Assignee
+	}
+	return fmt.Sprintf("request %d now waits for %s, assigned to %s: submit_form with one of these forms and request %d decides it, its inputs as get_form gives them; the collector refuses a caller who is not the assignee", id, strings.Join(next.Forms, " or "), assignee, id)
 }
 
 // formRunRequestOf reads the request a workflow output gives back.

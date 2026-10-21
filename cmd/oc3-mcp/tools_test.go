@@ -1503,6 +1503,8 @@ func TestFormSubmitTools(t *testing.T) {
 			_, _ = w.Write([]byte(result))
 		case "GET /form_output_results/621":
 			_, _ = w.Write([]byte(result))
+		case "GET /workflows":
+			_, _ = w.Write([]byte(`{"data":[{"id":1376,"last_form_id":1447}]}`))
 		default:
 			notFound(w, "missing")
 		}
@@ -1524,5 +1526,9 @@ func TestFormSubmitTools(t *testing.T) {
 	}
 	if outcome, _ := call("submit_form", map[string]any{"form": "sample-vm-request"}); !outcome.IsError {
 		t.Fatal("submit_form accepted no data")
+	}
+	// With request, the submission decides the pending step of the request.
+	if outcome, _ := call("submit_form", map[string]any{"form": "sample-vm-request", "data": map[string]any{"hostname": "x"}, "request": 1376}); outcome.IsError || put["prev_wfid"] != float64(1447) {
+		t.Fatalf("submit_form with request = %+v, put %v", outcome, put)
 	}
 }
