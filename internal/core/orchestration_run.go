@@ -273,6 +273,12 @@ func (s *Service) GetOrchestrationRun(ctx context.Context, options GetOrchestrat
 	if response.ID != options.ID {
 		return OrchestrationRunDetails{}, fmt.Errorf("get orchestration run %d: unexpected collector response", options.ID)
 	}
+	return s.runDetailsOf(response, options, offset, limit, fingerprint)
+}
+
+// runDetailsOf turns the detail of a run into its result, with one page of
+// its targets.
+func (s *Service) runDetailsOf(response collectorOrchestrationRunDetails, options GetOrchestrationRunOptions, offset int, limit int, fingerprint string) (OrchestrationRunDetails, error) {
 	run := orchestrationRunOf(response.collectorOrchestrationRun)
 	// The detail holds the steps of the run, not their count nor its
 	// duration.
