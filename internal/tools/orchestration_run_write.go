@@ -9,6 +9,7 @@ import (
 
 type StartOrchestrationRunInput struct {
 	Orchestration string `json:"orchestration" jsonschema:"one exact orchestration name or ID"`
+	Wait          int    `json:"wait,omitempty" jsonschema:"optional seconds to wait, at most 120, for the run to end: the MCP reads it again every 3 seconds, and returns as soon as it is no longer running, or when the wait ends; 0 reads it once"`
 }
 
 type OrchestrationRunInput struct {
@@ -36,10 +37,11 @@ func registerOrchestrationRunTools(registrar *Registrar, service *core.Service) 
 		Description: "Start a run of an orchestration of the OpenSVC collector: the agents act on its targets, step after step, freezing, stopping or draining nodes and services as its steps say. " +
 			"The collector freezes the steps in the run, resolves the filtersets now, and queues the actions of the first step at once; each next step starts when every target of the previous one succeeded, and the run stops at the first target that fails. " +
 			"Before the start, read the steps with get_orchestration and the targets with check_orchestration, so the confirmation names what will act; the collector refuses with 400 a step that matches no target. " +
+			"To start it and wait for its end, as when asked for its result, pass wait, such as 60 seconds, in the same call; a run still running when the wait ends is followed with get_orchestration_run and wait. " +
 			orchestrationRunResult,
 		Annotations: actionAnnotations(true, false),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, input StartOrchestrationRunInput) (*mcp.CallToolResult, OrchestrationRunChangeOutput, error) {
-		result, err := service.StartOrchestrationRun(ctx, input.Orchestration)
+		result, err := service.StartOrchestrationRun(ctx, input.Orchestration, input.Wait)
 		if err != nil {
 			return nil, OrchestrationRunChangeOutput{}, err
 		}

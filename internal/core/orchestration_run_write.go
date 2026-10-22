@@ -32,7 +32,10 @@ type collectorRunContinue struct {
 // StartOrchestrationRun starts a run of an orchestration, by its name or
 // ID: the collector freezes its steps in the run, resolves the filtersets
 // and starts the first step at once.
-func (s *Service) StartOrchestrationRun(ctx context.Context, orchestration string) (OrchestrationRunChange, error) {
+func (s *Service) StartOrchestrationRun(ctx context.Context, orchestration string, wait int) (OrchestrationRunChange, error) {
+	if wait < 0 || wait > maxActionWait {
+		return OrchestrationRunChange{}, fmt.Errorf("wait must be between 0 and %d seconds", maxActionWait)
+	}
 	row, _, err := s.lookupOrchestration(ctx, orchestration)
 	if err != nil {
 		return OrchestrationRunChange{}, err
@@ -44,7 +47,14 @@ func (s *Service) StartOrchestrationRun(ctx context.Context, orchestration strin
 	if response.ID < 1 {
 		return OrchestrationRunChange{}, fmt.Errorf("start a run of orchestration %s: the collector returned no run ID", row.Name)
 	}
-	return s.runChanged(OrchestrationRunStart, response)
+	// The run is started: a wait that fails returns it as it was answered.
+	response, waited, err := s.waitRun(ctx, response, wait)
+	if err != nil {
+		return OrchestrationRunChange{}, err
+	}
+	result, err := s.runChanged(OrchestrationRunStart, response)
+	result.Waited = waited
+	return result, err
 }
 
 // ChangeOrchestrationRun stops a running run, resumes a failed or stopped
