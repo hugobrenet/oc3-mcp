@@ -408,6 +408,9 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 	if err := registerFiltersetWriteTools(registrar, service); err != nil {
 		return err
 	}
+	if err := registerAppWriteTools(registrar, service); err != nil {
+		return err
+	}
 	if err := registerServiceDowntimeTools(registrar, service); err != nil {
 		return err
 	}

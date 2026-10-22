@@ -596,6 +596,8 @@ func TestTagAndAppToolsReadTheCollector(t *testing.T) {
 			_, _ = w.Write([]byte(`{"app":"WEB","id":4627,"description":"WEB application code"}`))
 		case "/apps/4627/responsibles":
 			_, _ = w.Write([]byte(`{"data":[{"role":"Test Web","description":"Test team"}]}`))
+		case "/apps/4627/publications":
+			_, _ = w.Write([]byte(`{"data":[{"role":"Test Web"},{"role":"Everybody"}]}`))
 		case "/nodes", "/services":
 			_, _ = w.Write([]byte(`{"data":[{}],"meta":{"total":2}}`))
 		default:
@@ -609,7 +611,8 @@ func TestTagAndAppToolsReadTheCollector(t *testing.T) {
 	}
 	result, app := call("get_app", map[string]any{"app": "WEB"})
 	groups, _ := app["responsibles"].([]any)
-	if result.IsError || app["nodes"] != float64(2) || len(groups) != 1 || groups[0].(map[string]any)["role"] != "Test Web" {
+	publications, _ := app["publications"].([]any)
+	if result.IsError || app["nodes"] != float64(2) || len(groups) != 1 || groups[0].(map[string]any)["role"] != "Test Web" || len(publications) != 2 {
 		t.Fatalf("get_app = %+v", app)
 	}
 }
@@ -841,7 +844,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"freeze_service": false, "thaw_service": true, "start_service": false, "stop_service": true, "restart_service": true,
 			"switch_service": true, "giveback_service": true, "takeover_service": true, "abort_service_action": true,
 			"check_service_compliance": false, "fix_service_compliance": true, "submit_form": true,
-			"create_form": true, "update_form": true, "delete_form": true, "attach_form_groups": false, "detach_form_groups": true, "rollback_form": true, "set_check_threshold": false, "unset_check_threshold": false, "create_tag": false, "update_tag": true, "delete_tag": true, "create_filterset": false, "rename_filterset": false, "add_filterset_criterion": true, "remove_filterset_criterion": true, "delete_filterset": true,
+			"create_form": true, "update_form": true, "delete_form": true, "attach_form_groups": false, "detach_form_groups": true, "rollback_form": true, "set_check_threshold": false, "unset_check_threshold": false, "create_tag": false, "update_tag": true, "delete_tag": true, "create_filterset": false, "rename_filterset": false, "add_filterset_criterion": true, "remove_filterset_criterion": true, "delete_filterset": true, "create_app": false, "update_app": true, "delete_app": true, "attach_app_groups": true, "detach_app_groups": true,
 			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
@@ -948,7 +951,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				t.Fatalf("%s resources input = %v", name, ok)
 			}
 		}
-		if len(found) != 55 {
+		if len(found) != 60 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
@@ -1846,6 +1849,67 @@ func TestFiltersetWriteTools(t *testing.T) {
 		`POST /filtersets/307/filtersets/284 {"f_log_op":"OR","f_order":2}`,
 		`DELETE /filtersets/307/filters/236 `,
 		`DELETE /filtersets/307 `,
+	}
+	if !slices.Equal(changes, want) {
+		t.Fatalf("changes = %q", changes)
+	}
+}
+
+func TestAppWriteTools(t *testing.T) {
+	var mutex sync.Mutex
+	var changes []string
+	call := newToolCallerWithActions(t, true, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		path := r.Method + " " + r.URL.EscapedPath()
+		body, _ := io.ReadAll(r.Body)
+		if r.Method != http.MethodGet {
+			mutex.Lock()
+			changes = append(changes, path+" "+string(body))
+			mutex.Unlock()
+		}
+		switch path {
+		case "GET /apps/mcp-test-app", "GET /apps/4700":
+			_, _ = w.Write([]byte(`{"app":"mcp-test-app","id":4700,"description":"","app_domain":"lab"}`))
+		case "GET /apps/4700/responsibles", "GET /apps/4700/publications":
+			_, _ = w.Write([]byte(`{"data":[{"role":"Lab"}]}`))
+		case "GET /nodes", "GET /services":
+			_, _ = w.Write([]byte(`{"data":[],"meta":{"total":0}}`))
+		case "POST /apps", "POST /apps/4700", "POST /apps/4700/responsibles/Ops", "DELETE /apps/4700/publications/Ops", "DELETE /apps/4700":
+			_, _ = w.Write([]byte(`{"info":"ok"}`))
+		case "POST /apps/4700/publications/Lab":
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"text":"app mcp-test-app is already published to group Lab"}`))
+		default:
+			notFound(w, "missing")
+		}
+	})
+	result, created := call("create_app", map[string]any{"name": "mcp-test-app", "domain": "lab"})
+	if result.IsError || created["outcome"] != "created" || created["read_back"].(map[string]any)["domain"] != "lab" {
+		t.Fatalf("create_app = %+v", created)
+	}
+	result, updated := call("update_app", map[string]any{"app": "mcp-test-app", "description": "lab app"})
+	if result.IsError || updated["outcome"] != "unchanged" {
+		t.Fatalf("update_app = %+v", updated)
+	}
+	result, attached := call("attach_app_groups", map[string]any{"app": "mcp-test-app", "responsibles": []string{"Ops"}, "publications": []string{"Lab"}})
+	if result.IsError || attached["changed"] != float64(1) || attached["unchanged"] != float64(1) {
+		t.Fatalf("attach_app_groups = %+v", attached)
+	}
+	result, detached := call("detach_app_groups", map[string]any{"app": "mcp-test-app", "publications": []string{"Ops"}})
+	if result.IsError || detached["changed"] != float64(1) {
+		t.Fatalf("detach_app_groups = %+v", detached)
+	}
+	result, deleted := call("delete_app", map[string]any{"app": "mcp-test-app"})
+	if result.IsError || deleted["outcome"] != "deleted" {
+		t.Fatalf("delete_app = %+v", deleted)
+	}
+	want := []string{
+		`POST /apps {"app":"mcp-test-app","app_domain":"lab"}`,
+		`POST /apps/4700 {"description":"lab app"}`,
+		`POST /apps/4700/responsibles/Ops `,
+		`POST /apps/4700/publications/Lab `,
+		`DELETE /apps/4700/publications/Ops `,
+		`DELETE /apps/4700 `,
 	}
 	if !slices.Equal(changes, want) {
 		t.Fatalf("changes = %q", changes)

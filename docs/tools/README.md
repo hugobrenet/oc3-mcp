@@ -19,7 +19,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Compliance | `list_compliance_status`, `list_compliance_runs`, `count_compliance_runs`, `list_compliance_modulesets`, `get_compliance_moduleset`, `list_compliance_rulesets`, `get_compliance_ruleset` | [Compliance tools](compliance.md) |
 | IP addresses | `list_ips` | [IP tools](ips.md) |
 | Tags | `list_tags`, `create_tag`, `update_tag`, `delete_tag` | [Tag tools](tags.md) |
-| Apps | `get_app` | [App tools](apps.md) |
+| Apps | `get_app`, `create_app`, `update_app`, `delete_app`, `attach_app_groups`, `detach_app_groups` | [App tools](apps.md) |
 | Find | `find_objects` | [Find tools](find.md) |
 | Requests | `list_requests`, `get_request` | [Request tools](requests.md) |
 | Forms | `list_forms`, `get_form`, `get_form_result`, `submit_form`, `create_form`, `update_form`, `delete_form`, `attach_form_groups`, `detach_form_groups`, `list_form_revisions`, `get_form_revision`, `rollback_form` | [Form tools](forms.md) |
