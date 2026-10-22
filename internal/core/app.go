@@ -22,6 +22,8 @@ type App struct {
 	Updated               string           `json:"updated,omitempty" jsonschema:"when the app was last changed, as the collector gives it"`
 	Responsibles          []AppResponsible `json:"responsibles" jsonschema:"the collector groups responsible for the app, sorted by role: their members manage its nodes and services"`
 	ResponsiblesTruncated bool             `json:"responsibles_truncated,omitempty" jsonschema:"whether groups were left out after 100"`
+	Publications          []AppResponsible `json:"publications" jsonschema:"the collector groups the app is published to, sorted by role: their members see its nodes and services"`
+	PublicationsTruncated bool             `json:"publications_truncated,omitempty" jsonschema:"whether groups were left out after 100"`
 	Nodes                 int              `json:"nodes" jsonschema:"the number of nodes of the app the caller sees, as the collector counts them"`
 	Services              int              `json:"services" jsonschema:"the number of services of the app the caller sees, as the collector counts them"`
 }
@@ -81,6 +83,17 @@ func (s *Service) GetApp(ctx context.Context, app string) (App, error) {
 	result.Responsibles = make([]AppResponsible, 0, len(responsibles.Data))
 	for _, group := range responsibles.Data {
 		result.Responsibles = append(result.Responsibles, AppResponsible(group))
+	}
+	var publications collectorList[collectorAppResponsible]
+	if err := s.client.GetJSON(ctx, "/apps/"+id+"/publications", url.Values{"props": {"role,description"}, "limit": {strconv.Itoa(maxAppResponsibles + 1)}}, &publications); err != nil {
+		return App{}, fmt.Errorf("get publications of app %s: %w", found.App, err)
+	}
+	if len(publications.Data) > maxAppResponsibles {
+		publications.Data, result.PublicationsTruncated = publications.Data[:maxAppResponsibles], true
+	}
+	result.Publications = make([]AppResponsible, 0, len(publications.Data))
+	for _, group := range publications.Data {
+		result.Publications = append(result.Publications, AppResponsible(group))
 	}
 
 	var err error
