@@ -9,14 +9,19 @@ tools:
   - create_orchestration
   - update_orchestration
   - delete_orchestration
+  - start_orchestration_run
+  - stop_orchestration_run
+  - resume_orchestration_run
+  - continue_orchestration_run
 stability: experimental
 ---
 
 # Orchestration Tools
 
 This document describes the tools that read the orchestrations of the
-OpenSVC collector and their runs, check an orchestration before it runs, and
-create, change and delete orchestrations.
+OpenSVC collector and their runs, check an orchestration before it runs,
+create, change and delete orchestrations, and start, stop, resume and
+continue their runs.
 
 An orchestration is an ordered list of steps. Each step is one agent action,
 one of those the action queue accepts (`PUT /api/actions`), such as `freeze`,
@@ -36,8 +41,7 @@ cancelled or timed out, stops the run: `failed`. A run is `stopped` on
 request. A failed or stopped run is resumed, its failed targets queued again,
 or continued, the failure of the step acknowledged with a comment and the
 next step started: a run whose failures were all acknowledged ends
-`succeeded`, though their targets did not succeed. Starting, stopping,
-resuming and continuing a run are not offered by these tools.
+`succeeded`, though their targets did not succeed.
 
 The steps are numbered from 0 in the API, `same_as` and `current_step`
 included, and in these tools; the collector messages number them from 1, as
@@ -52,9 +56,11 @@ Implementation:
 - business logic: `internal/core/orchestration.go` and
   `internal/core/orchestration_run.go`, with the shared list helpers of
   `internal/core/collector_list.go`;
-- business logic of the changes: `internal/core/orchestration_write.go`;
-- MCP definitions: `internal/tools/orchestration.go` and
-  `internal/tools/orchestration_write.go`.
+- business logic of the changes: `internal/core/orchestration_write.go` and
+  `internal/core/orchestration_run_write.go`;
+- MCP definitions: `internal/tools/orchestration.go`,
+  `internal/tools/orchestration_write.go` and
+  `internal/tools/orchestration_run_write.go`.
 
 ## Tools
 
@@ -135,14 +141,19 @@ the targets that did not succeed, unless `all_output`.
 
 ## Action tools
 
-Registered only when `OPENSVC_MCP_ACTIONS=enabled`. They write an
-orchestration, and run nothing.
+Registered only when `OPENSVC_MCP_ACTIONS=enabled`. The first three write an
+orchestration and run nothing; the last four drive its runs, which make the
+agents act on the nodes and services.
 
 | Tool | Collector API | Destructive |
 |---|---|---:|
 | `create_orchestration` | `POST /api/orchestrations {"name", "description", "steps"}` | No |
 | `update_orchestration` | `PUT /api/orchestrations/{id} {"name", "description", "steps"}` | Yes |
 | `delete_orchestration` | `DELETE /api/orchestrations/{id}` | Yes |
+| `start_orchestration_run` | `POST /api/orchestrations/{id}/runs` | Yes |
+| `stop_orchestration_run` | `POST /api/orchestration_runs/{id}/stop` | Yes |
+| `resume_orchestration_run` | `POST /api/orchestration_runs/{id}/resume` | Yes |
+| `continue_orchestration_run` | `POST /api/orchestration_runs/{id}/continue {"comment"}` | Yes |
 
 The collector checks the steps as a whole at creation and change, and
 refuses with 400 the first it does not accept, numbered from 1, such as
@@ -167,6 +178,36 @@ or a check that fails is told in `warning`, the change made.
   runs stay, with `orchestration_id` null, listed by
   `list_orchestration_runs` under its name; a run running goes on, which
   `warning` tells.
+
+### Runs
+
+The four run tools are destructive: a run makes the agents freeze, stop,
+drain or reboot what its steps name, and the OpenSVC AI agent asks the user
+to confirm each one. They return the run as the collector answers the
+request, as `get_orchestration_run` gives it with its first 20 targets, and
+`action`. The actions of the targets run in the agents later: the agent
+follows the run with `get_orchestration_run`.
+
+- `start_orchestration_run` takes the orchestration, by name or ID. The
+  collector freezes the steps in the run, resolves the filtersets and queues
+  the actions of the first step at once; it refuses with 400 a step that
+  matches no target. The description asks the agent to read the steps and
+  check the targets first, so that the confirmation names what will act.
+- `stop_orchestration_run` cancels the actions still waiting in the queue,
+  and runs neither the targets not started nor the next steps; an action an
+  agent already runs goes on. 409 for a run not running.
+- `resume_orchestration_run` queues again the actions of the targets of the
+  step that did not succeed, then runs the next steps. 409 for a run neither
+  failed nor stopped, or one an action of which still runs.
+- `continue_orchestration_run` acknowledges the failed or stopped step with a
+  comment, required, and runs the next steps; its targets do not run again.
+  When the step was the last, the run ends `succeeded`, though its targets
+  did not succeed, even those a stop cancelled. Same 409.
+
+The collector of dev2 was driven through this cycle on 2026-10-22 with one
+step on a node no agent serves: its action, queued, timed out and was
+cancelled in the queue, a resume queued it again, a stop cancelled it, and a
+continue ended the run `succeeded`.
 
 ## Output
 

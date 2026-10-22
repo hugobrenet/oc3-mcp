@@ -846,6 +846,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 			"check_service_compliance": false, "fix_service_compliance": true, "submit_form": true,
 			"create_form": true, "update_form": true, "delete_form": true, "attach_form_groups": false, "detach_form_groups": true, "rollback_form": true, "set_check_threshold": false, "unset_check_threshold": false, "create_tag": false, "update_tag": true, "delete_tag": true, "create_filterset": false, "rename_filterset": false, "add_filterset_criterion": true, "remove_filterset_criterion": true, "delete_filterset": true, "create_app": false, "update_app": true, "delete_app": true, "attach_app_groups": true, "detach_app_groups": true,
 			"create_orchestration": false, "update_orchestration": true, "delete_orchestration": true,
+			"start_orchestration_run": true, "stop_orchestration_run": true, "resume_orchestration_run": true, "continue_orchestration_run": true,
 			"delete_service": true, "delete_service_instance": true, "ack_service_action": true} {
 			tool := found[name]
 			if tool == nil || *tool.Annotations.DestructiveHint != destructive || *tool.Annotations.OpenWorldHint {
@@ -952,7 +953,7 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				t.Fatalf("%s resources input = %v", name, ok)
 			}
 		}
-		if len(found) != 63 {
+		if len(found) != 67 {
 			t.Fatalf("action tools = %v", found)
 		}
 	}
