@@ -52,6 +52,10 @@ func (s *Service) CreateOrchestration(ctx context.Context, name string, descript
 	if err := validateDraftSteps(steps); err != nil {
 		return OrchestrationWrite{}, err
 	}
+	steps, err := s.resolveStepFiltersets(ctx, steps)
+	if err != nil {
+		return OrchestrationWrite{}, err
+	}
 	input := collectorOrchestrationInput{Name: name, Steps: steps}
 	if description != nil {
 		input.Description = *description
@@ -84,6 +88,11 @@ func (s *Service) UpdateOrchestration(ctx context.Context, orchestration string,
 		if err := validateDraftSteps(fields.Steps); err != nil {
 			return OrchestrationWrite{}, err
 		}
+		resolved, err := s.resolveStepFiltersets(ctx, fields.Steps)
+		if err != nil {
+			return OrchestrationWrite{}, err
+		}
+		fields.Steps = resolved
 	}
 	before, steps, err := s.lookupOrchestration(ctx, orchestration)
 	if err != nil {

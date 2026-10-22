@@ -158,15 +158,18 @@ type GetOrchestrationRunOptions struct {
 	TargetStatus string
 	// AllOutput gives the output of the targets that succeeded too.
 	AllOutput bool
-	Limit     int
-	Cursor    string
+	// Wait is how long to wait, in seconds, for a running run to end.
+	Wait   int
+	Limit  int
+	Cursor string
 }
 
 type OrchestrationRunDetails struct {
 	Provenance Provenance `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	OrchestrationRun
-	Plan  []OrchestrationStep `json:"plan" jsonschema:"the steps of the orchestration when the run started, numbered from 0"`
-	Steps []RunStep           `json:"steps" jsonschema:"the steps the run reached, numbered from 0, with the count of their targets by status"`
+	Waited int                 `json:"waited_seconds,omitempty" jsonschema:"with wait, how long the MCP waited for the run to end, in seconds"`
+	Plan   []OrchestrationStep `json:"plan" jsonschema:"the steps of the orchestration when the run started, numbered from 0"`
+	Steps  []RunStep           `json:"steps" jsonschema:"the steps the run reached, numbered from 0, with the count of their targets by status"`
 	// The targets of the page.
 	TargetTotal int         `json:"target_total" jsonschema:"the number of targets matching step and target_status"`
 	Targets     []RunTarget `json:"targets" jsonschema:"the targets of this page, by step, then position"`
@@ -250,6 +253,9 @@ func (s *Service) GetOrchestrationRun(ctx context.Context, options GetOrchestrat
 	if options.TargetStatus != "" && !slices.Contains(runTargetStatuses, options.TargetStatus) {
 		return OrchestrationRunDetails{}, fmt.Errorf("target_status must be one of %v", runTargetStatuses)
 	}
+	if options.Wait < 0 || options.Wait > maxActionWait {
+		return OrchestrationRunDetails{}, fmt.Errorf("wait must be between 0 and %d seconds", maxActionWait)
+	}
 	limit, err := pageLimit(options.Limit, defaultRunTargetsLimit, maxRunTargetsLimit)
 	if err != nil {
 		return OrchestrationRunDetails{}, err
@@ -263,17 +269,61 @@ func (s *Service) GetOrchestrationRun(ctx context.Context, options GetOrchestrat
 	if err != nil {
 		return OrchestrationRunDetails{}, err
 	}
+	response, err := s.readRun(ctx, options.ID)
+	if err != nil {
+		return OrchestrationRunDetails{}, err
+	}
+	response, waited, err := s.waitRun(ctx, response, options.Wait)
+	if err != nil {
+		return OrchestrationRunDetails{}, err
+	}
+	details, err := s.runDetailsOf(response, options, offset, limit, fingerprint)
+	details.Waited = waited
+	return details, err
+}
+
+// readRun reads the detail of one run.
+func (s *Service) readRun(ctx context.Context, id int) (collectorOrchestrationRunDetails, error) {
 	var response collectorOrchestrationRunDetails
-	if err := s.client.GetJSON(ctx, "/orchestration_runs/"+strconv.Itoa(options.ID), nil, &response); err != nil {
+	if err := s.client.GetJSON(ctx, "/orchestration_runs/"+strconv.Itoa(id), nil, &response); err != nil {
 		if isNotFound(err) {
-			return OrchestrationRunDetails{}, fmt.Errorf("orchestration run %d: not found in the collector; list the runs with list_orchestration_runs", options.ID)
+			return collectorOrchestrationRunDetails{}, fmt.Errorf("orchestration run %d: not found in the collector; list the runs with list_orchestration_runs", id)
 		}
-		return OrchestrationRunDetails{}, fmt.Errorf("get orchestration run %d: %w", options.ID, err)
+		return collectorOrchestrationRunDetails{}, fmt.Errorf("get orchestration run %d: %w", id, err)
 	}
-	if response.ID != options.ID {
-		return OrchestrationRunDetails{}, fmt.Errorf("get orchestration run %d: unexpected collector response", options.ID)
+	if response.ID != id {
+		return collectorOrchestrationRunDetails{}, fmt.Errorf("get orchestration run %d: unexpected collector response", id)
 	}
-	return s.runDetailsOf(response, options, offset, limit, fingerprint)
+	return response, nil
+}
+
+// waitRun reads a running run again, every 3 seconds as list_node_actions
+// does, until it is no longer running or wait seconds have passed, and
+// returns it with the seconds waited. A read that fails ends the wait with
+// the run last read.
+func (s *Service) waitRun(ctx context.Context, response collectorOrchestrationRunDetails, wait int) (collectorOrchestrationRunDetails, int, error) {
+	if wait <= 0 || response.Status != "running" {
+		return response, 0, nil
+	}
+	started := time.Now()
+	deadline := started.Add(time.Duration(wait) * time.Second)
+	for response.Status == "running" {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return collectorOrchestrationRunDetails{}, 0, ctx.Err()
+		case <-time.After(min(actionWaitInterval, remaining)):
+		}
+		next, err := s.readRun(ctx, response.ID)
+		if err != nil {
+			break
+		}
+		response = next
+	}
+	return response, int(time.Since(started).Round(time.Second) / time.Second), nil
 }
 
 // runDetailsOf turns the detail of a run into its result, with one page of

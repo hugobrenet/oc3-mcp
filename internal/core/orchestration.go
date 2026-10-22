@@ -51,7 +51,8 @@ type OrchestrationStep struct {
 type OrchestrationTarget struct {
 	Mode         string   `json:"mode" jsonschema:"pick, the ids given; filterset, what the filterset matches when the run starts; same_as, the targets of an earlier step, of the same kind"`
 	IDs          []string `json:"ids,omitempty" jsonschema:"with pick, the ids: svc_id for a service, svc_id@node_id for an instance, node_id for a node, cluster_id for a cluster; at most 200"`
-	FiltersetID  int      `json:"filterset_id,omitempty" jsonschema:"with filterset, the filterset ID, as list_filtersets gives it: its services, its nodes, the instances of its services on its nodes, or the clusters of its nodes"`
+	FiltersetID  int      `json:"filterset_id,omitempty" jsonschema:"with filterset, the filterset ID: its services, its nodes, the instances of its services on its nodes, or the clusters of its nodes"`
+	Filterset    string   `json:"filterset,omitempty" jsonschema:"with filterset, in place of filterset_id, the exact filterset name, which the MCP resolves to its ID before sending the steps"`
 	Step         *int     `json:"step,omitempty" jsonschema:"with same_as, the index of the earlier step, from 0"`
 	IDsTruncated bool     `json:"ids_truncated,omitempty" jsonschema:"in a result, whether ids were left out after the first 200"`
 }
@@ -308,8 +309,15 @@ func (s *Service) CheckOrchestration(ctx context.Context, options CheckOrchestra
 		saved := orchestrationOf(row)
 		result.Orchestration = &saved
 		input = collectorOrchestrationInput{Name: row.Name, Description: row.Description, Steps: steps}
-	} else if err := validateDraftSteps(options.Steps); err != nil {
-		return OrchestrationCheck{}, err
+	} else {
+		if err := validateDraftSteps(options.Steps); err != nil {
+			return OrchestrationCheck{}, err
+		}
+		steps, err := s.resolveStepFiltersets(ctx, options.Steps)
+		if err != nil {
+			return OrchestrationCheck{}, err
+		}
+		input.Steps = steps
 	}
 	var response collectorOrchestrationCheck
 	if err := s.client.PostJSON(ctx, "/orchestrations/check", input, &response); err != nil {
@@ -358,6 +366,36 @@ func (s *Service) CheckOrchestration(ctx context.Context, options CheckOrchestra
 	}
 	result.Provenance = s.newProvenance()
 	return result, nil
+}
+
+// resolveStepFiltersets gives the steps that name a filterset by name its
+// ID, the only form the collector takes, each name read once.
+func (s *Service) resolveStepFiltersets(ctx context.Context, steps []OrchestrationStep) ([]OrchestrationStep, error) {
+	resolved := slices.Clone(steps)
+	ids := map[string]int{}
+	for index := range resolved {
+		targets := &resolved[index].Targets
+		if targets.Filterset == "" {
+			continue
+		}
+		id, ok := ids[targets.Filterset]
+		if !ok {
+			if err := validateFilterValue("filterset", targets.Filterset); err != nil {
+				return nil, fmt.Errorf("step %d: %w", index, err)
+			}
+			row, err := s.lookupFilterset(ctx, targets.Filterset)
+			if err != nil {
+				return nil, fmt.Errorf("step %d: %w", index, err)
+			}
+			id = row.ID
+			ids[targets.Filterset] = id
+		}
+		if targets.FiltersetID != 0 && targets.FiltersetID != id {
+			return nil, fmt.Errorf("step %d: filterset %s is ID %d, not filterset_id %d: pass one of the two", index, targets.Filterset, id, targets.FiltersetID)
+		}
+		targets.FiltersetID, targets.Filterset = id, ""
+	}
+	return resolved, nil
 }
 
 // validateDraftSteps bounds a draft; the collector judges its steps.

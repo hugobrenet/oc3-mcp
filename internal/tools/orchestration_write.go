@@ -37,7 +37,7 @@ func registerOrchestrationWriteTools(registrar *Registrar, service *core.Service
 	if err := addTool(registrar, &mcp.Tool{
 		Name: "create_orchestration", Title: "Create orchestration",
 		Description: "Create an orchestration in the OpenSVC collector: an ordered list of steps, each one agent action on a set of targets of one kind, picked by ID, matched by a filterset when a run starts, or the same as an earlier step. " +
-			"A step holds its action, such as freeze, stop, drain, pushasset or checks, the kind of its targets, service, instance, node or cluster, its targets, its pace, all, one or batch with batch_size, and an optional timeout in seconds and rid for an instance; check_orchestration checks a draft before. " +
+			"A step holds its action, such as freeze, stop, drain, pushasset or checks, the kind of its targets, service, instance, node or cluster, its targets, a filterset given by its name or ID, its pace, all, one or batch with batch_size, and an optional timeout in seconds and rid for an instance; check_orchestration checks a draft before. " +
 			orchestrationWriteCheck +
 			"Requires the Manager privilege.",
 		Annotations: actionAnnotations(false, false),

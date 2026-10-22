@@ -155,6 +155,13 @@ agents act on the nodes and services.
 | `resume_orchestration_run` | `POST /api/orchestration_runs/{id}/resume` | Yes |
 | `continue_orchestration_run` | `POST /api/orchestration_runs/{id}/continue {"comment"}` | Yes |
 
+A step names a filterset by its ID, `filterset_id`, the only form the
+collector takes, or by its exact name, `filterset`, which `check_orchestration`
+(for a draft), `create_orchestration` and `update_orchestration` resolve to
+its ID before sending the steps, `GET /api/filtersets/{name}`, each name
+read once: the agent does not have to list the filtersets first. A name and
+an ID that differ are refused.
+
 The collector checks the steps as a whole at creation and change, and
 refuses with 400 the first it does not accept, numbered from 1, such as
 `step 1: action "explode" is not accepted on a node`, and with 409 a name
@@ -187,6 +194,13 @@ to confirm each one. They return the run as the collector answers the
 request, as `get_orchestration_run` gives it with its first 20 targets, and
 `action`. The actions of the targets run in the agents later: the agent
 follows the run with `get_orchestration_run`.
+
+`start_orchestration_run` and `get_orchestration_run` take `wait`, in
+seconds, at most 120, as `list_node_actions` does: the MCP reads a running
+run again every 3 seconds, and returns as soon as it is no longer running,
+or when the wait ends, with `waited_seconds`. "Start it and wait for its
+end" is one call, where reading the run again and again spent the rounds of
+the agent: its turn holds 8 rounds of the model by default, 16 on dev5.
 
 - `start_orchestration_run` takes the orchestration, by name or ID. The
   collector freezes the steps in the run, resolves the filtersets and queues

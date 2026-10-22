@@ -18,7 +18,7 @@ func runWriteCollector() *fakeCollector {
 
 func TestStartOrchestrationRunByName(t *testing.T) {
 	collector := runWriteCollector()
-	result, err := newTestService(collector).StartOrchestrationRun(t.Context(), "Test failure")
+	result, err := newTestService(collector).StartOrchestrationRun(t.Context(), "Test failure", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,11 +30,11 @@ func TestStartOrchestrationRunByName(t *testing.T) {
 		t.Fatalf("result = %+v", result)
 	}
 	collector = &fakeCollector{answer: func(path string, query url.Values) string { return `{"data":[],"meta":{"total":0}}` }}
-	if _, err := newTestService(collector).StartOrchestrationRun(t.Context(), "nope"); err == nil || len(collector.requests) != 1 {
+	if _, err := newTestService(collector).StartOrchestrationRun(t.Context(), "nope", 0); err == nil || len(collector.requests) != 1 {
 		t.Fatalf("unknown orchestration: %v", err)
 	}
 	collector = &fakeCollector{err: statusError{http.StatusBadRequest, "step 1 matches no target"}}
-	if _, err := newTestService(collector).StartOrchestrationRun(t.Context(), "2"); err == nil || !strings.Contains(err.Error(), "matches no target") {
+	if _, err := newTestService(collector).StartOrchestrationRun(t.Context(), "2", 0); err == nil || !strings.Contains(err.Error(), "matches no target") {
 		t.Fatalf("refused: %v", err)
 	}
 }
