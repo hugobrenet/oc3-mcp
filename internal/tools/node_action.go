@@ -411,6 +411,9 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 	if err := registerAppWriteTools(registrar, service); err != nil {
 		return err
 	}
+	if err := registerOrchestrationWriteTools(registrar, service); err != nil {
+		return err
+	}
 	if err := registerServiceDowntimeTools(registrar, service); err != nil {
 		return err
 	}

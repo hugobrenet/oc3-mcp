@@ -22,7 +22,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Apps | `get_app`, `create_app`, `update_app`, `delete_app`, `attach_app_groups`, `detach_app_groups` | [App tools](apps.md) |
 | Find | `find_objects` | [Find tools](find.md) |
 | Requests | `list_requests`, `get_request` | [Request tools](requests.md) |
-| Orchestrations | `list_orchestrations`, `get_orchestration`, `check_orchestration`, `list_orchestration_runs`, `get_orchestration_run` | [Orchestration tools](orchestrations.md) |
+| Orchestrations | `list_orchestrations`, `get_orchestration`, `check_orchestration`, `list_orchestration_runs`, `get_orchestration_run`, `create_orchestration`, `update_orchestration`, `delete_orchestration` | [Orchestration tools](orchestrations.md) |
 | Forms | `list_forms`, `get_form`, `get_form_result`, `submit_form`, `create_form`, `update_form`, `delete_form`, `attach_form_groups`, `detach_form_groups`, `list_form_revisions`, `get_form_revision`, `rollback_form` | [Form tools](forms.md) |
 | Sysreport | `list_node_sysreport_changes`, `get_node_sysreport_diff`, `list_node_sysreport_files`, `get_node_sysreport_file` | [Sysreport tools](sysreport.md) |
 | Filtersets | `list_filtersets`, `get_filterset`, `create_filterset`, `rename_filterset`, `add_filterset_criterion`, `remove_filterset_criterion`, `delete_filterset` | [Filterset tools](filtersets.md) |

@@ -6,13 +6,17 @@ tools:
   - check_orchestration
   - list_orchestration_runs
   - get_orchestration_run
+  - create_orchestration
+  - update_orchestration
+  - delete_orchestration
 stability: experimental
 ---
 
 # Orchestration Tools
 
 This document describes the tools that read the orchestrations of the
-OpenSVC collector and their runs, and check an orchestration before it runs.
+OpenSVC collector and their runs, check an orchestration before it runs, and
+create, change and delete orchestrations.
 
 An orchestration is an ordered list of steps. Each step is one agent action,
 one of those the action queue accepts (`PUT /api/actions`), such as `freeze`,
@@ -33,8 +37,7 @@ request. A failed or stopped run is resumed, its failed targets queued again,
 or continued, the failure of the step acknowledged with a comment and the
 next step started: a run whose failures were all acknowledged ends
 `succeeded`, though their targets did not succeed. Starting, stopping,
-resuming and continuing a run, and writing an orchestration, are not offered
-by these tools.
+resuming and continuing a run are not offered by these tools.
 
 The steps are numbered from 0 in the API, `same_as` and `current_step`
 included, and in these tools; the collector messages number them from 1, as
@@ -49,7 +52,9 @@ Implementation:
 - business logic: `internal/core/orchestration.go` and
   `internal/core/orchestration_run.go`, with the shared list helpers of
   `internal/core/collector_list.go`;
-- MCP definitions: `internal/tools/orchestration.go`.
+- business logic of the changes: `internal/core/orchestration_write.go`;
+- MCP definitions: `internal/tools/orchestration.go` and
+  `internal/tools/orchestration_write.go`.
 
 ## Tools
 
@@ -127,6 +132,41 @@ its dates and its exit code. The collector keeps the whole output of each
 action, 46 KB for a `pushasset`: the tool gives at most 2000 bytes of stdout
 and of stderr, without terminal colors, as `list_node_actions`, and only for
 the targets that did not succeed, unless `all_output`.
+
+## Action tools
+
+Registered only when `OPENSVC_MCP_ACTIONS=enabled`. They write an
+orchestration, and run nothing.
+
+| Tool | Collector API | Destructive |
+|---|---|---:|
+| `create_orchestration` | `POST /api/orchestrations {"name", "description", "steps"}` | No |
+| `update_orchestration` | `PUT /api/orchestrations/{id} {"name", "description", "steps"}` | Yes |
+| `delete_orchestration` | `DELETE /api/orchestrations/{id}` | Yes |
+
+The collector checks the steps as a whole at creation and change, and
+refuses with 400 the first it does not accept, numbered from 1, such as
+`step 1: action "explode" is not accepted on a node`, and with 409 a name
+taken. It saves the targets as they are given: a `pick` of a node that does
+not exist, or that no agent reaches, is saved, and refused only when a run
+starts. After a creation or a change, the tool reads the orchestration back
+and checks it, `POST /api/orchestrations/check`, and returns the check with
+it: `valid`, the messages of the steps and the targets refused. A read back
+or a check that fails is told in `warning`, the change made.
+
+- `create_orchestration` takes the name, an optional description and the
+  steps, 50 at most, each picking 200 ids at most.
+- `update_orchestration` takes the orchestration, by name or ID, and the
+  name, the description and the steps to set. The collector replaces the
+  three together: an absent description is cleared, so the tool reads the
+  orchestration first and sends the values not given as they are. Steps
+  replace the whole list; an empty description clears it. `outcome` is
+  `unchanged` when the values given are those held. The runs, past or
+  running, keep the plan they started with.
+- `delete_orchestration` reads the orchestration first and returns it. Its
+  runs stay, with `orchestration_id` null, listed by
+  `list_orchestration_runs` under its name; a run running goes on, which
+  `warning` tells.
 
 ## Output
 

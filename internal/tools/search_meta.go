@@ -53,11 +53,13 @@ var toolKeywords = map[string][]string{
 	"create_filterset":             {"new filterset", "define selection", "group of nodes", "node selection", "dynamic group"},
 	"create_form":                  {"new form", "create form", "write form", "form yaml", "form definition"},
 	"create_node":                  {"add node", "new node", "register node", "declare node", "inventory"},
+	"create_orchestration":         {"create orchestration", "new workflow", "chain actions", "sequence of actions", "runbook"},
 	"create_tag":                   {"new tag", "define tag", "make tag", "tag creation"},
 	"delete_app":                   {"remove app", "drop application", "app deletion"},
 	"delete_filterset":             {"drop filterset", "erase filterset", "filterset deletion"},
 	"delete_form":                  {"remove form", "delete form", "drop form"},
 	"delete_node":                  {"remove node", "decommission", "purge node", "drop node"},
+	"delete_orchestration":         {"delete orchestration", "remove workflow", "drop runbook"},
 	"delete_service":               {"remove service", "purge service", "decommission service", "clean inventory"},
 	"delete_service_instance":      {"remove instance", "stale instance", "orphan instance", "purge instance"},
 	"delete_tag":                   {"delete tag", "drop tag", "erase tag", "destroy tag", "tag deletion"},
@@ -151,6 +153,7 @@ var toolKeywords = map[string][]string{
 	"update_app":                   {"rename app", "edit app", "app domain", "app ops team", "application code"},
 	"update_form":                  {"edit form", "change form", "modify form", "form yaml", "rename form"},
 	"update_node":                  {"modify node", "change node", "set app", "set status", "edit node", "node owner", "node location"},
+	"update_orchestration":         {"edit orchestration", "change steps", "rename orchestration", "modify workflow", "add step"},
 	"update_tag":                   {"rename tag", "edit tag", "change tag", "tag exclusion", "tag data"},
 }
 
