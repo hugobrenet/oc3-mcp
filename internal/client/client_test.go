@@ -71,6 +71,19 @@ func TestGetJSONNormalizesErrors(t *testing.T) {
 	}
 }
 
+func TestPostJSONReadsTheIndexOfTheRefusedEntry(t *testing.T) {
+	collector := testutil.NewCollector(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"text":"the ruleset already has a variable named a","index":2}`))
+	}))
+	err := newTestClient(t, collector).PostJSON(callerContext(t), "/compliance/designer/commits", map[string]any{}, &struct{}{})
+	var apiError *APIError
+	if !errors.As(err, &apiError) || apiError.Index == nil || *apiError.Index != 2 || apiError.Text != "the ruleset already has a variable named a" {
+		t.Fatalf("error = %#v", err)
+	}
+}
+
 func TestGetJSONRejectsUnexpectedResponses(t *testing.T) {
 	for _, test := range []struct {
 		name    string

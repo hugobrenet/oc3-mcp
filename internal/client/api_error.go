@@ -16,13 +16,16 @@ const (
 
 // APIError describes a non-success response from the collector API.
 // StatusCode and Status come from the HTTP response; Text is the bounded
-// message of the collector problem body, {"text": "..."}.
+// message of the collector problem body, {"text": "..."}, and Index the
+// position of the entry it refuses in a list the request sent, when it
+// names one.
 type APIError struct {
 	Method     string
 	Path       string
 	StatusCode int
 	Status     string
 	Text       string
+	Index      *int
 }
 
 func (e *APIError) Error() string {
@@ -62,12 +65,16 @@ func newAPIError(method string, path string, response *http.Response) *APIError 
 		return apiError
 	}
 	var problem struct {
-		Text string `json:"text"`
+		Text  string `json:"text"`
+		Index *int   `json:"index"`
 	}
 	if err := json.Unmarshal(body, &problem); err != nil {
 		return apiError
 	}
 	apiError.Text = normalizeProblemText(problem.Text, maxErrorTextRunes)
+	if problem.Index != nil && *problem.Index >= 0 {
+		apiError.Index = problem.Index
+	}
 	return apiError
 }
 

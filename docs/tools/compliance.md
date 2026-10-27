@@ -8,6 +8,8 @@ tools:
   - get_compliance_moduleset
   - list_compliance_rulesets
   - get_compliance_ruleset
+  - list_compliance_history
+  - get_compliance_version
 stability: experimental
 ---
 
@@ -344,3 +346,74 @@ masking is partial, and the description says so.
 | `modulesets` | The modulesets it is attached to |
 | `nodes_count`, `nodes`, `services_count`, `services` | Nodes and services it is attached to directly, among those the caller sees, at most 50 named; `list_nodes` and `list_services` with `ruleset` read them all |
 | `encapsulated_services_count`, `encapsulated_services` | Services it is attached to directly as their encapsulated service, `slave=true` |
+
+### `list_compliance_history`
+
+Returns the versions of the compliance configuration the collector records,
+the newest first. The collector records a version, a commit of its
+compliance export in a git repository, when its designer or
+`apply_compliance_changes` commits a change; before it, a version gathers
+the changes made by other means since the last one. Requires the CompManager
+or the Manager privilege.
+
+#### Collector API
+
+```text
+GET /api/compliance/history?limit=…&object=ruleset:<id>
+```
+
+With `ruleset`, `moduleset` or `filterset`, the MCP first resolves the object
+among those the caller sees, then asks the versions in which it changed,
+among the last 300, through `object=<kind>:<id>`.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `ruleset`, `moduleset`, `filterset` | Optional exact name or ID of one object, not several |
+| `limit` | Optional number of versions, 1 to 100, default 20 |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `object` | The object asked, as `kind:name` |
+| `versions[]` | `commit`, `date` (RFC 3339), `author` and `subject` with the email addresses masked, `body` cut to 1 KiB, `source` (`designer`, `elsewhere` or empty), and `by_assistant`, when the subject starts with the mark `apply_compliance_changes` gives |
+
+### `get_compliance_version`
+
+Returns one version: the objects it changed compared with the version before,
+and the line diff of the configuration. Requires the CompManager or the
+Manager privilege.
+
+#### Collector API
+
+```text
+GET /api/compliance/history/<commit>
+```
+
+The collector returns the version, the export it recorded, the export before
+it and their diff. The MCP compares the two exports by object ID, and returns
+the diff without the exports.
+
+The diff is configuration text: the `var_value` lines of the ruleset
+variables are masked as `get_compliance_ruleset` masks the values, found by
+their text in either export, then the email addresses; it is cut to 32 KiB.
+The masking is partial, and the description says so.
+
+#### Input
+
+| Input | Meaning |
+|---|---|
+| `commit` | The commit, 4 to 40 hexadecimal digits, as `list_compliance_history` gives it |
+
+#### Output
+
+| Output field | Meaning |
+|---|---|
+| `provenance` | Collector API source and MCP collection time |
+| `version` | As in `list_compliance_history` |
+| `previous_commit` | The version compared with, absent for the first one |
+| `changes[]`, `changes_truncated` | The rulesets, modulesets and filtersets `added`, `removed` or `changed`, by `kind`, `name` and `id`, sorted, at most 200 |
+| `diff`, `diff_truncated` | The masked line diff, cut to 32 KiB |

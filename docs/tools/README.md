@@ -16,7 +16,8 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Checks | `list_node_checks`, `list_service_checks`, `get_check_threshold`, `list_check_thresholds` | [Check tools](checks.md) |
 | Packages | `list_node_packages`, `list_package_differences` | [Package tools](packages.md) |
 | Events | `list_collector_events` | [Collector event tools](events.md) |
-| Compliance | `list_compliance_status`, `list_compliance_runs`, `count_compliance_runs`, `list_compliance_modulesets`, `get_compliance_moduleset`, `list_compliance_rulesets`, `get_compliance_ruleset` | [Compliance tools](compliance.md) |
+| Compliance | `list_compliance_status`, `list_compliance_runs`, `count_compliance_runs`, `list_compliance_modulesets`, `get_compliance_moduleset`, `list_compliance_rulesets`, `get_compliance_ruleset`, `list_compliance_history`, `get_compliance_version` | [Compliance tools](compliance.md) |
+| Compliance changes | `apply_compliance_changes` | [Compliance change tools](compliance-changes.md) |
 | IP addresses | `list_ips` | [IP tools](ips.md) |
 | Tags | `list_tags`, `create_tag`, `update_tag`, `delete_tag` | [Tag tools](tags.md) |
 | Apps | `get_app`, `create_app`, `update_app`, `delete_app`, `attach_app_groups`, `detach_app_groups` | [App tools](apps.md) |

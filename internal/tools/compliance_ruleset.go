@@ -59,7 +59,7 @@ func RegisterComplianceRulesetTools(registrar *Registrar, service *core.Service)
 			Description: "Read one compliance ruleset of the OpenSVC collector by its name or ID: its variables, the rulesets it includes with theirs, its filterset with the nodes it selects, and what uses it. " +
 				rulesetDescription +
 				"It also gives its publication and responsible groups, the rulesets including it, the modulesets it is attached to, and the nodes and services it is attached to directly, among those the caller sees, at most 50 of each named; list_nodes and list_services with ruleset read them all. " +
-				"Values are cut to 2 KiB: this MCP masks the values of the variables and keys that name a secret or a mail and the email addresses, but partially; when values are asked for, show them saying so, never as free of secrets.",
+				"Values are cut to 2 KiB: this MCP masks the values of the variables and keys that name a secret or a mail and the email addresses, but partially; when values are asked for, show them saying so, never as free of secrets. list_compliance_history with ruleset gives the versions in which it changed.",
 			Annotations: readOnlyClosedWorldAnnotations(),
 		},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input GetComplianceRulesetInput) (*mcp.CallToolResult, GetComplianceRulesetOutput, error) {
