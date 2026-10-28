@@ -10,7 +10,7 @@ import (
 type JustifyServiceDowntimeInput struct {
 	Service string `json:"service" jsonschema:"one exact service name or service ID"`
 	Begin   string `json:"begin" jsonschema:"the begin of the period, YYYY-MM-DD HH:MM:SS in collector local time, exactly as get_service_status_history gives it"`
-	End     string `json:"end,omitempty" jsonschema:"optional end of the period, YYYY-MM-DD HH:MM:SS in collector local time: with it, the period is named by both its bounds, sent as is to the collector, such as the bounds of a justification whose period grew since"`
+	End     string `json:"end,omitempty" jsonschema:"optional end of the period, YYYY-MM-DD HH:MM:SS in collector local time: with it, the period is named by both its bounds, sent as is to the collector, for the period still going on; never to cover several periods, which shows on none: justify each by its begin"`
 	Comment string `json:"comment" jsonschema:"why the service was down, such as a planned maintenance, as the user gives it; ask the user, never invent it; the collector refuses an empty one"`
 	Counted bool   `json:"counted" jsonschema:"true keeps the period in the availability rate; false leaves it out, as for a planned maintenance the SLA does not count"`
 }
@@ -35,7 +35,7 @@ func registerServiceDowntimeTools(registrar *Registrar, service *core.Service) e
 			Title: "Justify service downtime",
 			Description: "Justify one period of downtime of one OpenSVC service in its status history, with a comment the collector records with the caller and the date, and whether the period still counts in the availability rate. " +
 				"Use it when the user explains a downtime, such as a planned maintenance: counted false leaves the period out of the availability rate the SLA is compared with. " +
-				"Name the period by its begin, exactly as get_service_status_history gives it; a justification already there is replaced. A period still going on is refused, unless end names its bounds; a period the service was up is justified as the others, without effect on the rate. With end, the bounds go as is to the collector, a period of the history or not. " +
+				"Name the period by its begin, exactly as get_service_status_history gives it; a justification already there is replaced. A period still going on is refused, unless end names its bounds; a period the service was up is justified as the others, without effect on the rate. With end, the bounds go as is to the collector, a period of the history or not: a justification on bounds no period has, such as those of several periods, leaves their span out of the rate but shows on no period. To justify an outage made of several down periods, justify each by its begin. " +
 				"The last period of a service whose agents stopped reporting may be justified, but grows again when they resume with the same status: its justification then no longer shows on it, and still leaves the original period out of the rate. " +
 				"It is not a maintenance window: it does not snooze any alert, and only a period in the history is justified. The comment is required: ask the user for it, never invent it. " +
 				"Requires to be responsible for the service.",

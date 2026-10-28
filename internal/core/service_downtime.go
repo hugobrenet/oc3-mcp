@@ -226,6 +226,12 @@ func (s *Service) readBackStatusPeriod(ctx context.Context, period foundStatusPe
 			return result, nil
 		}
 	}
+	// Bounds end gave, such as those of several periods, are none of the
+	// history: the justification shows on no period.
+	if period.unmatched {
+		result.Warning = "the change was made, but no period of the history has these bounds: the justification leaves their span out of the rate as asked, and shows on no period; to justify several periods, justify each by its begin, and remove this one with unjustify_service_downtime and the same begin and end"
+		return result, nil
+	}
 	// The last period grows when the agents resume with the same status:
 	// the justification keeps its bounds, and no longer shows on it.
 	result.Warning = "the change was made, but no period of the history has these bounds any more: the period grew since it was read, and the justification, which keeps its bounds, no longer shows on it; get_service_status_history gives the periods"

@@ -170,10 +170,16 @@ func TestServiceDowntimeTakesBothBounds(t *testing.T) {
 	if put := collector.requests[len(collector.requests)-2]; put.method != "PUT" || put.body["begin"] != "2026-10-04 09:00:00" || put.body["end"] != "2026-10-20 10:28:07" {
 		t.Fatalf("requests = %+v", collector.requests)
 	}
+	// Bounds spanning two down periods are sent, and the warning says the
+	// justification shows on none, not that a period grew.
+	change, err := New(newDowntimeCollector(false)).JustifyServiceDowntime(t.Context(), JustifyServiceDowntimeOptions{Service: "web", Begin: "2026-10-03 00:46:03", End: "2026-10-04 09:00:00", Comment: "x"})
+	if err != nil || !strings.Contains(change.Warning, "justify each by its begin") || strings.Contains(change.Warning, "grew") {
+		t.Fatalf("change = %+v, %v", change, err)
+	}
 	// The period begun at 01:06:18 grew to 09:00:00: its justification,
 	// ending at 02:00:00, shows on no period.
 	collector = newDowntimeCollector(false)
-	change, err := New(collector).UnjustifyServiceDowntime(t.Context(), UnjustifyServiceDowntimeOptions{Service: "web", Begin: "2026-10-03 01:06:18", End: "2026-10-03 02:00:00"})
+	change, err = New(collector).UnjustifyServiceDowntime(t.Context(), UnjustifyServiceDowntimeOptions{Service: "web", Begin: "2026-10-03 01:06:18", End: "2026-10-03 02:00:00"})
 	if err != nil {
 		t.Fatal(err)
 	}
