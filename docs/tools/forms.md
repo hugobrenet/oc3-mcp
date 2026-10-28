@@ -183,8 +183,12 @@ published to a group of the caller, unless a Manager, with 404, and with
 400 and the reason a mandatory value missing, a key the form forces, or a
 value out of strict candidates, before any output runs. It does not check
 the type, the default or the constraint of an input: a mandatory value may
-be an empty string. It then runs the outputs in order, and answers with
-their results:
+be an empty string. That refusal comes once the user confirmed the call:
+on 2026-10-28, asked for a VM with its vCPUs and memory but no hostname, a
+model submitted the form without the mandatory hostname in 2 runs of 8. The
+description says never to submit to learn what is missing, and the `data`
+input to ask for a mandatory value before the call. The collector then runs the
+outputs in order, and answers with their results:
 
 | `Dest` | What the collector does |
 |---|---|
@@ -215,7 +219,7 @@ one may expire while it runs.
 | Input | Meaning |
 |---|---|
 | `form` | One exact form name or form ID |
-| `data` | The values of the inputs, each under the `key` `get_form` gives, as the user gives them, as text: the collector compares the strict candidates and the forced keys as text, and refuses the number 2 for the candidate "2"; an input that is not mandatory, such as a comment, is left out unless the user gives it |
+| `data` | The values of the inputs, each under the `key` `get_form` gives, as the user gives them, as text: the collector compares the strict candidates and the forced keys as text, and refuses the number 2 for the candidate "2"; an input that is not mandatory, such as a comment, is left out unless the user gives it; a mandatory one the user gave no value for is asked before the call |
 | `wait` | Optional seconds, 0 to 120, to wait for the outputs of an `Async` form to end |
 | `request` | Optional request ID: the form decides the pending step of that request, see [deciding a step](#deciding-a-step-of-a-request) |
 

@@ -63,6 +63,16 @@ since, on bounds no period has any more; with the bounds it was given,
 when it holds none. Finding those bounds is for the collector to allow, by
 a list of the justifications of a service: none exists today.
 
+`end` is not for an outage made of several periods, such as down periods
+separated by short `n/a` ones: a justification on the bounds of their span
+leaves it out of the rate, but shows on no period. On 2026-10-28, asked to
+justify "the long outage from the 29th to the 30th" of a service whose long
+down period followed four short ones, the model sent, in 4 runs of 8, the
+begin of the first short period with the end of the long one. The
+descriptions say to justify each period by its begin; the result warns of
+bounds no period has, apart from a period that grew since it was read, and
+names `unjustify_service_downtime` with the same bounds to remove it.
+
 A period the service was `up` or `stdby up` is justified as the others, as
 the collector takes it: the availability rate leaves the up intervals out
 of the justified ones, so that the justification only adds a comment.
