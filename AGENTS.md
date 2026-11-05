@@ -55,9 +55,10 @@ shared with `om3-mcp`.
   domain validation, private collector response shapes and bounded typed
   results. It stays one package: organize it by file, never by sub-package.
   Name files after their domain prefix (`node_*`, `service_*`…).
-- `internal/resources`: the MCP resources, reference texts embedded in the
-  binary that a client reads on demand, such as the format of the YAML of a
-  form.
+- `internal/content`: the MCP resources and the Agent Skills of the AI
+  assistant, stored by the collector and read from it as the caller at each
+  request (`/ai/resources`, `/ai/skills`, backend oc3); the MCP embeds none
+  and keeps none. See [the collector API](docs/collector-ai-content.md).
 - `internal/tools`: MCP declarations, schemas, annotations and registrar.
   Handlers stay thin: typed input, one core use case, typed output.
 

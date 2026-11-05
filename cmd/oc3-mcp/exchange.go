@@ -2,22 +2,29 @@ package main
 
 import (
 	"context"
+	"slices"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/opensvc/oc3-mcp/internal/content"
 	"github.com/opensvc/osvc-auth-mcp/mcpauth"
 )
 
-// exchangeToolCalls exchanges, for each tool call on the HTTPS listener, the
-// MCP access token of the external client for a token intended for the
-// collector. The profile and the audience come from the configuration.
+// exchangeToolCalls exchanges, for each tool call on the HTTPS listener, and
+// each read of the resources and the skills of the collector, the MCP access
+// token of the external client for a token intended for the collector. The
+// profile and the audience come from the configuration.
 func exchangeToolCalls(profiles *mcpauth.ExchangeProfiles, profile, audience string) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
-			if method != "tools/call" {
+			if method != "tools/call" && !slices.Contains(content.Methods, method) {
 				return next(ctx, method, request)
 			}
 			exchanged, cancel, err := profiles.Prepare(ctx, profile, audience, "")
 			if err != nil {
+				if method != "tools/call" {
+					return nil, &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: err.Error()}
+				}
 				return toolError(err.Error()), nil
 			}
 			defer cancel()
@@ -50,6 +57,9 @@ func blockToolCalls(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
 		if method == "tools/call" {
 			return toolError("collector calls require the token exchange configuration"), nil
+		}
+		if slices.Contains(content.Methods, method) {
+			return nil, &jsonrpc.Error{Code: jsonrpc.CodeInternalError, Message: "collector calls require the token exchange configuration"}
 		}
 		return next(ctx, method, request)
 	}

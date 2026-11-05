@@ -248,3 +248,16 @@ Requests use TLS 1.2 or later, no proxy and no redirect, with a 30-second
 timeout. Responses are bounded to 10 MiB. A collector error is returned with
 its HTTP status and the bounded collector message; a token the collector
 refuses with 401 is reported without the collector's details.
+
+## Resources and skills
+
+The MCP declares the resources capability and the MCP Skills extension,
+`io.modelcontextprotocol/skills`, with `directoryRead` false. It embeds no
+resource and no skill: each `resources/list`, `resources/read`, `skills/list`
+and `skills/get` reads the collector, as the caller, the routes
+`GET /ai/resources` and `GET /ai/skills` with `backend=oc3`, and keeps
+nothing. On HTTPS, these reads take the exchanged token, as the tool calls
+do; without exchange configuration they fail. A resource is
+`oc3://resources/<name>`, the SKILL.md of a skill `skill://<name>/SKILL.md`;
+a 404 of the collector is an MCP "resource not found". See
+[the collector API](collector-ai-content.md).
