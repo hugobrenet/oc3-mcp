@@ -2,7 +2,7 @@
 
 [Back to README](../README.md) · [Configuration](configuration.md)
 
-The collector serves these routes from its migration `0029_ai_content`;
+The collector serves these routes from its migration `0030_ai_content`;
 oc3-mcp reads them. om3-mcp is to follow.
 
 The collector stores the MCP resources and the Agent Skills that the AI
