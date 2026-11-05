@@ -124,7 +124,8 @@ type GetResult struct {
 var noCache = mcp.Cacheable{TTLMs: 0, CacheScope: "private"}
 
 // Register serves the resources and the skills of the collector on server:
-// a middleware answers resources/list and resources/read, custom methods
+// a middleware answers resources/list and resources/read of the oc3://resources/
+// and skill:// URIs, custom methods
 // skills/list and skills/get. Call it before adding the middlewares that
 // prepare the credential: the first middleware added runs innermost, after
 // them. The caller declares the resources capability and Extension.
@@ -142,7 +143,10 @@ func Register(server *mcp.Server, collector Collector) error {
 				if !ok || params == nil {
 					return nil, &jsonrpc.Error{Code: jsonrpc.CodeInvalidParams, Message: "resources/read takes the uri of a resource"}
 				}
-				return readResource(ctx, collector, params.URI)
+				// The other URIs are the server's own resources, if any.
+				if strings.HasPrefix(params.URI, resourcePrefix) || strings.HasPrefix(params.URI, skillScheme) {
+					return readResource(ctx, collector, params.URI)
+				}
 			}
 			return next(ctx, method, request)
 		}

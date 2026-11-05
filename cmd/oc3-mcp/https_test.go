@@ -35,6 +35,8 @@ type httpsTest struct {
 	exchanges atomic.Int32
 	collector atomic.Int32
 	refuse    atomic.Bool
+	// asked is the path and the query of the last collector request.
+	asked atomic.Pointer[string]
 }
 
 func newHTTPSTest(t *testing.T, exchange bool, configure ...func(*config.Config)) *httpsTest {
@@ -65,6 +67,8 @@ func newHTTPSTest(t *testing.T, exchange bool, configure ...func(*config.Config)
 	}
 	collector := testutil.NewCollectorWithToken(t, h.exchanged, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h.collector.Add(1)
+		asked := r.URL.Path + "?" + r.URL.RawQuery
+		h.asked.Store(&asked)
 		if h.refuse.Load() {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -99,7 +103,7 @@ func newHTTPSTest(t *testing.T, exchange bool, configure ...func(*config.Config)
 	return h
 }
 
-func (h *httpsTest) call(t *testing.T, token string, name string) *mcp.CallToolResult {
+func (h *httpsTest) connect(t *testing.T, token string) *mcp.ClientSession {
 	t.Helper()
 	session, err := mcp.NewClient(&mcp.Implementation{Name: "external-client", Version: "test"}, nil).Connect(t.Context(), &mcp.StreamableClientTransport{
 		Endpoint: h.server.URL + "/mcp", HTTPClient: bearerClient(token), DisableStandaloneSSE: true, MaxRetries: -1,
@@ -107,8 +111,13 @@ func (h *httpsTest) call(t *testing.T, token string, name string) *mcp.CallToolR
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer session.Close()
-	result, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: map[string]any{}})
+	t.Cleanup(func() { _ = session.Close() })
+	return session
+}
+
+func (h *httpsTest) call(t *testing.T, token string, name string) *mcp.CallToolResult {
+	t.Helper()
+	result, err := h.connect(t, token).CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: map[string]any{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,6 +168,29 @@ func TestHTTPSToolCallsReachTheCollectorWithTheExchangedToken(t *testing.T) {
 	want := `tool=list_clusters issuer=` + h.provider.Issuer + ` subject=alice client_id=external-client exchange=ok collector_subject=alice-collector outcome=ok`
 	if !strings.Contains(line, want) || !strings.HasSuffix(line, `request_id=""`) || strings.Contains(line, h.incoming) || strings.Contains(line, h.exchanged) {
 		t.Fatalf("unexpected audit line:\n%s", line)
+	}
+}
+
+// TestHTTPSContentReachesTheCollectorWithTheExchangedToken lists the
+// resources of the collector as an external client: the MCP exchanges its
+// token, and the collector, which takes the exchanged token only, answers.
+func TestHTTPSContentReachesTheCollectorWithTheExchangedToken(t *testing.T) {
+	h := newHTTPSTest(t, true)
+	list, err := h.connect(t, h.incoming).ListResources(t.Context(), nil)
+	if err != nil || len(list.Resources) != 0 {
+		t.Fatalf("list=%+v err=%v", list, err)
+	}
+	if asked := h.asked.Load(); h.exchanges.Load() != 1 || h.collector.Load() != 1 || asked == nil || *asked != "/ai/resources?backend=oc3" {
+		t.Fatalf("exchanges=%d collector requests=%d asked=%v", h.exchanges.Load(), h.collector.Load(), asked)
+	}
+}
+
+// TestHTTPSBlocksContentWithoutTokenExchange refuses to read the collector for
+// an external client when no exchange is configured, as for a tool call.
+func TestHTTPSBlocksContentWithoutTokenExchange(t *testing.T) {
+	h := newHTTPSTest(t, false)
+	if _, err := h.connect(t, h.incoming).ListResources(t.Context(), nil); err == nil || h.collector.Load() != 0 || h.exchanges.Load() != 0 {
+		t.Fatalf("err=%v collector requests=%d exchanges=%d", err, h.collector.Load(), h.exchanges.Load())
 	}
 }
 

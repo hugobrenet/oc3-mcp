@@ -307,14 +307,30 @@ sent, which the confirmation shows. A step where the model would show the
 YAML first was left out: it rests on the model, which replays showed
 skipping it in half the draws.
 
-#### No reference embedded
+#### The reference of the YAML
 
-The MCP no longer embeds a reference of the YAML of a form: the descriptions
-of `create_form` and `update_form` tell the model to start from the
-definition of a similar form, which `get_form` gives. An administrator who
-wants the model to read such a reference publishes it in the collector as an
-AI resource for the oc3 backend; the MCP serves it with the others (see
-[the collector API](../collector-ai-content.md)).
+The MCP embeds no reference of the YAML of a form: the descriptions of
+`create_form` and `update_form` tell the model to start from the definition
+of a similar form, which `get_form` gives. The reference it embedded before,
+[form-definition.md](../form-definition.md), is kept here. An AIManager of
+the collector who wants the model to read it publishes it as an AI resource
+for the oc3 backend; the MCP then lists it as `oc3://resources/form-definition`
+with the others (see [the collector API](../collector-ai-content.md)):
+
+```sh
+# COLLECTOR_URL as OPENSVC_MCP_COLLECTOR_URL, TOKEN a collector token of an AIManager
+jq -n --rawfile body docs/form-definition.md '{
+  name: "form-definition",
+  title: "Form definition",
+  description: "The YAML of a form of the OpenSVC collector: its keys, what the collector checks at submission and what only the web interface reads, the conditions, the outputs by Dest, and examples. Read it before writing a form with create_form or update_form.",
+  backends: ["oc3"],
+  body: $body
+}' | curl -sS -X POST "$COLLECTOR_URL/ai/resources" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data-binary @-
+```
+
+A later version of the file replaces it with `PUT "$COLLECTOR_URL/ai/resources/form-definition"`,
+the same JSON without `name`.
 
 The `yaml` input of `create_form` and `update_form` carries
 `"contentMediaType": "application/yaml"` in the input schema, the JSON

@@ -2,8 +2,8 @@
 
 [Back to README](../README.md) · [Configuration](configuration.md)
 
-Status: implemented in oc3 (branch feat/ai-content of hugobrenet/oc3,
-migration 0029); oc3-mcp serves them. om3-mcp is to follow.
+The collector serves these routes from its migration `0029_ai_content`;
+oc3-mcp reads them. om3-mcp is to follow.
 
 The collector stores the MCP resources and the Agent Skills that the AI
 assistant reads. An administrator creates, updates and deletes them in the
@@ -47,7 +47,7 @@ of the company.
 | `description` | string | required, at most 1024 bytes: what the text holds and when to read it; the model reads this to decide |
 | `mime_type` | string | `text/markdown` (default) or `text/plain` |
 | `backends` | array of string | required, one or both of `om3`, `oc3`, no duplicate |
-| `publications` | array of integer | the ids of the groups that may read it; empty means everybody |
+| `publications` | array of integer | the ids of the groups that may read it; empty means everybody; given back to an AIManager only |
 | `body` | string | required, valid UTF-8, at most 65536 bytes, no NUL byte |
 | `size` | integer | read only: the bytes of `body` |
 | `digest` | string | read only: `sha256:<hex>` of the bytes of `body` |
@@ -105,11 +105,14 @@ only, never the body.
 ```
 
 - `backend` is optional, `om3` or `oc3`, any other value a 400: the MCP servers give it, an administration interface leaves it out to list every object.
-- At most 100 objects per backend: the collector refuses to create more.
 - Sorted by `name`.
 - The response has an `ETag`. A request with `If-None-Match` set to that
   value gets a 304 while the visible list is the same. The list is private to
-  the caller: `Cache-Control: private, no-cache`.
+  the caller: `Cache-Control: private, no-cache`. The ETag serves an
+  administration interface polling the list: the MCP servers keep nothing,
+  and the agent lists the resources at each turn.
+- The `publications` are given to an AIManager only: a reader learns which
+  objects it may read, not which groups may.
 
 `GET /ai/resources/{name}?backend={om3|oc3}`
 
@@ -125,6 +128,11 @@ Behave the same way for skills. The list gives `name`, `frontmatter`, `size`,
 
 ### Writes (privilege `AIManager`, or `Manager`)
 
+What an AIManager writes, the model reads as instructions for every user it
+is published to: granting `AIManager` amounts to letting someone write the
+system prompt of other users. Grant it as `Manager` is granted, not as an
+editorial role.
+
 | Route | Effect | Answer |
 |---|---|---|
 | `POST /ai/resources` | create; the body holds the writable fields | 201 with the object, 409 when the name exists |
@@ -135,6 +143,14 @@ Behave the same way for skills. The list gives `name`, `frontmatter`, `size`,
 - A write that breaks a rule is a 400 whose message names the field and the
   rule, such as `body: more than 65536 bytes`.
 - A caller without the privilege gets a 403.
+- An object and its publications are written in one transaction, with the
+  line of the collector log: a read never sees an object without its
+  publications, published to everybody.
+- A request body is read up to 256 KiB; a larger one is a 413.
+- A backend holds at most 100 objects of a kind, a replace adding a backend
+  included: the collector refuses the write that would pass it, with a 400.
+- A group deleted keeps its id in the publications: the object stays hidden
+  from all but the AIManagers until they publish it again.
 - Every write is logged in the collector log, as the other writes are.
 - A write answer gives the object without its body.
 
@@ -153,8 +169,10 @@ Behave the same way for skills. The list gives `name`, `frontmatter`, `size`,
   (`io.modelcontextprotocol/skills`): the URI of the `SKILL.md`, its
   frontmatter, and its manifest with the `digest` and the `size` of the
   collector.
-- `resources/read` gives the `body` of the collector, with `mimeType`
-  `text/markdown`.
+- `resources/read` gives the `body` of the collector, with its `mime_type`
+  as `mimeType`, `text/markdown` or `text/plain`; another type reads as
+  `text/markdown`. The `SKILL.md` of a skill is `text/markdown`.
+- `resources/read` of any other URI is left to the server.
 - A 404 of the collector is an MCP "resource not found" error. Any other
   failure is an MCP error that names no URL and no credential.
 - Nothing is cached: each MCP request reads the collector.

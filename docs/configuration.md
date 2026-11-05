@@ -259,5 +259,6 @@ and `skills/get` reads the collector, as the caller, the routes
 nothing. On HTTPS, these reads take the exchanged token, as the tool calls
 do; without exchange configuration they fail. A resource is
 `oc3://resources/<name>`, the SKILL.md of a skill `skill://<name>/SKILL.md`;
-a 404 of the collector is an MCP "resource not found". See
+a 404 of the collector is an MCP "resource not found". A `resources/read` of
+another URI goes to the server, which serves none. See
 [the collector API](collector-ai-content.md).
