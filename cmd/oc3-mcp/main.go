@@ -15,8 +15,8 @@ import (
 	"github.com/opensvc/oc3-mcp/internal/auth"
 	"github.com/opensvc/oc3-mcp/internal/client"
 	"github.com/opensvc/oc3-mcp/internal/config"
+	"github.com/opensvc/oc3-mcp/internal/content"
 	"github.com/opensvc/oc3-mcp/internal/core"
-	"github.com/opensvc/oc3-mcp/internal/resources"
 	"github.com/opensvc/oc3-mcp/internal/tools"
 	"github.com/opensvc/osvc-auth-mcp/mcpauth"
 )
@@ -205,8 +205,18 @@ func newHandler(collector *client.Client, delegator *auth.Delegator, actions boo
 func newToolsHandler(collector *client.Client, actions bool, route ...mcp.Middleware) (http.Handler, error) {
 	service := core.New(collector)
 	server := mcp.NewServer(&mcp.Implementation{Name: serverName, Version: serverVersion}, &mcp.ServerOptions{
-		Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{}, Resources: &mcp.ResourceCapabilities{}},
+		Capabilities: &mcp.ServerCapabilities{
+			Tools: &mcp.ToolCapabilities{}, Resources: &mcp.ResourceCapabilities{},
+			// The skills are read as resources; no directory read is served.
+			Extensions: map[string]any{content.Extension: map[string]any{"directoryRead": false}},
+		},
 	})
+	// The resources and the skills of the collector, read as the caller:
+	// registered first, their middleware runs after the ones that prepare
+	// the credential.
+	if err := content.Register(server, collector); err != nil {
+		return nil, err
+	}
 	registrar, err := tools.NewRegistrar(server)
 	if err != nil {
 		return nil, err
@@ -223,9 +233,6 @@ func newToolsHandler(collector *client.Client, actions bool, route ...mcp.Middle
 		if err := tools.RegisterNodeActionTools(registrar, service); err != nil {
 			return nil, err
 		}
-	}
-	if err := resources.Register(server); err != nil {
-		return nil, err
 	}
 	// Cross-origin browser requests are refused with 403, as the MCP SDK
 	// recommends, by the protection of net/http around its handler.

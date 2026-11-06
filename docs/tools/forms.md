@@ -307,22 +307,30 @@ sent, which the confirmation shows. A step where the model would show the
 YAML first was left out: it rests on the model, which replays showed
 skipping it in half the draws.
 
-#### The reference of the format: `oc3://docs/form-definition`
+#### The reference of the YAML
 
-The MCP serves the reference of the YAML of a form as an MCP resource,
-`oc3://docs/form-definition`, in Markdown
-([`internal/resources/form_definition.md`](../../internal/resources/form_definition.md),
-embedded in the binary by the `internal/resources` package), served
-whatever `OPENSVC_MCP_ACTIONS`. Read from the collector code, it gives the keys of a
-form, of its inputs and of its outputs; for each input key, whether the
-collector checks it at submission or only the web interface reads it; the
-syntax of the conditions; what each `Dest` runs, and that an output without
-one does nothing; and three examples. The descriptions of `create_form` and
-`update_form` tell the model to read it in the same turn as the call: the OpenSVC
-AI agent keeps no string longer than 256 bytes of the earlier turns, so
-that a reference read in one turn is gone in the next. A test keeps the
-examples honest: each parses, and uses only the keys the reference
-documents.
+The MCP embeds no reference of the YAML of a form: the descriptions of
+`create_form` and `update_form` tell the model to start from the definition
+of a similar form, which `get_form` gives. The reference it embedded before,
+[form-definition.md](../form-definition.md), is kept here. An AIManager of
+the collector who wants the model to read it publishes it as an AI resource
+for the oc3 backend; the MCP then lists it as `oc3://resources/form-definition`
+with the others (see [the collector API](../collector-ai-content.md)):
+
+```sh
+# COLLECTOR_URL as OPENSVC_MCP_COLLECTOR_URL, TOKEN a collector token of an AIManager
+jq -n --rawfile body docs/form-definition.md '{
+  name: "form-definition",
+  title: "Form definition",
+  description: "The YAML of a form of the OpenSVC collector: its keys, what the collector checks at submission and what only the web interface reads, the conditions, the outputs by Dest, and examples. Read it before writing a form with create_form or update_form.",
+  backends: ["oc3"],
+  body: $body
+}' | curl -sS -X POST "$COLLECTOR_URL/ai/resources" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data-binary @-
+```
+
+A later version of the file replaces it with `PUT "$COLLECTOR_URL/ai/resources/form-definition"`,
+the same JSON without `name`.
 
 The `yaml` input of `create_form` and `update_form` carries
 `"contentMediaType": "application/yaml"` in the input schema, the JSON
