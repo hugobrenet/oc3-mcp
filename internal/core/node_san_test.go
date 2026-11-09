@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -119,5 +120,57 @@ func TestGetNodeSanTopologyRejectsUnexpectedResponses(t *testing.T) {
 	collector := &fakeCollector{body: `{"data":[]}`}
 	if _, err := newTestService(collector).GetNodeSanTopology(t.Context(), "a/b"); err == nil || len(collector.requests) != 0 {
 		t.Fatal("an invalid node was accepted")
+	}
+}
+
+// TestGetNodeSanTopologyBoundsTheHopsOfAllThePaths checks that a long chain of
+// switches ending on many array ports, small as a collector answer, does not
+// make a result of paths times depth hops.
+func TestGetNodeSanTopologyBoundsTheHopsOfAllThePaths(t *testing.T) {
+	const switches, targets = 200, 500
+	var nodes, links []string
+	nodes = append(nodes, `{"id":"server:00000000-0000-4000-8000-000000000001","kind":"server","label":"lyn-prd-db01","ports":["p0"]}`)
+	links = append(links, `{"tail":"server:00000000-0000-4000-8000-000000000001","tail_port":"p0","head":"switch:0","head_port":"0"}`)
+	for i := range switches {
+		nodes = append(nodes, fmt.Sprintf(`{"id":"switch:%d","kind":"switch","label":"sw%d","fabric":"a"}`, i, i))
+		if i+1 < switches {
+			links = append(links, fmt.Sprintf(`{"tail":"switch:%d","tail_port":"1","head":"switch:%d","head_port":"0"}`, i, i+1))
+		}
+	}
+	nodes = append(nodes, `{"id":"array:a1","kind":"array","label":"a1"}`)
+	for i := range targets {
+		links = append(links, fmt.Sprintf(`{"tail":"switch:%d","tail_port":"%d","head":"array:a1","head_port":"t%d"}`, switches-1, i+2, i))
+	}
+	collector := &fakeCollector{bodies: map[string]string{
+		"/nodes/lyn-prd-db01":                             testSanNodeLookup,
+		"/nodes/00000000-0000-4000-8000-000000000001/san": `{"data":{"nodes":[` + strings.Join(nodes, ",") + `],"links":[` + strings.Join(links, ",") + `]}}`,
+	}}
+	topology, err := newTestService(collector).GetNodeSanTopology(t.Context(), "lyn-prd-db01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hops := 0
+	for _, hba := range topology.HBAs {
+		for _, path := range hba.Paths {
+			hops += len(path.Hops)
+		}
+	}
+	if !topology.Truncated || hops == 0 || hops > maxSanHops {
+		t.Fatalf("truncated=%v hops=%d", topology.Truncated, hops)
+	}
+}
+
+// TestGetNodeSanTopologyStopsWhenCancelled ends the derivation of the paths
+// with the call.
+func TestGetNodeSanTopologyStopsWhenCancelled(t *testing.T) {
+	collector := &fakeCollector{bodies: map[string]string{
+		"/nodes/lyn-prd-db01":                             testSanNodeLookup,
+		"/nodes/00000000-0000-4000-8000-000000000001/san": testSanGraph,
+	}}
+	service := newTestService(collector)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := service.GetNodeSanTopology(ctx, "lyn-prd-db01"); err == nil {
+		t.Fatal("a cancelled call returned a topology")
 	}
 }

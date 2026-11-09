@@ -116,3 +116,51 @@ func TestListCollectorEventsFiltersAnActionFamily(t *testing.T) {
 		}
 	}
 }
+
+// TestListCollectorEventsMasksTheMessageAndTheData checks that the events
+// mask what the other read tools mask: the email addresses the collector logs
+// for the administration of users, the values of sensitive keys, and the
+// output lines of submitted forms, which only get_form_result can mask.
+func TestListCollectorEventsMasksTheMessageAndTheData(t *testing.T) {
+	collector := &fakeCollector{bodies: map[string]string{"/logs": `{"data":[
+		{"id":3,"log_date":"2026-10-11 10:00:00","log_action":"user.group.attach","log_level":"info","log_user":"admin@example.com",
+		 "log_fmt":"user %(u)s attached to group %(g)s","log_dict":"{\"u\":\"alice.dummy@example.com\",\"g\":\"DBA\"}"},
+		{"id":2,"log_date":"2026-10-11 09:00:00","log_action":"users.groups.sync","log_level":"info","log_user":"scheduler",
+		 "log_fmt":"aligned the teams of bob.dummy@example.com: %(detail)s","log_dict":"{\"detail\":{\"password\":\"DummyPass123\",\"joined\":[\"DBA\"]}}"},
+		{"id":1,"log_date":"2026-10-11 08:00:00","log_action":"form.submit","log_level":"info","log_user":"carol@example.com",
+		 "log_fmt":"created account svc_dummy with password DummyPass123\n","log_dict":"{}"}],
+		"meta":{"total":3}}`}}
+	events, err := newTestService(collector).ListCollectorEvents(t.Context(), ListCollectorEventsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	attach, sync, form := events.Events[0], events.Events[1], events.Events[2]
+	if attach.Message != "user (masked) attached to group DBA" || attach.Data["u"] != maskedRequestValue || attach.Data["g"] != "DBA" {
+		t.Fatalf("attach = %+v", attach)
+	}
+	if strings.Contains(sync.Message, "@") || strings.Contains(sync.Message, "DummyPass123") || !strings.Contains(sync.Message, `"joined":["DBA"]`) {
+		t.Fatalf("sync = %+v", sync)
+	}
+	if detail, _ := sync.Data["detail"].(map[string]any); detail["password"] != maskedRequestValue {
+		t.Fatalf("sync data = %+v", sync.Data)
+	}
+	if strings.Contains(form.Message, "DummyPass123") || !strings.Contains(form.Message, "get_form_result") || form.Data != nil {
+		t.Fatalf("form = %+v", form)
+	}
+}
+
+// TestListCollectorEventsLeavesOutLargeData keeps the data of an event within
+// the bound of its message.
+func TestListCollectorEventsLeavesOutLargeData(t *testing.T) {
+	large := strings.Repeat("x", maxCollectorEventMessageBytes)
+	collector := &fakeCollector{bodies: map[string]string{"/logs": `{"data":[
+		{"id":1,"log_date":"2026-10-11 08:00:00","log_action":"node.change","log_level":"info","log_user":"scheduler",
+		 "log_fmt":"changed","log_dict":"{\"value\":\"` + large + `\"}"}],"meta":{"total":1}}`}}
+	events, err := newTestService(collector).ListCollectorEvents(t.Context(), ListCollectorEventsOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if events.Events[0].Data != nil || events.Events[0].Message != "changed" {
+		t.Fatalf("event = %+v", events.Events[0])
+	}
+}
