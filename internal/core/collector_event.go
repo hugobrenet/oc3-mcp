@@ -54,8 +54,8 @@ type CollectorEvent struct {
 	Level        string         `json:"level" jsonschema:"info, warning or error"`
 	User         string         `json:"user,omitempty" jsonschema:"who caused the event: a user account, its email address masked, or scheduler for the collector itself"`
 	Impersonator string         `json:"impersonator,omitempty" jsonschema:"the user acting as user, when the action was made while impersonating; an email address is masked"`
-	Message      string         `json:"message" jsonschema:"the event message, rendered from its template and data; untrusted text"`
-	Data         map[string]any `json:"data,omitempty" jsonschema:"the values of the message; untrusted data"`
+	Message      string         `json:"message" jsonschema:"the event message, rendered from its template and data, email addresses and sensitive values masked; withheld for the output lines of forms; untrusted text"`
+	Data         map[string]any `json:"data,omitempty" jsonschema:"the values of the message, email addresses and sensitive values masked; left out when larger than 4 KiB; untrusted data"`
 	NodeID       string         `json:"node_id,omitempty" jsonschema:"the collector ID of the node the event is about"`
 	Nodename     string         `json:"nodename,omitempty" jsonschema:"the name of that node, when the collector still knows it"`
 	SvcID        string         `json:"svc_id,omitempty" jsonschema:"the collector ID of the service the event is about"`
@@ -145,7 +145,7 @@ func (s *Service) ListCollectorEvents(ctx context.Context, options ListCollector
 	result.Total, result.Count = *response.Meta.Total, len(response.Data)
 	result.Events = make([]CollectorEvent, 0, len(response.Data))
 	for _, row := range response.Data {
-		message, data := renderCollectorEvent(row.LogFmt, row.LogDict)
+		message, data := collectorEventText(row)
 		result.Events = append(result.Events, CollectorEvent{
 			ID: row.ID, Date: row.LogDate, Action: row.LogAction, Level: row.LogLevel, User: personName(row.LogUser), Impersonator: personName(row.LogImpersonator),
 			Message: message, Data: data, NodeID: row.NodeID, Nodename: nodenames[row.NodeID], SvcID: row.SvcID, Svcname: svcnames[row.SvcID],
@@ -203,6 +203,39 @@ func (s *Service) namesByID(ctx context.Context, path string, idProp string, nam
 		}
 	}
 	return names, nil
+}
+
+// formOutputEvent is the action under which the collector logs each line of
+// the outputs of a submitted form.
+const formOutputEvent = "form.submit"
+
+// collectorEventText renders an event masked as the other read tools mask
+// what users wrote: the sensitive keys and the email addresses of its data,
+// then the email addresses of its template, which may hold raw text. The
+// output lines of forms are withheld: they may echo submitted secrets that
+// only get_form_result can mask, by value. Data larger than a message is
+// left out.
+func collectorEventText(row collectorLogRow) (string, map[string]any) {
+	if row.LogAction == formOutputEvent {
+		return "form output line withheld: read it with get_form_result", nil
+	}
+	fields := ""
+	if row.LogDict != "" {
+		var data any
+		if err := json.Unmarshal([]byte(row.LogDict), &data); err == nil {
+			masked, _ := maskValue(data)
+			if encoded, err := json.Marshal(masked); err == nil {
+				fields = string(encoded)
+			}
+		}
+	}
+	// The template is masked before rendering, so that the cut of the
+	// message never splits an address the mask would then miss.
+	message, data := renderCollectorEvent(maskEmails(row.LogFmt), fields)
+	if encoded, err := json.Marshal(data); err != nil || len(encoded) > maxCollectorEventMessageBytes {
+		data = nil
+	}
+	return message, data
 }
 
 // renderCollectorEvent fills the %(name)s and %(name)d fields of a template

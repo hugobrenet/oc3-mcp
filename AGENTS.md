@@ -85,9 +85,12 @@ binding; startup must not contact the collector.
   audience is the collector and not the MCP, reused from the in-memory cache
   of `mcpauth` for at most one minute and forgotten on HTTP 401 or 403;
   without exchange configuration, tool calls are refused.
-- The tool calls of each HTTPS identity are limited (`mcpauth.CallLimiter`,
-  `limitToolCalls`), inside the audit and before any exchange. Network-level
-  limits belong to the infrastructure in front of the MCP.
+- The tool calls of each HTTPS identity, and its reads of the resources and
+  the skills, are limited (`mcpauth.CallLimiter`, `limitToolCalls`), inside
+  the audit and before any exchange. Network-level limits belong to the
+  infrastructure in front of the MCP.
+- A call ends with its HTTP request (`cancelWithRequest`): a client that goes
+  away does not leave a wait or a change of a selection running.
 - The token, delegated or exchanged, lives in the request context until it
   expires. The transport of
   `internal/client` adds it, for the collector origin only, with no proxy and

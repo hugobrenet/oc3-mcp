@@ -82,8 +82,15 @@ actions starting with it, through a `log_action:~^service\.` filter.
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
 
 `message` is rendered by the MCP from the template and the data of the event,
-as the collector renders its log, and cut to 4 KiB; `data` holds the values.
-Both are untrusted text. `impersonator` is set when a user acted as another
+as the collector renders its log, and cut to 4 KiB; `data` holds the values,
+left out when larger than 4 KiB. Both are masked by the shared rules of
+`internal/core/mask.go`, as the other read tools mask what users wrote: the
+values of the keys that may name a secret, and the email addresses, which the
+collector logs for the administration of users and groups. The masking is
+partial, and both stay untrusted text. The output lines of submitted forms,
+which the collector logs under `form.submit`, are withheld: they may echo
+submitted secrets that only `get_form_result` can mask, by value, so their
+`message` points to it and their `data` is left out. `impersonator` is set when a user acted as another
 one. `nodename` and `svcname` are empty for a node or service the collector no
 longer knows. The internal notification fields of the log are left out.
 `date` is in collector local time without a zone.

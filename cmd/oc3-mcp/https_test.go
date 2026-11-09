@@ -2,16 +2,19 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/opensvc/oc3-mcp/internal/config"
 	"github.com/opensvc/oc3-mcp/internal/testutil"
@@ -276,5 +279,31 @@ func TestHTTPSLimitsTheToolCallsOfAnIdentity(t *testing.T) {
 	}
 	if !strings.Contains(audit.String(), `outcome=tool_error`) || !strings.Contains(audit.String(), `exchange=none`) {
 		t.Fatalf("limited call not audited:\n%s", audit.String())
+	}
+}
+
+// TestHTTPSLimitsTheContentReadsOfAnIdentity checks that the reads of the
+// resources and the skills, which reach the collector too, count against the
+// limits of the identity, one by one and in a JSON-RPC batch.
+func TestHTTPSLimitsTheContentReadsOfAnIdentity(t *testing.T) {
+	h := newHTTPSTest(t, true, func(cfg *config.Config) { cfg.MaxCallsPerMinute, cfg.MaxConcurrentCalls = 1, 1 })
+	session := h.connect(t, h.incoming)
+	if _, err := session.ListResources(t.Context(), nil); err != nil {
+		t.Fatalf("first read refused: %v", err)
+	}
+	_, err := session.ListResources(t.Context(), nil)
+	var refused *jsonrpc.Error
+	if !errors.As(err, &refused) || refused.Code != codeCallLimited || !strings.Contains(refused.Message, "retry in") {
+		t.Fatalf("read beyond the rate not refused as a limit: %v", err)
+	}
+	batch := make([]string, 20)
+	for i := range batch {
+		batch[i] = `{"jsonrpc":"2.0","id":` + strconv.Itoa(i+1) + `,"method":"resources/list","params":{}}`
+	}
+	if status, body := postMCP(t.Context(), h.server.URL+"/mcp", h.incoming, "["+strings.Join(batch, ",")+"]"); status != http.StatusOK && status != http.StatusBadRequest {
+		t.Fatalf("batch: status %d %s", status, body)
+	}
+	if h.collector.Load() != 1 {
+		t.Fatalf("limited reads reached the collector: %d collector requests", h.collector.Load())
 	}
 }
