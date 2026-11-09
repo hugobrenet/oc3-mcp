@@ -25,6 +25,12 @@ func auditToolCalls(next mcp.MethodHandler) mcp.MethodHandler {
 			return next(ctx, method, request)
 		}
 		identity, _, _ := mcpauth.OAuthFromContext(ctx)
+		// On the Unix socket, the Delegator verified the caller's token
+		// before the call, which never runs with a refused token; the
+		// collector receives that same token. It is read when the call is
+		// admitted: the token may expire, or the call be cancelled, before
+		// the call ends, and the line must still name its caller.
+		delegation, _, delegated := auth.DelegationFromContext(ctx)
 		ctx, trace := mcpauth.WithCallTrace(ctx)
 		start := time.Now()
 		result, err := next(ctx, method, request)
@@ -34,10 +40,7 @@ func auditToolCalls(next mcp.MethodHandler) mcp.MethodHandler {
 		if exchange == "" {
 			exchange = "none"
 		}
-		// On the Unix socket, the Delegator verified the caller's token
-		// before the call, which never runs with a refused token; the
-		// collector receives that same token.
-		if delegation, _, ok := auth.DelegationFromContext(ctx); ok {
+		if delegated {
 			issuer, subject = delegation.Issuer, delegation.Subject
 			exchange, collectorSubject = "delegated", delegation.Subject
 		}

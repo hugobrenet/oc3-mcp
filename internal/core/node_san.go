@@ -11,6 +11,10 @@ const (
 	maxSanDevices = 500
 	maxSanLinks   = 2000
 	maxSanPaths   = 500
+	// maxSanHops bounds the hops kept over all the paths of a result: each
+	// path holds its own hops, so that paths times depth, not the size of
+	// the collector answer, would otherwise make the size of the result.
+	maxSanHops = 10000
 )
 
 type NodeSanTopology struct {
@@ -21,7 +25,7 @@ type NodeSanTopology struct {
 	Arrays     []SanArrayPath `json:"arrays" jsonschema:"for each storage array the node reaches, the fabrics, adapters, target ports and paths leading to it"`
 	Devices    []SanDevice    `json:"devices" jsonschema:"the devices of the wiring: the node, the switches and the storage arrays"`
 	Links      []SanLink      `json:"links" jsonschema:"the cables of the wiring, from the node toward the storage arrays"`
-	Truncated  bool           `json:"truncated" jsonschema:"whether paths were left out after 500"`
+	Truncated  bool           `json:"truncated" jsonschema:"whether paths were left out after 500 paths or 10000 hops in total"`
 }
 
 type SanHBA struct {
@@ -142,13 +146,16 @@ func (s *Service) GetNodeSanTopology(ctx context.Context, node string) (NodeSanT
 		return id
 	}
 	reach := newArrayReach()
-	paths := 0
+	paths, hopsKept := 0, 0
 	for _, port := range serverPorts {
 		hba := SanHBA{PortWWN: port, Paths: []SanPath{}}
 		var walk func(link SanLink, fabric string, hops []SanHop, visited map[string]bool)
 		walk = func(link SanLink, fabric string, hops []SanHop, visited map[string]bool) {
-			if paths >= maxSanPaths {
+			if paths >= maxSanPaths || hopsKept+len(hops)+1 > maxSanHops {
 				result.Truncated = true
+				return
+			}
+			if ctx.Err() != nil {
 				return
 			}
 			hops = append(hops[:len(hops):len(hops)], SanHop{
@@ -160,6 +167,7 @@ func (s *Service) GetNodeSanTopology(ctx context.Context, node string) (NodeSanT
 				hba.Paths = append(hba.Paths, path)
 				reach.add(path.Array, fabric, port, link.ToPort)
 				paths++
+				hopsKept += len(hops)
 				return
 			}
 			if visited[link.To] {
@@ -177,6 +185,9 @@ func (s *Service) GetNodeSanTopology(ctx context.Context, node string) (NodeSanT
 			}
 		}
 		result.HBAs = append(result.HBAs, hba)
+	}
+	if err := ctx.Err(); err != nil {
+		return NodeSanTopology{}, fmt.Errorf("get SAN topology of node %s: %w", found.Nodename, err)
 	}
 	result.Arrays = reach.list()
 	result.Provenance = s.newProvenance()

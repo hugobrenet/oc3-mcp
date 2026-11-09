@@ -33,16 +33,28 @@ func exchangeToolCalls(profiles *mcpauth.ExchangeProfiles, profile, audience str
 	}
 }
 
+// codeCallLimited is the JSON-RPC error of a content read refused by the
+// limits of its identity: a server error, not an internal one, so that a
+// client reads a limit to retry after the delay its message gives, not a
+// failure of the server. om3-mcp answers with the same code.
+const codeCallLimited = -32029
+
 // limitToolCalls refuses the tool calls of an identity beyond its limits,
 // before any token exchange or collector request. The audit records them.
+// The reads of the resources and the skills reach the collector too: they
+// count against the same limits, so that no method, alone or in a batch,
+// sends the collector more than the limits of its identity allow.
 func limitToolCalls(limiter *mcpauth.CallLimiter) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, request mcp.Request) (mcp.Result, error) {
-			if method != "tools/call" {
+			if method != "tools/call" && !slices.Contains(content.Methods, method) {
 				return next(ctx, method, request)
 			}
 			release, err := limiter.Acquire(ctx)
 			if err != nil {
+				if method != "tools/call" {
+					return nil, &jsonrpc.Error{Code: codeCallLimited, Message: err.Error()}
+				}
 				return toolError(err.Error()), nil
 			}
 			defer release()

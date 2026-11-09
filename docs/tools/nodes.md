@@ -276,7 +276,7 @@ paths, and sums them per array.
 | `arrays[]` | Each storage array reached: `array`, `fabrics`, `hbas`, `target_ports`, `paths` |
 | `devices[]` | The devices of the wiring: `id`, `kind` (`server`, `switch` or `array`), `name`, `fabric`, `ports` |
 | `links[]` | The cables of the wiring: `from`, `from_port`, `to`, `to_port`, `speeds_gbps` |
-| `truncated` | Whether paths were left out after 500 |
+| `truncated` | Whether paths were left out after 500 paths, or after 10000 hops over all the paths |
 
 A hop is one cable, from the adapter port to a switch, between switches, or
 from a switch to an array port: `from`, `from_port`, `to`, `to_port` and

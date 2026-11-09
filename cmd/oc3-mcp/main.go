@@ -200,8 +200,9 @@ func newHandler(collector *client.Client, delegator *auth.Delegator, actions boo
 }
 
 // newToolsHandler serves the collector tools as stateless Streamable HTTP,
-// with the action tools when actions is set. The audit line wraps route,
-// which prepares the credential of each tool call.
+// with the action tools when actions is set. The audit line wraps the
+// cancellation of each call with its HTTP request, then route, which
+// prepares the credential of each tool call.
 func newToolsHandler(collector *client.Client, actions bool, route ...mcp.Middleware) (http.Handler, error) {
 	service := core.New(collector)
 	server := mcp.NewServer(&mcp.Implementation{Name: serverName, Version: serverVersion}, &mcp.ServerOptions{
@@ -221,7 +222,9 @@ func newToolsHandler(collector *client.Client, actions bool, route ...mcp.Middle
 	if err != nil {
 		return nil, err
 	}
-	server.AddReceivingMiddleware(append([]mcp.Middleware{auditToolCalls}, route...)...)
+	// auditToolCalls stays outermost: it reads the caller from a context
+	// that cancelWithRequest has not cancelled yet.
+	server.AddReceivingMiddleware(append([]mcp.Middleware{auditToolCalls, cancelWithRequest}, route...)...)
 	for _, register := range []func(*tools.Registrar, *core.Service) error{
 		tools.RegisterClusterTools, tools.RegisterNodeTools, tools.RegisterServiceTools, tools.RegisterServiceActionTools, tools.RegisterAlertTools, tools.RegisterCheckTools, tools.RegisterPackageTools, tools.RegisterCollectorEventTools, tools.RegisterComplianceTools, tools.RegisterComplianceModulesetTools, tools.RegisterComplianceRulesetTools, tools.RegisterFiltersetTools, tools.RegisterStorageTools, tools.RegisterNodeActionQueueTools, tools.RegisterIPTools, tools.RegisterTagTools, tools.RegisterAppTools, tools.RegisterFindTools, tools.RegisterRequestTools, tools.RegisterOrchestrationTools, tools.RegisterFormTools, tools.RegisterSysreportTools, tools.RegisterGroupTools,
 	} {
@@ -236,7 +239,7 @@ func newToolsHandler(collector *client.Client, actions bool, route ...mcp.Middle
 	}
 	// Cross-origin browser requests are refused with 403, as the MCP SDK
 	// recommends, by the protection of net/http around its handler.
-	return http.NewCrossOriginProtection().Handler(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
-		Stateless: true, JSONResponse: true,
-	})), nil
+	return withRequestContext(http.NewCrossOriginProtection().Handler(mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{
+		Stateless: true, JSONResponse: true, PropagateRequestCancellation: true,
+	}))), nil
 }

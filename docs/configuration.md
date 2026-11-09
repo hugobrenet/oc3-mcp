@@ -69,12 +69,18 @@ limited: `OPENSVC_MCP_MAX_CONCURRENT_CALLS` calls in progress and
 `OPENSVC_MCP_MAX_CALLS_PER_MINUTE` calls per minute, with a burst of 30 calls
 for an idle identity. A call beyond a limit fails at once, before any token
 exchange or collector request, with a tool error that tells the client when to retry;
-the audit line records it as `outcome=tool_error`. The limits protect the SSO
+the audit line records it as `outcome=tool_error`. The reads of the resources
+and the skills (`resources/list`, `resources/read`, `skills/list`,
+`skills/get`) reach the collector too and count against the same limits, alone
+or in a JSON-RPC batch; one beyond a limit fails with the JSON-RPC server
+error `-32029`, whose message tells when to retry. The limits protect the SSO
 and the collector from an authenticated client that loops, such as an agent repeating
 a call. They are not a network protection: limits per address, before
 authentication or for all clients belong to the reverse proxy, gateway or
 firewall in front of the MCP, where every request otherwise carries the address
-of the proxy. The Unix socket is not limited.
+of the proxy. The Unix socket is not limited. Whatever the listener, the
+process opens at most 64 connections to the collector at once; a request beyond
+them waits for one within its own deadline.
 
 The limits are per identity: more users do not share them, but an identity
 shared by several people or an automation does. Questions over a large fleet
