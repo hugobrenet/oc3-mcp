@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/opensvc/oc3-mcp/internal/auth"
+	"github.com/opensvc/oc3-mcp/internal/requestid"
 	"github.com/opensvc/osvc-auth-mcp/mcpauth"
 )
 
@@ -93,6 +94,9 @@ func NewHTTPClient(rawBaseURL string, caFile string) (*http.Client, error) {
 	}, nil
 }
 
+// originHeader tells the collector the client a request comes through.
+const originHeader = "X-OpenSVC-Origin"
+
 // bearerTransport sends the collector token of the caller: its delegated token
 // unchanged, or the token exchanged for it. The MCP holds no collector
 // account: a request without a caller is never sent.
@@ -111,6 +115,16 @@ func (t bearerTransport) RoundTrip(request *http.Request) (*http.Response, error
 	}
 	clone := request.Clone(request.Context())
 	clone.Header.Set("Authorization", "Bearer "+token)
+	// The collector writes them on the audit entries of the request: an
+	// action made through the assistant says so, and its request ID joins
+	// the audit lines of the agent and of the MCP.
+	if origin := auth.CollectorOrigin(request.Context()); origin != "" {
+		clone.Header.Set(originHeader, origin)
+	}
+	clone.Header.Del(requestid.Header)
+	if id := requestid.FromContext(request.Context()); id != "" {
+		clone.Header.Set(requestid.Header, id)
+	}
 	response, err := t.base.RoundTrip(clone)
 	if err == nil && (response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden) {
 		// A refused exchanged token is not reused: the next tool call

@@ -183,6 +183,27 @@ func CollectorToken(ctx context.Context) (string, bool) {
 	return token, ok
 }
 
+// The origins the collector records for the requests of the MCP
+// (X-OpenSVC-Origin): the AI agent, which delegates the token of its user on
+// the Unix socket, and the external clients of the HTTPS listener.
+const (
+	OriginAssistant = "assistant"
+	OriginMCP       = "mcp"
+)
+
+// CollectorOrigin names the client a request to the collector comes through,
+// by where its token comes from, as CollectorToken reads it: empty without a
+// token of the caller.
+func CollectorOrigin(ctx context.Context) string {
+	if _, _, ok := mcpauth.ExchangedFromContext(ctx); ok {
+		return OriginMCP
+	}
+	if _, _, ok := DelegationFromContext(ctx); ok {
+		return OriginAssistant
+	}
+	return ""
+}
+
 // verify proves the token with the OpenID provider of the collector:
 // signature by a key of its JWKS, issuer, audience (its client ID) and
 // lifetime. A refused token never reaches the collector.

@@ -40,6 +40,8 @@ type httpsTest struct {
 	refuse    atomic.Bool
 	// asked is the path and the query of the last collector request.
 	asked atomic.Pointer[string]
+	// origin is the X-OpenSVC-Origin of the last collector request.
+	origin atomic.Pointer[string]
 }
 
 func newHTTPSTest(t *testing.T, exchange bool, configure ...func(*config.Config)) *httpsTest {
@@ -72,6 +74,8 @@ func newHTTPSTest(t *testing.T, exchange bool, configure ...func(*config.Config)
 		h.collector.Add(1)
 		asked := r.URL.Path + "?" + r.URL.RawQuery
 		h.asked.Store(&asked)
+		origin := r.Header.Get("X-OpenSVC-Origin")
+		h.origin.Store(&origin)
 		if h.refuse.Load() {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
@@ -166,6 +170,10 @@ func TestHTTPSToolCallsReachTheCollectorWithTheExchangedToken(t *testing.T) {
 	}
 	if h.exchanges.Load() != 1 || h.collector.Load() == 0 {
 		t.Fatalf("exchanges=%d collector requests=%d", h.exchanges.Load(), h.collector.Load())
+	}
+	// An external client of the HTTPS listener: the collector records it as such.
+	if origin := h.origin.Load(); origin == nil || *origin != "mcp" {
+		t.Fatalf("collector request origin = %v, want mcp", origin)
 	}
 	line := strings.TrimSpace(audit.String())
 	want := `tool=list_clusters issuer=` + h.provider.Issuer + ` subject=alice client_id=external-client exchange=ok collector_subject=alice-collector outcome=ok`

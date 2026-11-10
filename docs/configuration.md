@@ -248,6 +248,28 @@ Tokens, raw arguments and tool results are never logged. Values are quoted by
 the structured logger. Retention and shipping of these logs belong to the
 deployment.
 
+### In the collector log
+
+Every request to the collector tells it where it comes from, and the
+collector writes it on the entries of its own log (`log_origin`,
+`log_request_id`), which `list_collector_events` returns as `origin` and
+`request_id`:
+
+| Header | Value |
+|---|---|
+| `X-OpenSVC-Origin` | `assistant` on the socket, where the AI agent delegates the token of its user; `mcp` on HTTPS, for the external clients |
+| `X-Request-ID` | On the socket, the request ID of the AI agent, as the audit lines above carry it; absent otherwise |
+
+An action made through the assistant can so be told from one made in the
+web interface, and joined to the audit lines of the agent and of the MCP.
+The collector records what the MCP declares: it tells how an action was
+made, never who made it, which the token decides.
+
+Deploy the collector first. The MCP needs a collector with the migration
+`0034_log_origin`, which `oc3 db status` lists as applied: a collector
+without these columns refuses the properties `list_collector_events` asks,
+and the tool fails.
+
 ## Collector connection
 
 Requests use TLS 1.2 or later, no proxy and no redirect, with a 30-second

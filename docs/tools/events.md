@@ -65,6 +65,7 @@ actions starting with it, through a `log_action:~^service\.` filter.
 | `service` | Optional exact service name or service ID |
 | `action` | Optional exact action, such as `service.action` or `availability.ack`, or with a trailing dot a whole family, such as `service.` or `node.` |
 | `level` | Optional `info`, `warning` or `error` |
+| `origin` | Optional client the actions were made through: `assistant` or `mcp` |
 | `user` | Optional exact user: a user account, or `scheduler` for the collector itself |
 | `since` | Optional earliest date, in collector local time: `YYYY-MM-DD`, `YYYY-MM-DD HH:MM` or `YYYY-MM-DD HH:MM:SS` |
 | `limit` | Optional page size, 1 to 200, default 50 |
@@ -78,7 +79,7 @@ actions starting with it, through a `log_action:~^service\.` filter.
 | `node`, `service` | The node or service the filters resolved to |
 | `total` | Events matching the filters, as the collector counts them |
 | `count`, `truncated` | Events in this page, and whether more remain |
-| `events[]` | `id`, `date`, `action`, `level`, `user`, `impersonator`, `message`, `data`, `node_id`, `nodename`, `svc_id`, `svcname` |
+| `events[]` | `id`, `date`, `action`, `level`, `user`, `impersonator`, `origin`, `request_id`, `message`, `data`, `node_id`, `nodename`, `svc_id`, `svcname` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
 
 `message` is rendered by the MCP from the template and the data of the event,
@@ -91,6 +92,9 @@ partial, and both stay untrusted text. The output lines of submitted forms,
 which the collector logs under `form.submit`, are withheld: they may echo
 submitted secrets that only `get_form_result` can mask, by value, so their
 `message` points to it and their `data` is left out. `impersonator` is set when a user acted as another
-one. `nodename` and `svcname` are empty for a node or service the collector no
+one. `origin` is set when the action was made through the AI assistant
+(`assistant`) or another client of this MCP (`mcp`), as the MCP declared it
+to the collector, with the `request_id` of the agent (see
+[the configuration](../configuration.md#in-the-collector-log)). `nodename` and `svcname` are empty for a node or service the collector no
 longer knows. The internal notification fields of the log are left out.
 `date` is in collector local time without a zone.
