@@ -426,6 +426,9 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 	if err := registerFormSubmitTools(registrar, service); err != nil {
 		return err
 	}
+	if err := registerAIContentWriteTools(registrar, service); err != nil {
+		return err
+	}
 	if err := registerFormWriteTools(registrar, service); err != nil {
 		return err
 	}

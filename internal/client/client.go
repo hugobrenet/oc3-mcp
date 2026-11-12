@@ -195,6 +195,11 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return newAPIError(method, path, response)
 	}
+	// A route that answers nothing, such as the deletion of an AI resource,
+	// answers 204 without a body: a caller expecting nothing takes it.
+	if response.StatusCode == http.StatusNoContent && output == nil {
+		return nil
+	}
 	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
 		return fmt.Errorf("OpenSVC collector %s returned unexpected content type %q", path, response.Header.Get("Content-Type"))
