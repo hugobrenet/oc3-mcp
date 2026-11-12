@@ -30,6 +30,16 @@ var coreTools = []string{"count_nodes", "list_nodes", "get_node", "count_service
 // description does not hold, such as synonyms: the model does not see them,
 // they only rank the tool in a search.
 var toolKeywords = map[string][]string{
+	"create_ai_resource":           {"new ai resource", "write resource", "add documentation", "add convention", "assistant knowledge", "reference text"},
+	"create_ai_skill":              {"new skill", "write skill", "save procedure", "capture runbook", "save as skill", "assistant procedure"},
+	"delete_ai_resource":           {"remove ai resource", "delete resource", "drop documentation"},
+	"delete_ai_skill":              {"remove skill", "delete skill", "drop procedure"},
+	"get_ai_resource":              {"read resource", "resource body", "ai resource", "before editing resource"},
+	"get_ai_skill":                 {"read skill", "show skill.md", "skill body", "before editing skill"},
+	"list_ai_resources":            {"ai resources", "assistant documentation", "which documentation", "reference texts", "unused resources", "resource reads"},
+	"list_ai_skills":               {"ai skills", "assistant procedures", "unused skills", "never loaded", "skill reads", "skills list"},
+	"update_ai_resource":           {"edit resource", "edit resource text", "change resource", "fix description", "update documentation", "publish resource"},
+	"update_ai_skill":              {"edit skill", "change skill", "fix skill", "update procedure", "publish skill"},
 	"abort_service_action":         {"abort orchestration", "cancel orchestration", "stuck service action"},
 	"ack_service_action":           {"acknowledge", "ack failure", "ack error", "clear action errors", "acknowledge failed action"},
 	"add_filterset_criterion":      {"add filter", "extend selection", "narrow selection", "filterset criteria", "change filter logic"},

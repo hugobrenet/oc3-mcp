@@ -189,3 +189,18 @@ func TestPutJSONWithinBoundsTheRequestByItsTimeout(t *testing.T) {
 		t.Fatalf("output = %v, %v", output, err)
 	}
 }
+
+// A 204 without a body is a success for a caller expecting nothing, and an
+// unexpected answer for one expecting JSON.
+func TestNoContentAnswers(t *testing.T) {
+	collector := testutil.NewCollector(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	client := newTestClient(t, collector)
+	if err := client.DeleteJSON(callerContext(t), "/ai/resources/naming", nil, nil); err != nil {
+		t.Fatalf("delete answered 204: %v", err)
+	}
+	if err := client.GetJSON(callerContext(t), "/nodes", nil, &struct{}{}); err == nil {
+		t.Fatal("a 204 to a read expecting JSON was taken")
+	}
+}
