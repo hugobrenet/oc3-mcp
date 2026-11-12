@@ -65,9 +65,6 @@ func (s *Service) ListTags(ctx context.Context, options ListTagsOptions) (TagLis
 	if options.Node != "" && options.Service != "" {
 		return TagList{}, fmt.Errorf("pass node or service, not both")
 	}
-	if options.Name != "" && (options.Node != "" || options.Service != "") {
-		return TagList{}, fmt.Errorf("name filters the tags of the collector: pass it without node or service")
-	}
 	if err := validateFilterValue("name", options.Name); err != nil {
 		return TagList{}, err
 	}
@@ -96,10 +93,16 @@ func (s *Service) ListTags(ctx context.Context, options ListTagsOptions) (TagLis
 	case options.Name != "":
 		filters = append(filters, filterContains("tag_name", options.Name))
 	}
-	fingerprint := listFingerprint(url.Values{"path": {path}, "filter": filters})
+	fingerprint := listFingerprint(url.Values{"path": {path}, "filter": filters, "name": {options.Name}})
 	offset, err := decodeListCursor(options.Cursor, fingerprint)
 	if err != nil {
 		return TagList{}, err
+	}
+	// The collector filters the tags of a node or a service by nothing: their
+	// name is matched here, among all of them, as the collector matches the
+	// name of its tags. "Is this tag on that node" is then one call.
+	if options.Name != "" && path != "/tags" {
+		return s.matchAttachedTags(ctx, result, path, props, options.Name, limit, offset, fingerprint)
 	}
 
 	var response collectorList[collectorTag]
@@ -257,4 +260,51 @@ func (s *Service) memberPath(ctx context.Context, kind, tag, filterset, ruleset,
 		return "/compliance/modulesets/" + strconv.Itoa(found.ID) + "/" + kind, membership{Moduleset: &found}, nil
 	}
 	return "/" + kind, membership{}, nil
+}
+
+// maxAttachedTagScan bounds the tags of a node or a service read to match a
+// name: far more than any holds.
+const maxAttachedTagScan = 5 * maxListTagsLimit
+
+// matchAttachedTags lists the tags of a node or a service whose name holds
+// name, case-insensitively, one page of them.
+func (s *Service) matchAttachedTags(ctx context.Context, result TagList, path string, props []string, name string, limit, offset int, fingerprint string) (TagList, error) {
+	var matched []collectorTag
+	needle := strings.ToLower(name)
+	for read := 0; read < maxAttachedTagScan; {
+		var response collectorList[collectorTag]
+		if err := s.client.GetJSON(ctx, path, pageQuery(props, "tag_name,tag_id", nil, maxListTagsLimit, read), &response); err != nil {
+			return TagList{}, fmt.Errorf("list tags: %w", err)
+		}
+		if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > maxListTagsLimit {
+			return TagList{}, fmt.Errorf("list tags: unexpected collector response")
+		}
+		for _, row := range response.Data {
+			if strings.Contains(strings.ToLower(row.TagName), needle) {
+				matched = append(matched, row)
+			}
+		}
+		read += len(response.Data)
+		if len(response.Data) == 0 || read >= *response.Meta.Total {
+			break
+		}
+	}
+	result.Provenance = s.newProvenance()
+	result.Total = len(matched)
+	page := matched[min(offset, len(matched)):min(offset+limit, len(matched))]
+	result.Count = len(page)
+	result.Tags = make([]Tag, 0, len(page))
+	for _, row := range page {
+		data, dataCut := tagText(row.TagData)
+		attach, attachCut := tagText(row.TagAttachData)
+		result.Tags = append(result.Tags, Tag{
+			TagID: row.TagID, Name: row.TagName, Created: row.TagCreated, Exclude: row.TagExclude,
+			Data: data, AttachData: attach, DataTruncated: dataCut || attachCut,
+		})
+	}
+	if next := offset + len(page); len(page) > 0 && next < result.Total {
+		result.NextCursor = encodeListCursor(next, fingerprint)
+		result.Truncated = true
+	}
+	return result, nil
 }

@@ -54,10 +54,43 @@ func TestListTagsOfANodeOrAService(t *testing.T) {
 	}
 }
 
+// TestListTagsOfANodeByName tells whether a tag is attached to a node in one
+// call: the MCP reads the tags of the node, which the collector filters by
+// nothing, and keeps those whose name holds the text, case-insensitively.
+func TestListTagsOfANodeByName(t *testing.T) {
+	collector := &fakeCollector{bodies: map[string]string{
+		"/nodes/dev2n1": `{"data":[{"node_id":"n-1","nodename":"dev2n1","cluster_id":"c1"}]}`,
+		"/nodes/n-1/tags": `{"data":[{"tag_id":"t-1","tag_name":"pci"},{"tag_id":"t-2","tag_name":"Verified"},
+			{"tag_id":"t-3","tag_name":"verified-2026"}],"meta":{"total":3}}`,
+	}}
+	tags, err := newTestService(collector).ListTags(t.Context(), ListTagsOptions{Node: "dev2n1", Name: "verified"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request := collector.requests[1]; request.path != "/nodes/n-1/tags" || len(request.query["filter"]) != 0 {
+		t.Fatalf("request = %+v", request)
+	}
+	if tags.Total != 2 || tags.Count != 2 || tags.Tags[0].Name != "Verified" || tags.Tags[1].Name != "verified-2026" || tags.Truncated {
+		t.Fatalf("tags = %+v", tags)
+	}
+	tags, err = newTestService(collector).ListTags(t.Context(), ListTagsOptions{Node: "dev2n1", Name: "absent"})
+	if err != nil || tags.Total != 0 || len(tags.Tags) != 0 {
+		t.Fatalf("absent tag = %+v, %v", tags, err)
+	}
+	page, err := newTestService(collector).ListTags(t.Context(), ListTagsOptions{Node: "dev2n1", Name: "verified", Limit: 1})
+	if err != nil || page.Count != 1 || !page.Truncated || page.NextCursor == "" {
+		t.Fatalf("first page = %+v, %v", page, err)
+	}
+	next, err := newTestService(collector).ListTags(t.Context(), ListTagsOptions{Node: "dev2n1", Name: "verified", Limit: 1, Cursor: page.NextCursor})
+	if err != nil || next.Count != 1 || next.Tags[0].Name != "verified-2026" || next.Truncated {
+		t.Fatalf("second page = %+v, %v", next, err)
+	}
+}
+
 func TestListTagsRejectsInvalidInputs(t *testing.T) {
 	for _, options := range []ListTagsOptions{
 		{Node: "dev2n1", Service: "foo"},
-		{Node: "dev2n1", Name: "pci"},
+		{Node: "dev2n1", Name: " padded"},
 		{Name: " padded"},
 		{Limit: 201},
 		{Cursor: "garbage"},

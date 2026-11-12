@@ -10,7 +10,7 @@ import (
 type ListTagsInput struct {
 	Node    string `json:"node,omitempty" jsonschema:"optional exact node name or node ID whose tags to list"`
 	Service string `json:"service,omitempty" jsonschema:"optional exact service name, such as ns/svc/name, or service ID whose tags to list"`
-	Name    string `json:"name,omitempty" jsonschema:"optional text the tag name contains, case-insensitive; without node or service only"`
+	Name    string `json:"name,omitempty" jsonschema:"optional text the tag name contains, case-insensitive; with node or service, among the tags of that node or service, such as to tell whether a tag is attached to it"`
 	Limit   int    `json:"limit,omitempty" jsonschema:"optional page size between 1 and 200; defaults to 50"`
 	Cursor  string `json:"cursor,omitempty" jsonschema:"optional next_cursor returned by a previous call with the same filters"`
 }
