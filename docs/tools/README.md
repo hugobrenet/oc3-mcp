@@ -27,6 +27,7 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
 | Sysreport | `list_node_sysreport_changes`, `get_node_sysreport_diff`, `list_node_sysreport_files`, `get_node_sysreport_file` | [Sysreport tools](sysreport.md) |
 | Filtersets | `list_filtersets`, `get_filterset`, `create_filterset`, `rename_filterset`, `add_filterset_criterion`, `remove_filterset_criterion`, `delete_filterset` | [Filterset tools](filtersets.md) |
 | Groups and users | `list_groups`, `get_group`, `list_users` | [Group and user tools](groups.md) |
+| AI resources and skills | `list_ai_resources`, `get_ai_resource`, `create_ai_resource`, `update_ai_resource`, `delete_ai_resource`, `list_ai_skills`, `get_ai_skill`, `create_ai_skill`, `update_ai_skill`, `delete_ai_skill` | [AI resource and skill tools](ai-content.md) |
 | Storage | `list_storage_arrays`, `list_storage_quotas`, `list_san_switch_ports` | [Storage tools](storage.md) |
 | Node actions | `create_node`, `update_node`, `delete_node`, `attach_node_tag`, `detach_node_tag`, `attach_node_ruleset`, `detach_node_ruleset`, `attach_node_moduleset`, `detach_node_moduleset`, `queue_node_action`, `freeze_node`, `unfreeze_node`, `drain_node`, `fix_node_compliance`, `cancel_node_action` | [Node action tools](node-actions.md) |
 | Node action queue | `list_node_actions` | [Node action tools](node-actions.md#list_node_actions) |

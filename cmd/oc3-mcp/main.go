@@ -226,7 +226,7 @@ func newToolsHandler(collector *client.Client, actions bool, route ...mcp.Middle
 	// that cancelWithRequest has not cancelled yet.
 	server.AddReceivingMiddleware(append([]mcp.Middleware{auditToolCalls, cancelWithRequest}, route...)...)
 	for _, register := range []func(*tools.Registrar, *core.Service) error{
-		tools.RegisterClusterTools, tools.RegisterNodeTools, tools.RegisterServiceTools, tools.RegisterServiceActionTools, tools.RegisterAlertTools, tools.RegisterCheckTools, tools.RegisterPackageTools, tools.RegisterCollectorEventTools, tools.RegisterComplianceTools, tools.RegisterComplianceModulesetTools, tools.RegisterComplianceRulesetTools, tools.RegisterFiltersetTools, tools.RegisterStorageTools, tools.RegisterNodeActionQueueTools, tools.RegisterIPTools, tools.RegisterTagTools, tools.RegisterAppTools, tools.RegisterFindTools, tools.RegisterRequestTools, tools.RegisterOrchestrationTools, tools.RegisterFormTools, tools.RegisterSysreportTools, tools.RegisterGroupTools,
+		tools.RegisterClusterTools, tools.RegisterNodeTools, tools.RegisterServiceTools, tools.RegisterServiceActionTools, tools.RegisterAlertTools, tools.RegisterCheckTools, tools.RegisterPackageTools, tools.RegisterCollectorEventTools, tools.RegisterComplianceTools, tools.RegisterComplianceModulesetTools, tools.RegisterComplianceRulesetTools, tools.RegisterFiltersetTools, tools.RegisterStorageTools, tools.RegisterNodeActionQueueTools, tools.RegisterIPTools, tools.RegisterTagTools, tools.RegisterAppTools, tools.RegisterFindTools, tools.RegisterRequestTools, tools.RegisterOrchestrationTools, tools.RegisterFormTools, tools.RegisterSysreportTools, tools.RegisterGroupTools, tools.RegisterAIContentTools,
 	} {
 		if err := register(registrar, service); err != nil {
 			return nil, err

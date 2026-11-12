@@ -91,8 +91,12 @@ func (f *fakeCollector) record(request fakeRequest) {
 	f.requests = append(f.requests, request)
 }
 
-// reply answers a request of the given path as GetJSON does.
+// reply answers a request of the given path as GetJSON does; a caller
+// expecting nothing gets nothing, as from the client.
 func (f *fakeCollector) reply(path string, query url.Values, output any) error {
+	if output == nil {
+		return nil
+	}
 	if f.answer != nil {
 		return json.Unmarshal([]byte(f.answer(path, query)), output)
 	}
