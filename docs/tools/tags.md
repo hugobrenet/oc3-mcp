@@ -56,7 +56,7 @@ GET /api/tags?props=tag_id,tag_name,tag_created,tag_exclude,tag_data&orderby=tag
 |---|---|
 | `node` | Optional exact node name or node ID whose tags to list |
 | `service` | Optional exact service name or service ID whose tags to list |
-| `name` | Optional text the tag name contains, case-insensitive; without `node` or `service` only, since the collector does not filter the tags of a node or a service |
+| `name` | Optional text the tag name contains, case-insensitive. With `node` or `service`, the collector filtering their tags by nothing, the MCP reads all of them (1000 at most) and keeps those whose name holds it: one call tells whether a tag is attached |
 | `limit` | Optional page size, 1 to 200, default 50 |
 | `cursor` | Optional `next_cursor` of a previous call with the same filters |
 
