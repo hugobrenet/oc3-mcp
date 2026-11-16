@@ -68,7 +68,7 @@ type InstanceList struct {
 	Provenance Provenance        `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Service    *ServiceReference `json:"service,omitempty" jsonschema:"the service the service filter resolved to"`
 	Node       *NodeReference    `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
-	Total      int               `json:"total" jsonschema:"the number of instances matching the filters, as the collector counts them"`
+	Total      *int              `json:"total" jsonschema:"the number of instances matching the filters, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int               `json:"count" jsonschema:"the number of instances returned in this page"`
 	Instances  []Instance        `json:"instances" jsonschema:"the instances sorted by node then service, or with frozen the longest frozen first"`
 	NextCursor string            `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -191,12 +191,13 @@ func (s *Service) ListInstances(ctx context.Context, options ListInstancesOption
 	if err := s.client.GetJSON(ctx, "/services_instances", pageQuery(instanceProps, orderby, filters, limit, offset), &response); err != nil {
 		return InstanceList{}, fmt.Errorf("list instances: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return InstanceList{}, fmt.Errorf("list instances: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return InstanceList{}, fmt.Errorf("list instances: %w", err)
 	}
 	result := InstanceList{
 		Provenance: s.newProvenance(), Service: service, Node: node,
-		Total: *response.Meta.Total, Count: len(response.Data), Instances: make([]Instance, 0, len(response.Data)),
+		Total: counted, Count: len(response.Data), Instances: make([]Instance, 0, len(response.Data)),
 	}
 	for _, instance := range response.Data {
 		result.Instances = append(result.Instances, Instance{
@@ -207,7 +208,7 @@ func (s *Service) ListInstances(ctx context.Context, options ListInstancesOption
 			LastReportedAt: instance.MonUpdated,
 		})
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
@@ -230,7 +231,7 @@ type InstanceCount struct {
 	Provenance Provenance        `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Service    *ServiceReference `json:"service,omitempty" jsonschema:"the service the service filter resolved to"`
 	Node       *NodeReference    `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
-	Total      int               `json:"total" jsonschema:"the number of instances matching the filters, as the collector counts them"`
+	Total      *int              `json:"total" jsonschema:"the number of instances matching the filters, as the collector counts them; null when the collector did not count them, for more rows than its count limit or a count that failed: not counted, neither zero nor a size"`
 	GroupBy    string            `json:"group_by,omitempty" jsonschema:"the grouping asked"`
 	Groups     []CountGroup      `json:"groups,omitempty" jsonschema:"with group_by, the most frequent values first, and the number of matching instances with each; frozen groups by frozen and unfrozen"`
 	Distinct   int               `json:"distinct,omitempty" jsonschema:"with group_by, the number of distinct values among the matching instances"`

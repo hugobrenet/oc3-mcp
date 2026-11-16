@@ -54,7 +54,7 @@ GET /api/packages?props=…&orderby=pkg_name,pkg_arch,id&filter=node_id:eq:<node
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `node` | The node whose packages are listed |
-| `total` | Packages matching the filters, as the collector counts them |
+| `total` | Packages matching the filters, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Packages in this page, and whether more remain |
 | `packages[]` | `name`, `version`, `arch`, `type`, `signed_by`, `installed_at`, `last_reported_at` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |

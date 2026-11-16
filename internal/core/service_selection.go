@@ -341,8 +341,13 @@ func (s *Service) selectInstances(ctx context.Context, filters []string, limit i
 		if err := s.client.GetJSON(ctx, "/services_instances", pageQuery(props, "services.svcname,svc_id,node_id", filters, selectionPage, offset), &response); err != nil {
 			return nil, fmt.Errorf("select service instances: %w", err)
 		}
-		if response.Meta.Total == nil || len(response.Data) > selectionPage {
+		if len(response.Data) > selectionPage {
 			return nil, fmt.Errorf("select service instances: unexpected collector response")
+		}
+		// Not counted, the selection is beyond what the collector counts, or its
+		// count failed: refused as too large, nothing changed.
+		if response.Meta.Total == nil {
+			return nil, fmt.Errorf("the filters select more than %d instances, or the collector did not count them: nothing was changed; narrow the filters", maxSelectionInstances)
 		}
 		total := *response.Meta.Total
 		if expected < 0 {
@@ -379,8 +384,13 @@ func (s *Service) selectServices(ctx context.Context, path, prefix string, filte
 		if err := s.client.GetJSON(ctx, path, pageQuery(props, prefix+"svcname,svc_id", filters, selectionPage, offset), &response); err != nil {
 			return nil, fmt.Errorf("select services: %w", err)
 		}
-		if response.Meta.Total == nil || len(response.Data) > selectionPage {
+		if len(response.Data) > selectionPage {
 			return nil, fmt.Errorf("select services: unexpected collector response")
+		}
+		// Not counted, the selection is beyond what the collector counts, or its
+		// count failed: refused as too large, nothing changed.
+		if response.Meta.Total == nil {
+			return nil, fmt.Errorf("the filters select more than %d services, or the collector did not count them: nothing was changed; narrow the filters", maxSelectionFiltered)
 		}
 		total := *response.Meta.Total
 		if expected < 0 {
@@ -441,8 +451,11 @@ func (s *Service) resolveServices(ctx context.Context, names []string) ([]select
 			if err := s.client.GetJSON(ctx, "/services", pageQuery(selectionProps(""), "svcname,svc_id", filter, selectionPage, offset), &response); err != nil {
 				return nil, fmt.Errorf("get services: %w", err)
 			}
-			if response.Meta.Total == nil || *response.Meta.Total > maxSelectionFiltered || len(response.Data) > selectionPage {
+			if len(response.Data) > selectionPage {
 				return nil, fmt.Errorf("get services: unexpected collector response")
+			}
+			if response.Meta.Total == nil || *response.Meta.Total > maxSelectionFiltered {
+				return nil, fmt.Errorf("get services: more than %d services match the names, or the collector did not count them: nothing was changed; name fewer services", maxSelectionFiltered)
 			}
 			for _, row := range response.Data {
 				rows = append(rows, selectedRow(row, ""))

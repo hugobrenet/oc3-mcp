@@ -24,7 +24,7 @@ func TestListComplianceStatusReadsTheLastRuns(t *testing.T) {
 		t.Fatalf("request = %+v", request)
 	}
 	ssh, audit := list.Statuses[0], list.Statuses[1]
-	if list.Total != 3 || list.Count != 2 || !list.Truncated || list.NextCursor == "" ||
+	if deref(list.Total) != 3 || list.Count != 2 || !list.Truncated || list.NextCursor == "" ||
 		ssh.Status != "nok" || ssh.ExitCode != 1 || ssh.Nodename != "dev2n1" || ssh.Svcname != "" || ssh.Log != "PermitRootLogin is yes\nERR: PermitRootLogin should be no" {
 		t.Fatalf("ssh = %+v", ssh)
 	}
@@ -104,7 +104,7 @@ func TestListComplianceRunsReadsTheHistory(t *testing.T) {
 		strings.Join(request.query["filter"], " ") != `node_id:eq:n-1 run_module:~^linux\. run_action:eq:check run_date:gte:2026-09-01 run_date:lte:2026-09-30 23:59:59` {
 		t.Fatalf("request = %+v", request)
 	}
-	if runs.Node == nil || runs.Node.Nodename != "dev2n1" || runs.Total != 7 || runs.Count != 3 || !runs.Truncated || runs.NextCursor == "" ||
+	if runs.Node == nil || runs.Node.Nodename != "dev2n1" || deref(runs.Total) != 7 || runs.Count != 3 || !runs.Truncated || runs.NextCursor == "" ||
 		runs.Runs[0].Action != "fix" || runs.Runs[0].Status != "ok" || runs.Runs[1].Status != "nok" || len(runs.Runs[1].Log) != maxComplianceLogBytes ||
 		runs.Runs[2].Status != "" || runs.Runs[2].ExitCode != -15 {
 		t.Fatalf("runs = %+v", runs)
@@ -168,13 +168,13 @@ func TestCountComplianceRunsGroupsAndNamesTheStatuses(t *testing.T) {
 	for _, group := range count.Groups {
 		values[group.Value] = group.Count
 	}
-	if count.Total != 37 || count.Distinct != 5 || count.Truncated || values["ok"] != 21 || values["nok"] != 10 || values["na"] != 4 || values["3"] != 1 || values["-15"] != 1 {
+	if deref(count.Total) != 37 || count.Distinct != 5 || count.Truncated || values["ok"] != 21 || values["nok"] != 10 || values["na"] != 4 || values["3"] != 1 || values["-15"] != 1 {
 		t.Fatalf("count = %+v", count)
 	}
 	// Without group_by, the total alone is read.
 	collector = &fakeCollector{body: `{"data":[{"id":1}],"meta":{"total":7}}`}
 	count, err = newTestService(collector).CountComplianceRuns(t.Context(), CountComplianceRunsOptions{Module: "sec."})
-	if err != nil || count.Total != 7 || count.Groups != nil || collector.requests[0].query.Get("limit") != "1" {
+	if err != nil || deref(count.Total) != 7 || count.Groups != nil || collector.requests[0].query.Get("limit") != "1" {
 		t.Fatalf("total = %+v, %v", count, err)
 	}
 	// A node grouping reads the joined node name.

@@ -15,7 +15,7 @@ func TestListFiltersetsFiltersTheName(t *testing.T) {
 	if collector.requests[0].path != "/filtersets" || collector.requests[0].query.Get("filter") != "fset_name:~mem" || collector.requests[0].query.Get("orderby") != "fset_name,id" {
 		t.Fatalf("request = %+v", collector.requests[0])
 	}
-	if list.Total != 3 || !list.Truncated || list.Filtersets[0].Author != maskedRequestValue || list.Filtersets[0].Name != "big-memory" {
+	if deref(list.Total) != 3 || !list.Truncated || list.Filtersets[0].Author != maskedRequestValue || list.Filtersets[0].Name != "big-memory" {
 		t.Fatalf("list = %+v", list)
 	}
 }
@@ -49,7 +49,7 @@ func TestGetFiltersetReadsItsCriteriaMembersAndUsage(t *testing.T) {
 	// its own, and the users are named without their email address.
 	if len(filterset.Criteria) != 2 || filterset.Criteria[0].Filter != "nodes.loc_city = Paris" || filterset.Criteria[1].Logic != "AND NOT" ||
 		filterset.Criteria[1].Filterset != "big-memory" || len(filterset.Included) != 1 || filterset.Included[0].Criteria[0].Filter != "nodes.mem_bytes >= 131072" ||
-		filterset.NodesCount != 23 || filterset.Nodes[1] != "par2" || filterset.Rulesets[0] != "ctx.paris" || filterset.IncludedBy[0] != "all-paris" ||
+		deref(filterset.NodesCount) != 23 || filterset.Nodes[1] != "par2" || filterset.Rulesets[0] != "ctx.paris" || filterset.IncludedBy[0] != "all-paris" ||
 		filterset.Thresholds != 2 || filterset.SysreportGrants != 1 || filterset.SessionFilterOf != 1 {
 		t.Fatalf("filterset = %+v", filterset)
 	}
@@ -74,7 +74,7 @@ func TestGetFiltersetWithoutCriterionSelectsNothing(t *testing.T) {
 		return `{"data":[]}`
 	}}
 	filterset, err := newTestService(collector).GetFilterset(t.Context(), "empty")
-	if err != nil || filterset.NodesCount != 0 || filterset.Criteria == nil || len(collector.requests) != 3 {
+	if err != nil || deref(filterset.NodesCount) != 0 || filterset.Criteria == nil || len(collector.requests) != 3 {
 		t.Fatalf("filterset = %+v, %v, %d requests", filterset, err, len(collector.requests))
 	}
 	for _, name := range []string{"", "a/b", " demo"} {
@@ -109,15 +109,15 @@ func TestFiltersetFilterReadsTheNodesAndServicesItSelects(t *testing.T) {
 		t.Fatal(err)
 	}
 	if collector.requests[1].path != "/filtersets/282/nodes" || collector.requests[1].query.Get("filter") != "loc_country:~France" ||
-		nodes.Filterset == nil || nodes.Filterset.Name != "prd-linux" || nodes.Tag != nil || nodes.Total != 187 || !nodes.Truncated {
+		nodes.Filterset == nil || nodes.Filterset.Name != "prd-linux" || nodes.Tag != nil || deref(nodes.Total) != 187 || !nodes.Truncated {
 		t.Fatalf("nodes = %+v, requests %+v", nodes, collector.requests)
 	}
 	count, err := service.CountNodes(t.Context(), CountNodesOptions{NodeFilters: NodeFilters{Filterset: "prd-linux"}, GroupBy: "os_release"})
-	if err != nil || count.Filterset == nil || count.Total != 96 || len(count.Groups) != 2 {
+	if err != nil || count.Filterset == nil || deref(count.Total) != 96 || len(count.Groups) != 2 {
 		t.Fatalf("count = %+v, %v", count, err)
 	}
 	services, err := service.ListServices(t.Context(), ListServicesOptions{ServiceFilters: ServiceFilters{Filterset: "prd-linux"}})
-	if err != nil || services.Filterset == nil || services.Total != 5 || services.Services[0].Svcname != "web" {
+	if err != nil || services.Filterset == nil || deref(services.Total) != 5 || services.Services[0].Svcname != "web" {
 		t.Fatalf("services = %+v, %v", services, err)
 	}
 	serviceCount, err := service.CountServices(t.Context(), CountServicesOptions{ServiceFilters: ServiceFilters{Filterset: "prd-linux"}, GroupBy: "status"})

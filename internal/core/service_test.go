@@ -20,7 +20,7 @@ func TestListServicesQueriesServices(t *testing.T) {
 		strings.Join(request.query["filter"], "|") != "svcname:~web|svc_app:eq:WEB|svc_availstatus:eq:warn" {
 		t.Fatalf("request = %+v", request)
 	}
-	if services.Node != nil || services.Total != 3 || !services.Truncated || services.NextCursor == "" {
+	if services.Node != nil || deref(services.Total) != 3 || !services.Truncated || services.NextCursor == "" {
 		t.Fatalf("page = %+v", services)
 	}
 	got := services.Services[0]
@@ -49,7 +49,7 @@ func TestListServicesOfANodeReadsItsInstances(t *testing.T) {
 		!strings.Contains(request.query.Get("props"), "svc_id,services.svcname,") {
 		t.Fatalf("request = %+v", request)
 	}
-	if services.Node == nil || services.Node.Nodename != "dev2n1" || services.Total != 1 || services.Truncated ||
+	if services.Node == nil || services.Node.Nodename != "dev2n1" || deref(services.Total) != 1 || services.Truncated ||
 		services.Services[0].Svcname != "ns1/svc/web" || services.Services[0].AvailStatus != "down" || services.Services[0].Env != "" {
 		t.Fatalf("page = %+v", services)
 	}
@@ -116,7 +116,7 @@ func TestGetServiceReadsTheServiceAndItsInstances(t *testing.T) {
 		t.Fatalf("config text = %q", details.Config.Text)
 	}
 	first, second := details.Instances.Items[0], details.Instances.Items[1]
-	if details.Instances.Total != 2 || details.Instances.Truncated || first.Nodename != "n1" || first.Frozen || first.FrozenAt != "" ||
+	if deref(details.Instances.Total) != 2 || details.Instances.Truncated || first.Nodename != "n1" || first.Frozen || first.FrozenAt != "" ||
 		first.MonitorState != "idle" || first.Resources.App != "warn" || first.Resources.IP != "up" || !second.Frozen || second.FrozenAt != "2026-10-11 10:00:00" {
 		t.Fatalf("instances = %+v", details.Instances)
 	}
@@ -161,12 +161,12 @@ func TestCountServices(t *testing.T) {
 	if request.path != "/services" || request.query.Get("stats") != "true" || request.query.Get("props") != "svc_placement" {
 		t.Fatalf("request = %+v", request)
 	}
-	if count.Total != 644 || count.Truncated || len(count.Groups) != 4 || count.Groups[0] != (CountGroup{"n/a", 374}) || count.Groups[3] != (CountGroup{"non-optimal", 26}) {
+	if deref(count.Total) != 644 || count.Truncated || len(count.Groups) != 4 || count.Groups[0] != (CountGroup{"n/a", 374}) || count.Groups[3] != (CountGroup{"non-optimal", 26}) {
 		t.Fatalf("count = %+v", count)
 	}
 	collector = &fakeCollector{body: `{"data":[{"svc_id":"s-1"}],"meta":{"total":13}}`}
 	count, err = newTestService(collector).CountServices(t.Context(), CountServicesOptions{ServiceFilters: ServiceFilters{Topology: "flex", AvailStatus: "down"}})
-	if err != nil || count.Total != 13 || strings.Join(collector.requests[0].query["filter"], "|") != "svc_availstatus:eq:down|svc_topology:eq:flex" {
+	if err != nil || deref(count.Total) != 13 || strings.Join(collector.requests[0].query["filter"], "|") != "svc_availstatus:eq:down|svc_topology:eq:flex" {
 		t.Fatalf("count = %+v, %v, %+v", count, err, collector.requests)
 	}
 	for _, options := range []CountServicesOptions{{GroupBy: "svcname"}, {ServiceFilters: ServiceFilters{Frozen: "yes"}}, {Limit: -1}} {

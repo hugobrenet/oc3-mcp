@@ -24,7 +24,7 @@ func TestListOrchestrationsTranslatesTheFilters(t *testing.T) {
 		t.Fatalf("request = %+v", request)
 	}
 	got := result.Orchestrations[0]
-	if result.Total != 3 || !result.Truncated || result.NextCursor == "" || got.ID != 2 || got.StepCount != 2 || got.RunCount != 3 || *got.LastRunID != 12 ||
+	if deref(result.Total) != 3 || !result.Truncated || result.NextCursor == "" || got.ID != 2 || got.StepCount != 2 || got.RunCount != 3 || *got.LastRunID != 12 ||
 		got.LastRunStatus != "succeeded" || strings.Contains(got.UpdatedBy, "@") || result.Orchestrations[1].LastRunID != nil || result.Orchestrations[1].LastRunStatus != "" {
 		t.Fatalf("result = %+v", result)
 	}

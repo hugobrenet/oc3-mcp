@@ -80,7 +80,7 @@ read.
 | Output field | Meaning |
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
-| `total` | Forms matching the filters, as the collector counts them, or with `text` as the MCP counts them among those it read |
+| `total` | Forms matching the filters, as the collector counts them, or with `text` as the MCP counts them among those it read; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `scan_truncated` | With `text`, whether more forms matched the other filters than the 1000 the MCP read |
 | `count`, `truncated` | Forms in this page, and whether more remain |
 | `forms[]` | `id`, `name`, `label`, `description`, `type`, `folder`, `author`, `created`, `inputs`, `outputs`, `next_steps`, `definition_unavailable` |

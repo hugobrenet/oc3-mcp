@@ -25,7 +25,7 @@ type ListClustersOptions struct {
 
 type ClusterList struct {
 	Provenance Provenance `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
-	Total      int        `json:"total" jsonschema:"the number of clusters matching the filters, as the collector counts them"`
+	Total      *int       `json:"total" jsonschema:"the number of clusters matching the filters, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int        `json:"count" jsonschema:"the number of clusters returned in this page"`
 	Clusters   []Cluster  `json:"clusters" jsonschema:"the clusters sorted by name, then cluster ID"`
 	NextCursor string     `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -86,10 +86,11 @@ func (s *Service) ListClusters(ctx context.Context, options ListClustersOptions)
 	if err := s.client.GetJSON(ctx, "/clusters", pageQuery(clusterProps, "cluster_name,cluster_id", filters, limit, offset), &response); err != nil {
 		return ClusterList{}, fmt.Errorf("list clusters: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return ClusterList{}, fmt.Errorf("list clusters: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return ClusterList{}, fmt.Errorf("list clusters: %w", err)
 	}
-	result := ClusterList{Provenance: s.newProvenance(), Total: *response.Meta.Total, Count: len(response.Data), Clusters: make([]Cluster, 0, len(response.Data))}
+	result := ClusterList{Provenance: s.newProvenance(), Total: counted, Count: len(response.Data), Clusters: make([]Cluster, 0, len(response.Data))}
 	for _, cluster := range response.Data {
 		result.Clusters = append(result.Clusters, Cluster{
 			ClusterID: cluster.ClusterID, Name: cluster.ClusterName, Nodes: splitClusterNodes(cluster.ClusterNodes),
@@ -97,7 +98,7 @@ func (s *Service) ListClusters(ctx context.Context, options ListClustersOptions)
 			Quorum: cluster.Quorum != 0, Frozen: cluster.Frozen != 0, Updated: cluster.ClusterUpdated,
 		})
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}

@@ -45,7 +45,7 @@ type CountNodesOptions struct {
 type NodeCount struct {
 	Provenance Provenance `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	NodeMembership
-	Total     int          `json:"total" jsonschema:"the number of nodes matching the filters, as the collector counts them"`
+	Total     *int         `json:"total" jsonschema:"the number of nodes matching the filters, as the collector counts them; null when the collector did not count them, for more rows than its count limit or a count that failed: not counted, neither zero nor a size"`
 	GroupBy   string       `json:"group_by,omitempty" jsonschema:"the grouping asked"`
 	Groups    []CountGroup `json:"groups,omitempty" jsonschema:"with group_by, the most frequent values first, and the number of matching nodes with each"`
 	Distinct  int          `json:"distinct,omitempty" jsonschema:"with group_by, the number of distinct values among the matching nodes"`

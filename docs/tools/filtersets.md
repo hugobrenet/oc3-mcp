@@ -53,7 +53,7 @@ GET /api/filtersets?props=id,fset_name,fset_author,fset_updated&orderby=fset_nam
 | Output field | Meaning |
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
-| `total` | Filtersets matching, as the collector counts them |
+| `total` | Filtersets matching, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Filtersets in this page, and whether more remain |
 | `filtersets[]` | `id`, `name`, `author`, `updated` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |

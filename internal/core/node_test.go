@@ -30,7 +30,7 @@ func TestListNodesQueriesOnePageAndMapsNodes(t *testing.T) {
 	if strings.Join(request.query["filter"], "|") != strings.Join(wantFilters, "|") {
 		t.Fatalf("filters = %q", request.query["filter"])
 	}
-	if nodes.Provenance.Source != "opensvc_collector" || nodes.Total != 5 || nodes.Count != 2 || !nodes.Truncated || nodes.NextCursor == "" {
+	if nodes.Provenance.Source != "opensvc_collector" || deref(nodes.Total) != 5 || nodes.Count != 2 || !nodes.Truncated || nodes.NextCursor == "" {
 		t.Fatalf("page = %+v", nodes)
 	}
 	first := nodes.Nodes[0]
@@ -78,8 +78,9 @@ func TestListNodesRejectsInvalidInputs(t *testing.T) {
 }
 
 func TestListNodesRejectsUnexpectedResponses(t *testing.T) {
+	// A total left out is not counted, no unexpected response: only a negative
+	// total and a page longer than asked are.
 	for _, body := range []string{
-		`{"data":[]}`,
 		`{"data":[],"meta":{"total":-1}}`,
 		`{"data":[{},{},{}],"meta":{"total":3}}`,
 	} {
@@ -198,7 +199,7 @@ func TestCountNodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := collector.requests[0]
-	if count.Total != 484 || count.Groups != nil || count.Truncated || request.path != "/nodes" || request.query.Get("limit") != "1" ||
+	if deref(count.Total) != 484 || count.Groups != nil || count.Truncated || request.path != "/nodes" || request.query.Get("limit") != "1" ||
 		request.query.Get("stats") != "" || strings.Join(request.query["filter"], "|") != "node_env:eq:PRD" {
 		t.Fatalf("count = %+v, request %+v", count, request)
 	}
@@ -213,7 +214,7 @@ func TestCountNodes(t *testing.T) {
 		t.Fatalf("request = %+v", request)
 	}
 	want := []CountGroup{{"Linux", 181}, {"windows", 33}, {"sunos", 7}, {"", 2}}
-	if count.Total != 226 || count.GroupBy != "os_name" || count.Distinct != 5 || count.Other != 3 || !count.Truncated || fmt.Sprint(count.Groups) != fmt.Sprint(want) {
+	if deref(count.Total) != 226 || count.GroupBy != "os_name" || count.Distinct != 5 || count.Other != 3 || !count.Truncated || fmt.Sprint(count.Groups) != fmt.Sprint(want) {
 		t.Fatalf("count = %+v", count)
 	}
 
@@ -227,7 +228,7 @@ func TestCountNodes(t *testing.T) {
 			t.Fatalf("options %+v accepted", options)
 		}
 	}
-	for _, body := range []string{`{"data":{"other":{"a":1}},"meta":{"total":1}}`, `{"data":{"os_name":{"a":1}},"meta":{}}`, `{"data":[],"meta":{}}`} {
+	for _, body := range []string{`{"data":{"other":{"a":1}},"meta":{"total":1}}`, `{"data":[],"meta":{}}`} {
 		if _, err := newTestService(&fakeCollector{body: body}).CountNodes(t.Context(), CountNodesOptions{GroupBy: "os_name"}); err == nil {
 			t.Fatalf("response %s accepted", body)
 		}

@@ -54,7 +54,7 @@ its name in this path.
 | Output field | Meaning |
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
-| `total` | Arrays matching, as the collector counts them |
+| `total` | Arrays matching, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Arrays in this page, and whether more remain |
 | `arrays[]` | `id`, `name`, `model`, `firmware`, `cache`, `comment`, `updated`, the totals `size_mb`, `used_mb`, `free_mb`, and `disk_groups[]` |
 | `arrays[].disk_groups[]` | `id`, `name`, `size_mb`, `used_mb`, `free_mb`, `reserved_mb`, `used_percent`, `updated` |
@@ -160,7 +160,7 @@ not take an identifier from a failed tool output.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `node` | With `node`, the node it resolved to |
-| `total` | Ports matching, as the collector counts them |
+| `total` | Ports matching, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Ports in this page, and whether more remain |
 | `ports[]` | `fabric`, `switch`, `slot`, `port`, `index`, `speed_gbps`, `negotiation`, `type`, `state`, `port_wwn`, `remote_port_wwn`, `connected_to`, `node_id`, `updated` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |

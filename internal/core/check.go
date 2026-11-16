@@ -31,7 +31,7 @@ type CheckList struct {
 	Provenance      Provenance        `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Node            *NodeReference    `json:"node,omitempty" jsonschema:"the node whose checks are listed"`
 	Service         *ServiceReference `json:"service,omitempty" jsonschema:"the service whose checks are listed"`
-	Total           int               `json:"total" jsonschema:"the number of checks the collector holds for the node or service, before the type and out_of_bounds_only filters"`
+	Total           *int              `json:"total" jsonschema:"the number of checks the collector holds for the node or service, before the type and out_of_bounds_only filters; null when the collector did not count them"`
 	OutOfBoundsRead int               `json:"out_of_bounds_read" jsonschema:"the number of checks read that are out of their thresholds, before the type filter"`
 	Count           int               `json:"count" jsonschema:"the number of checks returned"`
 	Checks          []Check           `json:"checks" jsonschema:"the checks out of their thresholds first, then by type and instance"`
@@ -129,19 +129,20 @@ func (s *Service) ListServiceChecks(ctx context.Context, service string, options
 }
 
 // readChecks reads at most maxChecks checks of path, out of bounds first.
-func (s *Service) readChecks(ctx context.Context, path string) ([]collectorCheck, int, error) {
+func (s *Service) readChecks(ctx context.Context, path string) ([]collectorCheck, *int, error) {
 	query := url.Values{}
 	query.Set("props", strings.Join(checkProps, ","))
 	query.Set("orderby", "-chk_err,chk_type,chk_instance,id")
 	query.Set("limit", strconv.Itoa(maxChecks))
 	var response collectorList[collectorCheck]
 	if err := s.client.GetJSON(ctx, path, query, &response); err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > maxChecks {
-		return nil, 0, fmt.Errorf("unexpected collector response")
+	total, err := pageTotal(response.Meta.Total, len(response.Data), maxChecks)
+	if err != nil {
+		return nil, nil, err
 	}
-	return response.Data, *response.Meta.Total, nil
+	return response.Data, total, nil
 }
 
 // readNames maps the IDs to the names of the instances of path, which list
@@ -166,8 +167,8 @@ func (s *Service) readNames(ctx context.Context, path string, idProp string, nam
 	return names, nil
 }
 
-func buildCheckList(checks []collectorCheck, total int, options ListChecksOptions, name func(*Check)) CheckList {
-	result := CheckList{Total: total, Truncated: len(checks) < total, Checks: make([]Check, 0, len(checks))}
+func buildCheckList(checks []collectorCheck, total *int, options ListChecksOptions, name func(*Check)) CheckList {
+	result := CheckList{Total: total, Truncated: scanTruncated(total, len(checks), maxChecks), Checks: make([]Check, 0, len(checks))}
 	for _, row := range checks {
 		outOfBounds := row.ChkErr != 0
 		if outOfBounds {

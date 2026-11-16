@@ -67,7 +67,7 @@ regular expression, and returns the names trimmed. `Manager` matches
 | Output field | Meaning |
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
-| `total` | Requests matching the filters, as the collector counts them |
+| `total` | Requests matching the filters, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Requests in this page, and whether more remain |
 | `requests[]` | `id`, `form`, `form_folder`, `last_form`, `status`, `steps`, `creator`, `created`, `assignee`, `updated` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
@@ -114,7 +114,7 @@ A request the caller takes no part in is not found, as in `list_requests`.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `request` | The request, as `list_requests` returns it |
-| `total_steps` | The forms submitted in the request |
+| `total_steps` | The forms submitted in the request; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `steps[]` | `step` (from 1), `form`, `label`, `submitter` and `assignee`, an email address in them masked, `submitted`, `values[]`, `values_omitted`, `data_error` |
 | `values[]` | `entry`, `input`, `label`, `value`, `masked`, `truncated` |
 | `next_cursor`, `truncated` | The cursor of the next steps, and whether some remain |

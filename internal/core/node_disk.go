@@ -38,7 +38,7 @@ type ListNodeDisksOptions struct {
 type NodeDiskList struct {
 	Provenance Provenance    `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Node       NodeReference `json:"node" jsonschema:"the node whose disks are listed"`
-	Total      int           `json:"total" jsonschema:"the number of disk rows matching the filters, as the collector counts them: one per disk and service using it"`
+	Total      *int          `json:"total" jsonschema:"the number of disk rows matching the filters, as the collector counts them: one per disk and service using it; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int           `json:"count" jsonschema:"the number of disk rows returned in this page"`
 	Disks      []NodeDisk    `json:"disks" jsonschema:"the disks sorted by disk ID, then service"`
 	NextCursor string        `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -106,8 +106,9 @@ func (s *Service) ListNodeDisks(ctx context.Context, options ListNodeDisksOption
 	if err := s.client.GetJSON(ctx, "/disks", pageQuery(nodeDiskProps, "disk_id,svc_id", filters, limit, offset), &response); err != nil {
 		return NodeDiskList{}, fmt.Errorf("list disks of node %s: %w", node.Nodename, err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return NodeDiskList{}, fmt.Errorf("list disks of node %s: unexpected collector response", node.Nodename)
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return NodeDiskList{}, fmt.Errorf("list disks of node %s: %w", node.Nodename, err)
 	}
 	sharing, err := s.diskSharing(ctx, node.NodeID, response.Data)
 	if err != nil {
@@ -115,7 +116,7 @@ func (s *Service) ListNodeDisks(ctx context.Context, options ListNodeDisksOption
 	}
 	result := NodeDiskList{
 		Provenance: s.newProvenance(), Node: NodeReference{NodeID: node.NodeID, Nodename: node.Nodename, ClusterID: node.ClusterID},
-		Total: *response.Meta.Total, Count: len(response.Data), Disks: make([]NodeDisk, 0, len(response.Data)),
+		Total: counted, Count: len(response.Data), Disks: make([]NodeDisk, 0, len(response.Data)),
 	}
 	for _, disk := range response.Data {
 		shared := sharing[disk.DiskID]
@@ -128,7 +129,7 @@ func (s *Service) ListNodeDisks(ctx context.Context, options ListNodeDisksOption
 			Region: disk.DiskRegion, SvcID: disk.SvcID, Svcname: disk.Svcname, SharedWith: shared, Updated: disk.Updated,
 		})
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}

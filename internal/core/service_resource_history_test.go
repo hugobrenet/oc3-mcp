@@ -102,8 +102,9 @@ func TestGetServiceResourceHistoryRejectsInvalidInputs(t *testing.T) {
 			t.Fatalf("options %+v accepted", options)
 		}
 	}
+	// Without a total, the periods read are all there were, short of the bound.
 	collector := newResourceHistoryCollector(`{"data":[]}`)
-	if _, err := newTestService(collector).GetServiceResourceHistory(t.Context(), ServiceResourceHistoryOptions{Service: "kvm/svc/vm1"}); err == nil {
-		t.Fatal("a response without total was accepted")
+	if history, err := newTestService(collector).GetServiceResourceHistory(t.Context(), ServiceResourceHistoryOptions{Service: "kvm/svc/vm1"}); err != nil || history.Truncated {
+		t.Fatalf("a response without total: %+v, %v", history, err)
 	}
 }

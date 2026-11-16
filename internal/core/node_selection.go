@@ -171,8 +171,13 @@ func (s *Service) selectNodes(ctx context.Context, path string, filters []string
 		if err := s.client.GetJSON(ctx, path, pageQuery([]string{"node_id", "nodename", "cluster_id"}, "nodename,node_id", filters, selectionPage, offset), &response); err != nil {
 			return nil, fmt.Errorf("select nodes: %w", err)
 		}
-		if response.Meta.Total == nil || len(response.Data) > selectionPage {
+		if len(response.Data) > selectionPage {
 			return nil, fmt.Errorf("select nodes: unexpected collector response")
+		}
+		// Not counted, the selection is beyond what the collector counts, or its
+		// count failed: refused as too large, nothing changed.
+		if response.Meta.Total == nil {
+			return nil, fmt.Errorf("the filters select more than %d nodes, or the collector did not count them: nothing was changed; narrow the filters", maxSelectionFiltered)
 		}
 		total := *response.Meta.Total
 		if expected < 0 {
@@ -234,8 +239,11 @@ func (s *Service) resolveNodes(ctx context.Context, names []string) ([]collector
 			if err := s.client.GetJSON(ctx, "/nodes", query, &response); err != nil {
 				return nil, fmt.Errorf("get nodes: %w", err)
 			}
-			if response.Meta.Total == nil || *response.Meta.Total > maxSelectionFiltered || len(response.Data) > selectionPage {
+			if len(response.Data) > selectionPage {
 				return nil, fmt.Errorf("get nodes: unexpected collector response")
+			}
+			if response.Meta.Total == nil || *response.Meta.Total > maxSelectionFiltered {
+				return nil, fmt.Errorf("get nodes: more than %d nodes match the names, or the collector did not count them: nothing was changed; name fewer nodes", maxSelectionFiltered)
 			}
 			rows = append(rows, response.Data...)
 			read += len(response.Data)

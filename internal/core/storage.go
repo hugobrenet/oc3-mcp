@@ -34,7 +34,7 @@ type ListStorageArraysOptions struct {
 
 type StorageArrayList struct {
 	Provenance Provenance     `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
-	Total      int            `json:"total" jsonschema:"the number of arrays matching, as the collector counts them"`
+	Total      *int           `json:"total" jsonschema:"the number of arrays matching, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int            `json:"count" jsonschema:"the number of arrays returned in this page"`
 	Arrays     []StorageArray `json:"arrays" jsonschema:"the storage arrays sorted by name, each with its disk groups"`
 	NextCursor string         `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -115,10 +115,11 @@ func (s *Service) ListStorageArrays(ctx context.Context, options ListStorageArra
 	if err := s.client.GetJSON(ctx, "/arrays", pageQuery(props, "array_name,id", filters, limit, offset), &response); err != nil {
 		return StorageArrayList{}, fmt.Errorf("list arrays: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return StorageArrayList{}, fmt.Errorf("list arrays: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return StorageArrayList{}, fmt.Errorf("list arrays: %w", err)
 	}
-	result := StorageArrayList{Total: *response.Meta.Total, Count: len(response.Data), Arrays: make([]StorageArray, 0, len(response.Data))}
+	result := StorageArrayList{Total: counted, Count: len(response.Data), Arrays: make([]StorageArray, 0, len(response.Data))}
 	for _, row := range response.Data {
 		array := StorageArray{
 			ID: row.ID, Name: row.Name, Model: strings.TrimSpace(row.Model), Firmware: strings.TrimSpace(row.Firmware),
@@ -144,7 +145,7 @@ func (s *Service) ListStorageArrays(ctx context.Context, options ListStorageArra
 		}
 		result.Arrays = append(result.Arrays, array)
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
@@ -223,10 +224,11 @@ func (s *Service) ListStorageQuotas(ctx context.Context, options ListStorageQuot
 		if err := s.client.GetJSON(ctx, "/apps", pageQuery([]string{"id", "app"}, "app,id", nil, maxQuotaApps, 0), &response); err != nil {
 			return StorageQuotaList{}, fmt.Errorf("list apps: %w", err)
 		}
-		if response.Meta.Total == nil || len(response.Data) > maxQuotaApps {
-			return StorageQuotaList{}, fmt.Errorf("list apps: unexpected collector response")
+		total, err := pageTotal(response.Meta.Total, len(response.Data), maxQuotaApps)
+		if err != nil {
+			return StorageQuotaList{}, fmt.Errorf("list apps: %w", err)
 		}
-		result.ScanTruncated = *response.Meta.Total > len(response.Data)
+		result.ScanTruncated = scanTruncated(total, len(response.Data), maxQuotaApps)
 		for _, app := range response.Data {
 			apps = append(apps, strconv.Itoa(app.ID))
 		}
@@ -288,7 +290,7 @@ type ListSANSwitchPortsOptions struct {
 type SANSwitchPortList struct {
 	Provenance Provenance      `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Node       *NodeReference  `json:"node,omitempty" jsonschema:"the node the node filter resolved to: the ports its adapters are plugged in"`
-	Total      int             `json:"total" jsonschema:"the number of ports matching, as the collector counts them"`
+	Total      *int            `json:"total" jsonschema:"the number of ports matching, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int             `json:"count" jsonschema:"the number of ports returned in this page"`
 	Ports      []SANSwitchPort `json:"ports" jsonschema:"the ports sorted by fabric, switch, slot and port"`
 	NextCursor string          `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -371,22 +373,24 @@ func (s *Service) ListSANSwitchPorts(ctx context.Context, options ListSANSwitchP
 	if err := s.client.GetJSON(ctx, "/san-switches", pageQuery(props, "sw_fabric,sw_name,sw_slot,sw_port,id", filters, limit, offset), &response); err != nil {
 		return SANSwitchPortList{}, fmt.Errorf("list SAN switch ports: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return SANSwitchPortList{}, fmt.Errorf("list SAN switch ports: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return SANSwitchPortList{}, fmt.Errorf("list SAN switch ports: %w", err)
 	}
 	result.Provenance = s.newProvenance()
-	result.Total, result.Count = *response.Meta.Total, len(response.Data)
+	result.Total, result.Count = counted, len(response.Data)
 	for _, row := range response.Data {
 		result.Ports = append(result.Ports, SANSwitchPort{
 			Fabric: row.Fabric, Switch: row.Name, Slot: row.Slot, Port: row.Port, Index: row.Index, SpeedGbps: row.Speed, Negotiation: row.Nego,
 			Type: row.Type, State: row.State, PortName: row.PortName, RemotePort: row.RemotePort, ConnectedTo: row.RemoteName, NodeID: row.NodeID, Updated: row.Updated,
 		})
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
-	if result.Total == 0 {
+	// None matched, as counted: a total not counted is no empty list.
+	if result.Total != nil && *result.Total == 0 {
 		for _, name := range []struct{ input, prop, value string }{
 			{"fabric", "sw_fabric", options.Fabric}, {"switch", "sw_name", options.Switch}, {"connected_to", "sw_rname", options.ConnectedTo},
 		} {

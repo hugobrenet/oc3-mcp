@@ -26,7 +26,7 @@ func TestListInstancesTranslatesTheFilters(t *testing.T) {
 		t.Fatalf("request = %+v", request)
 	}
 	got := instances.Instances[0]
-	if instances.Node.Nodename != "dev2n1" || instances.Total != 3 || !instances.Truncated || instances.NextCursor == "" ||
+	if instances.Node.Nodename != "dev2n1" || deref(instances.Total) != 3 || !instances.Truncated || instances.NextCursor == "" ||
 		got.Svcname != "web" || got.Topology != "failover" || got.ServiceAvailability != "up" || got.Availability != "down" || got.Frozen || got.FrozenAt != "" ||
 		got.MonitorStatus != "idle" || got.VMName != "web1" || got.VMType != "docker" || got.LastReportedAt != "2026-10-15 22:46:16" {
 		t.Fatalf("instances = %+v", instances)
@@ -71,7 +71,7 @@ func TestCountInstancesGroupsAndNamesTheFreezeFlags(t *testing.T) {
 	if request.query.Get("stats") != "true" || request.query.Get("props") != "nodes.nodename" || request.query.Get("filter") != "mon_availstatus:eq:down" {
 		t.Fatalf("request = %+v", request)
 	}
-	if count.Total != 230 || count.Distinct != 3 || len(count.Groups) != 3 || count.Groups[0] != (CountGroup{Value: "dev2n1", Count: 84}) || count.Groups[2].Value != "dev2n2" {
+	if deref(count.Total) != 230 || count.Distinct != 3 || len(count.Groups) != 3 || count.Groups[0] != (CountGroup{Value: "dev2n1", Count: 84}) || count.Groups[2].Value != "dev2n2" {
 		t.Fatalf("count = %+v", count)
 	}
 	collector = &fakeCollector{bodies: map[string]string{

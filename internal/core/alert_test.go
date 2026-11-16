@@ -20,7 +20,7 @@ func TestListAlertsQueriesTheDashboard(t *testing.T) {
 		strings.Join(request.query["filter"], "|") != "dash_severity:gte:3|dash_type:eq:flex error|dash_env:eq:PRD" {
 		t.Fatalf("request = %+v", request)
 	}
-	if alerts.Total != 12 || !alerts.Truncated || alerts.NextCursor == "" || alerts.Node != nil || alerts.Service != nil {
+	if deref(alerts.Total) != 12 || !alerts.Truncated || alerts.NextCursor == "" || alerts.Node != nil || alerts.Service != nil {
 		t.Fatalf("page = %+v", alerts)
 	}
 	got := alerts.Alerts[0]
@@ -44,7 +44,7 @@ func TestListAlertsResolvesTheNodeAndTheService(t *testing.T) {
 		t.Fatalf("requests = %+v", collector.requests)
 	}
 	if alerts.Node == nil || alerts.Node.Nodename != "dev2n1" || alerts.Service == nil || alerts.Service.Svcname != "ns1/svc/web" ||
-		alerts.Total != 0 || alerts.Truncated || alerts.Alerts == nil {
+		deref(alerts.Total) != 0 || alerts.Truncated || alerts.Alerts == nil {
 		t.Fatalf("page = %+v", alerts)
 	}
 }

@@ -30,7 +30,7 @@ type ServiceResourceList struct {
 	Provenance Provenance        `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Service    ServiceReference  `json:"service" jsonschema:"the service whose resources are listed"`
 	Node       *NodeReference    `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
-	Total      int               `json:"total" jsonschema:"the number of resources matching the filters, as the collector counts them"`
+	Total      *int              `json:"total" jsonschema:"the number of resources matching the filters, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int               `json:"count" jsonschema:"the number of resources returned in this page"`
 	Resources  []ServiceResource `json:"resources" jsonschema:"the resources, one per node, sorted by node name then resource ID"`
 	NextCursor string            `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -112,11 +112,12 @@ func (s *Service) ListServiceResources(ctx context.Context, options ListServiceR
 	if err := s.client.GetJSON(ctx, "/resources", pageQuery(serviceResourceProps, "nodes.nodename,rid,id", filters, limit, offset), &response); err != nil {
 		return ServiceResourceList{}, fmt.Errorf("list resources of service %s: %w", service.Svcname, err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return ServiceResourceList{}, fmt.Errorf("list resources of service %s: unexpected collector response", service.Svcname)
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return ServiceResourceList{}, fmt.Errorf("list resources of service %s: %w", service.Svcname, err)
 	}
 	result.Provenance = s.newProvenance()
-	result.Total, result.Count = *response.Meta.Total, len(response.Data)
+	result.Total, result.Count = counted, len(response.Data)
 	result.Resources = make([]ServiceResource, 0, len(response.Data))
 	for _, resource := range response.Data {
 		log, cut := truncateUTF8(resource.ResLog, maxResourceLogBytes)
@@ -127,7 +128,7 @@ func (s *Service) ListServiceResources(ctx context.Context, options ListServiceR
 			VMName: resource.VMName, Changed: resource.Changed, Updated: resource.Updated,
 		})
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}

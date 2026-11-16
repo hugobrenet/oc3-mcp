@@ -25,7 +25,7 @@ func TestListRequestsTranslatesTheFiltersAndTrimsTheNames(t *testing.T) {
 		t.Fatalf("request = %+v", request)
 	}
 	got := requests.Requests[0]
-	if requests.Total != 3 || !requests.Truncated || requests.NextCursor == "" || got.ID != 1355 || got.Form != "sample-firewall-flow" ||
+	if deref(requests.Total) != 3 || !requests.Truncated || requests.NextCursor == "" || got.ID != 1355 || got.Form != "sample-firewall-flow" ||
 		got.LastForm != "sample-firewall-review" || got.Steps != 2 || got.Creator != "Manager" || got.Assignee != "Sebastien Guiheneuf" ||
 		requests.Provenance.Source != provenanceSourceOpenSVCCollector {
 		t.Fatalf("requests = %+v", requests)

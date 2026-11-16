@@ -24,7 +24,7 @@ func TestListServiceResourcesQueriesResources(t *testing.T) {
 		strings.Join(request.query["filter"], "|") != "svc_id:eq:s-1|node_id:eq:n-1|res_status:eq:down|res_type:eq:disk.disk" {
 		t.Fatalf("request = %+v", request)
 	}
-	if resources.Service.Svcname != "kvm/svc/vm1" || resources.Node == nil || resources.Total != 14 || !resources.Truncated || resources.NextCursor == "" {
+	if resources.Service.Svcname != "kvm/svc/vm1" || resources.Node == nil || deref(resources.Total) != 14 || !resources.Truncated || resources.NextCursor == "" {
 		t.Fatalf("page = %+v", resources)
 	}
 	got := resources.Resources[0]

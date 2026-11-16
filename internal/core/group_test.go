@@ -26,7 +26,7 @@ func TestListGroupsSelectsAKindAndMapsTheGroups(t *testing.T) {
 		query.Get("orderby") != "role,id" || strings.Contains(query.Get("props"), "email") {
 		t.Fatalf("request = %+v", collector.requests[0])
 	}
-	if groups.Total != 5 || !groups.Truncated || groups.NextCursor == "" || groups.Groups[0].Description != "Database team" ||
+	if deref(groups.Total) != 5 || !groups.Truncated || groups.NextCursor == "" || groups.Groups[0].Description != "Database team" ||
 		groups.Groups[0].Kind != "organization" || groups.Groups[1].Kind != "privilege" ||
 		groups.Groups[2].Kind != "personal" || groups.Groups[2].UserID != 139 || groups.Groups[3].Kind != "organization" {
 		t.Fatalf("groups = %+v", groups)
@@ -104,8 +104,8 @@ func TestGetGroupCountsWhatItIsResponsibleFor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if group.Group.Name != "Test Ops" || group.Group.Kind != "organization" || group.User != nil || group.AppsTotal != 2 || len(group.Apps) != 2 ||
-		group.Apps[0].Name != "DEV" || group.Members != 9 || group.Nodes != 0 || group.Services != 92 || group.AppsTruncated {
+	if group.Group.Name != "Test Ops" || group.Group.Kind != "organization" || group.User != nil || deref(group.AppsTotal) != 2 || len(group.Apps) != 2 ||
+		group.Apps[0].Name != "DEV" || deref(group.Members) != 9 || deref(group.Nodes) != 0 || deref(group.Services) != 92 || group.AppsTruncated {
 		t.Fatalf("group = %+v", group)
 	}
 	if collector.requests[1].query.Get("orderby") != "app" || collector.requests[2].query.Get("limit") != "1" {
@@ -167,7 +167,7 @@ func TestListUsersPagesAndSearchesNames(t *testing.T) {
 	if query.Get("props") != "id,username,first_name,last_name" || query.Get("orderby") != "last_name,first_name,id" || query.Get("limit") != "3" {
 		t.Fatalf("query = %v", query)
 	}
-	if users.Total != 5 || !users.Truncated || users.Users[1].Username != "bob" {
+	if deref(users.Total) != 5 || !users.Truncated || users.Users[1].Username != "bob" {
 		t.Fatalf("users = %+v", users)
 	}
 
@@ -184,7 +184,7 @@ func TestListUsersPagesAndSearchesNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	if collector.requests[1].path != "/groups/3/users" || collector.requests[1].query.Get("limit") != "1000" || users.Group.Name != "DBA" ||
-		users.Total != 2 || users.Count != 1 || !users.Truncated || users.Users[0].ID != 145 {
+		deref(users.Total) != 2 || users.Count != 1 || !users.Truncated || users.Users[0].ID != 145 {
 		t.Fatalf("users = %+v", users)
 	}
 	next, err := newTestService(collector).ListUsers(t.Context(), ListUsersOptions{Group: "DBA", Name: "durand", Limit: 1, Cursor: users.NextCursor})
@@ -192,7 +192,7 @@ func TestListUsersPagesAndSearchesNames(t *testing.T) {
 		t.Fatalf("next = %+v, %v", next, err)
 	}
 	users, err = newTestService(&fakeCollector{body: groupUsers}).ListUsers(t.Context(), ListUsersOptions{Name: "BOB"})
-	if err != nil || users.Total != 1 {
+	if err != nil || deref(users.Total) != 1 {
 		t.Fatalf("username search = %+v, %v", users, err)
 	}
 }

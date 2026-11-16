@@ -79,7 +79,7 @@ always the newest first.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `node` | `node_id`, `nodename`, `cluster_id` |
-| `total` | Reports matching, as the collector counts them |
+| `total` | Reports matching, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Reports in this page, and whether more remain |
 | `changes[]` | `revision`, `date`, `initial` (the first report, adding every file), `files_count`, `files[]` (`path`, `kind`, `added`, `deleted`, `binary`), at most 50, and `files_truncated` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |

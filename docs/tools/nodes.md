@@ -136,7 +136,7 @@ spaces. A cursor used with other filters is refused.
 | `filterset` | With `filterset`, the filterset it resolved to: `id`, `name` |
 | `ruleset` | With `ruleset`, the ruleset it resolved to: `id`, `name`, `type` |
 | `moduleset` | With `moduleset`, the moduleset it resolved to: `id`, `name` |
-| `total` | Nodes matching the filters, as the collector counts them |
+| `total` | Nodes matching the filters, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Nodes in this page, and whether more remain |
 | `nodes[]` | `node_id`, `nodename`, `cluster_id`, `app`, `env`, `status`, `os`, `agent_version`, `last_comm`, `frozen`, `frozen_at` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
@@ -189,7 +189,7 @@ each, and refuses a count longer than 5 seconds.
 | `tag` | With `tag`, the tag it resolved to |
 | `filterset` | With `filterset`, the filterset it resolved to |
 | `ruleset`, `moduleset` | With `ruleset` or `moduleset`, the ruleset or moduleset it resolved to |
-| `total` | Nodes matching the filters |
+| `total` | Nodes matching the filters; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `group_by` | The grouping asked |
 | `groups[]` | With `group_by`: `value`, empty for the nodes without one, and `count`, the most frequent first |
 | `distinct` | With `group_by`: distinct values among the matching nodes |
@@ -324,7 +324,7 @@ GET /api/disks?props=disk_id,node_id,nodename&filter=disk_id:in:<disk_id>,…&li
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `node` | The node whose disks are listed |
-| `total` | Disk rows matching the filters, as the collector counts them |
+| `total` | Disk rows matching the filters, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Rows in this page, and whether more remain |
 | `disks[]` | `disk_id`, `size_mb`, `used_mb`, `vendor`, `model`, `array`, `array_disk_group`, `disk_group`, `region`, `svc_id`, `svcname`, `shared_with`, `updated` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |

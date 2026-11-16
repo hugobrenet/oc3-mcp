@@ -62,7 +62,7 @@ type SysreportChangeList struct {
 	// NoSysreport tells a node that never reported from filters matching
 	// nothing: the collector counts no change for both.
 	NoSysreport bool              `json:"no_sysreport,omitempty" jsonschema:"whether the node never sent a sysreport: the collector holds nothing of its configuration, which says nothing of its changes"`
-	Total       int               `json:"total" jsonschema:"the number of reports that changed a matching file, as the collector counts them"`
+	Total       *int              `json:"total" jsonschema:"the number of reports that changed a matching file, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count       int               `json:"count" jsonschema:"the number of changes returned in this page"`
 	Changes     []SysreportChange `json:"changes" jsonschema:"the reports that changed something, the newest first"`
 	NextCursor  string            `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -147,12 +147,13 @@ func (s *Service) ListNodeSysreportChanges(ctx context.Context, options ListNode
 	if err := s.client.GetJSON(ctx, sysreportPath(node.NodeID), query, &response); err != nil {
 		return SysreportChangeList{}, fmt.Errorf("list sysreport changes of node %s: %w", node.Nodename, err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return SysreportChangeList{}, fmt.Errorf("list sysreport changes of node %s: unexpected collector response", node.Nodename)
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return SysreportChangeList{}, fmt.Errorf("list sysreport changes of node %s: %w", node.Nodename, err)
 	}
 	result := SysreportChangeList{
 		Provenance: s.newProvenance(), Node: NodeReference{NodeID: node.NodeID, Nodename: node.Nodename, ClusterID: node.ClusterID},
-		Total: *response.Meta.Total, Count: len(response.Data), Changes: make([]SysreportChange, 0, len(response.Data)),
+		Total: counted, Count: len(response.Data), Changes: make([]SysreportChange, 0, len(response.Data)),
 	}
 	for _, row := range response.Data {
 		change := SysreportChange{
@@ -168,11 +169,11 @@ func (s *Service) ListNodeSysreportChanges(ctx context.Context, options ListNode
 		}
 		result.Changes = append(result.Changes, change)
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
-	if result.Total == 0 {
+	if result.Total != nil && *result.Total == 0 {
 		hasReport, err := s.hasSysreport(ctx, node.NodeID, query.Get("path") != "" || since != "" || until != "")
 		if err != nil {
 			return SysreportChangeList{}, fmt.Errorf("list sysreport changes of node %s: %w", node.Nodename, err)

@@ -30,7 +30,7 @@ func TestListNodeChecksReadsAndNamesTheChecks(t *testing.T) {
 	if names := collector.requests[2]; names.path != "/nodes/n-1/services" || names.query.Get("props") != "svc_id,services.svcname" {
 		t.Fatalf("names request = %+v", names)
 	}
-	if checks.Node == nil || checks.Node.Nodename != "dev2n1" || checks.Total != 3 || checks.OutOfBoundsRead != 1 || checks.Count != 3 || checks.Truncated {
+	if checks.Node == nil || checks.Node.Nodename != "dev2n1" || deref(checks.Total) != 3 || checks.OutOfBoundsRead != 1 || checks.Count != 3 || checks.Truncated {
 		t.Fatalf("list = %+v", checks)
 	}
 	first, second, third := checks.Checks[0], checks.Checks[1], checks.Checks[2]
@@ -51,7 +51,7 @@ func TestListServiceChecksFiltersLocally(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if checks.Service == nil || checks.Service.Svcname != "system/svc/dns" || checks.Total != 3 || checks.OutOfBoundsRead != 1 || checks.Count != 1 ||
+	if checks.Service == nil || checks.Service.Svcname != "system/svc/dns" || deref(checks.Total) != 3 || checks.OutOfBoundsRead != 1 || checks.Count != 1 ||
 		checks.Checks[0].ID != 1 || checks.Checks[0].Nodename != "dev2n1" || checks.Checks[0].Svcname != "system/svc/dns" {
 		t.Fatalf("list = %+v", checks)
 	}
@@ -68,7 +68,7 @@ func TestListChecksReportsUnreadChecksAndRejectsInvalidInputs(t *testing.T) {
 		"/nodes/n-1/services": `{"data":[]}`,
 	}}
 	checks, err := newTestService(collector).ListNodeChecks(t.Context(), "dev2n1", ListChecksOptions{})
-	if err != nil || !checks.Truncated || checks.Total != 2500 {
+	if err != nil || !checks.Truncated || deref(checks.Total) != 2500 {
 		t.Fatalf("unread checks = %+v, %v", checks, err)
 	}
 	for _, call := range []func(*Service) error{

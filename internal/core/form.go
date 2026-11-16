@@ -34,7 +34,7 @@ type ListFormsOptions struct {
 
 type FormList struct {
 	Provenance Provenance `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
-	Total      int        `json:"total" jsonschema:"the number of forms matching the filters, as the collector counts them, or with text as the MCP counts them among those it read"`
+	Total      *int       `json:"total" jsonschema:"the number of forms matching the filters, as the collector counts them, or with text as the MCP counts them among those it read; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	// ScanTruncated tells a text search that read only the first forms.
 	ScanTruncated bool   `json:"scan_truncated,omitempty" jsonschema:"with text, whether the MCP read only the first 1000 forms matching the other filters, so that other forms may match the text"`
 	Count         int    `json:"count" jsonschema:"the number of forms returned in this page"`
@@ -115,14 +115,15 @@ func (s *Service) ListForms(ctx context.Context, options ListFormsOptions) (Form
 	if err := s.client.GetJSON(ctx, "/forms", pageQuery(formProps, "form_folder,form_name,id", filters, limit, offset), &response); err != nil {
 		return FormList{}, fmt.Errorf("list forms: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return FormList{}, fmt.Errorf("list forms: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return FormList{}, fmt.Errorf("list forms: %w", err)
 	}
-	result := FormList{Provenance: s.newProvenance(), Total: *response.Meta.Total, Count: len(response.Data), Forms: make([]Form, 0, len(response.Data))}
+	result := FormList{Provenance: s.newProvenance(), Total: counted, Count: len(response.Data), Forms: make([]Form, 0, len(response.Data))}
 	for _, row := range response.Data {
 		result.Forms = append(result.Forms, formOf(row))
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
@@ -140,8 +141,9 @@ func (s *Service) searchForms(ctx context.Context, text string, filters []string
 	if err := s.client.GetJSON(ctx, "/forms", pageQuery(formProps, "form_folder,form_name,id", filters, maxFormTextScan, 0), &response); err != nil {
 		return FormList{}, fmt.Errorf("list forms: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > maxFormTextScan {
-		return FormList{}, fmt.Errorf("list forms: unexpected collector response")
+	scanned, err := pageTotal(response.Meta.Total, len(response.Data), maxFormTextScan)
+	if err != nil {
+		return FormList{}, fmt.Errorf("list forms: %w", err)
 	}
 	needle := strings.ToLower(text)
 	var matching []Form
@@ -151,7 +153,7 @@ func (s *Service) searchForms(ctx context.Context, text string, filters []string
 			matching = append(matching, form)
 		}
 	}
-	result := FormList{Provenance: s.newProvenance(), Total: len(matching), ScanTruncated: *response.Meta.Total > len(response.Data)}
+	result := FormList{Provenance: s.newProvenance(), Total: intPtr(len(matching)), ScanTruncated: scanTruncated(scanned, len(response.Data), maxFormTextScan)}
 	end := min(offset+limit, len(matching))
 	if offset < len(matching) {
 		result.Forms = matching[offset:end]

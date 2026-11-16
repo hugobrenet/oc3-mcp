@@ -154,8 +154,13 @@ func (s *Service) ackSelectedServiceActions(ctx context.Context, options AckServ
 		if err := s.client.GetJSON(ctx, "/services_actions", pageQuery(serviceActionProps, "-begin,-id", filters, selectionPage, offset), &response); err != nil {
 			return ServiceActionAcknowledgement{}, fmt.Errorf("select service actions: %w", err)
 		}
-		if response.Meta.Total == nil || len(response.Data) > selectionPage {
+		if len(response.Data) > selectionPage {
 			return ServiceActionAcknowledgement{}, fmt.Errorf("select service actions: unexpected collector response")
+		}
+		// Not counted, the selection is beyond what the collector counts, or its
+		// count failed: refused as too large, nothing acknowledged.
+		if response.Meta.Total == nil {
+			return ServiceActionAcknowledgement{}, fmt.Errorf("the filters select more than %d failed actions not acknowledged, or the collector did not count them: nothing was acknowledged; narrow the filters, such as by node or since", maxSelectionFiltered)
 		}
 		total := *response.Meta.Total
 		if expected < 0 {

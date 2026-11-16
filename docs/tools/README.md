@@ -61,6 +61,16 @@ MCP tools. Names, descriptions, annotations and JSON Schemas are defined in
   tools return one exact item, and refuse a name that matches several;
   `count_*` tools return the number of matching items, as the collector
   counts them, optionally broken down by one property.
+- A total the collector counts may be `null`: the collector leaves out the
+  total of a list longer than its count limit (`server.list.total_max`,
+  10000 rows by default) and of a list whose count failed. `null` means not
+  counted, neither zero nor a size. A page of a list not counted is followed
+  by `next_cursor` while it is as full as asked: a list of exactly `limit`
+  rows ends on one empty page more. A change that selects its targets by
+  filters (`attach_node_tag`, `ack_service_action`…) is refused, nothing
+  changed, when the collector did not count the selection: it is beyond its
+  count limit, so beyond the bound of a change, and the filters are to be
+  narrowed.
 - Every result carries `provenance`: `source` (`opensvc_collector`) and
   `observed_at`, the UTC time the MCP collected it. Collector timestamps are
   returned as the collector gives them, in its local time without a zone.

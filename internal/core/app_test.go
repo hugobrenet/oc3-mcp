@@ -29,7 +29,7 @@ func TestGetAppReadsItsResponsiblesAndCounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	if app.Name != "WEB" || app.ID != 4627 || app.Description != "WEB application code" || len(app.Responsibles) != 2 || app.Responsibles[0].Role != "Test Web" ||
-		app.ResponsiblesTruncated || app.Nodes != 6 || app.Services != 4 || app.Provenance.Source != provenanceSourceOpenSVCCollector {
+		app.ResponsiblesTruncated || deref(app.Nodes) != 6 || deref(app.Services) != 4 || app.Provenance.Source != provenanceSourceOpenSVCCollector {
 		t.Fatalf("app = %+v", app)
 	}
 	if collector.requests[1].query.Get("limit") != "101" {

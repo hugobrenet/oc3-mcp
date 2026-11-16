@@ -24,8 +24,8 @@ type App struct {
 	ResponsiblesTruncated bool             `json:"responsibles_truncated,omitempty" jsonschema:"whether groups were left out after 100"`
 	Publications          []AppResponsible `json:"publications" jsonschema:"the collector groups the app is published to, sorted by role: their members see its nodes and services"`
 	PublicationsTruncated bool             `json:"publications_truncated,omitempty" jsonschema:"whether groups were left out after 100"`
-	Nodes                 int              `json:"nodes" jsonschema:"the number of nodes of the app the caller sees, as the collector counts them"`
-	Services              int              `json:"services" jsonschema:"the number of services of the app the caller sees, as the collector counts them"`
+	Nodes                 *int             `json:"nodes" jsonschema:"the number of nodes of the app the caller sees, as the collector counts them; null when the collector did not count them, for more rows than its count limit or a count that failed: not counted, neither zero nor a size"`
+	Services              *int             `json:"services" jsonschema:"the number of services of the app the caller sees, as the collector counts them; null when the collector did not count them, for more rows than its count limit or a count that failed: not counted, neither zero nor a size"`
 }
 
 type AppResponsible struct {

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -175,3 +176,46 @@ func collectorDate(value string) string {
 	}
 	return value
 }
+
+// errUnexpectedResponse is an answer of the collector out of its API: a
+// negative total, a page longer than asked.
+var errUnexpectedResponse = errors.New("unexpected collector response")
+
+// pageTotal reads the total of a page of a collector list: the number of rows
+// matching, as the collector counted them, or nil when it gave none. The
+// collector leaves it out of a list longer than its server.list.total_max,
+// 10000 rows by default, and of a list whose count failed: nil means not
+// counted, neither zero nor a size. A negative total, or a page longer than
+// limit, is no answer of the collector API.
+func pageTotal(total *int, count int, limit int) (*int, error) {
+	if (total != nil && *total < 0) || count > limit {
+		return nil, errUnexpectedResponse
+	}
+	return total, nil
+}
+
+// morePages tells whether rows remain after a page read at offset: by the
+// total when the collector counted it, else by a page as full as asked. A list
+// of exactly limit rows, not counted, gives then one empty page more.
+func morePages(total *int, offset int, count int, limit int) bool {
+	if count == 0 {
+		return false
+	}
+	if total != nil {
+		return offset+count < *total
+	}
+	return count == limit
+}
+
+// scanTruncated tells whether a bounded read of at most max rows left rows
+// out: by the total when the collector counted it, else by a read as full as
+// the bound.
+func scanTruncated(total *int, count int, max int) bool {
+	if total != nil {
+		return *total > count
+	}
+	return count >= max
+}
+
+// intPtr is a total the MCP counted itself.
+func intPtr(value int) *int { return &value }

@@ -101,7 +101,7 @@ The last call names the nodes of the checks.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `node` or `service` | The node or service whose checks are listed |
-| `total` | Checks the collector holds for it, before the filters |
+| `total` | Checks the collector holds for it, before the filters; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `out_of_bounds_read` | Checks read that are out of bounds, before the type filter |
 | `count` | Checks returned |
 | `checks[]` | Out of bounds first, then by type and instance: `id`, `type`, `instance`, `value`, `low`, `high`, `out_of_bounds`, `threshold_source`, `node_id`, `nodename`, `svc_id`, `svcname`, `created`, `updated` |

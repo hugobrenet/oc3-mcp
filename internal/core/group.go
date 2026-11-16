@@ -47,7 +47,7 @@ type ListGroupsOptions struct {
 type GroupList struct {
 	Provenance Provenance     `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	User       *UserReference `json:"user,omitempty" jsonschema:"the user whose groups are listed"`
-	Total      int            `json:"total" jsonschema:"the number of groups matching, as the collector counts them"`
+	Total      *int           `json:"total" jsonschema:"the number of groups matching, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int            `json:"count" jsonschema:"the number of groups returned in this page"`
 	Groups     []Group        `json:"groups" jsonschema:"the groups sorted by name"`
 	NextCursor string         `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -132,16 +132,17 @@ func (s *Service) ListGroups(ctx context.Context, options ListGroupsOptions) (Gr
 	if err := s.client.GetJSON(ctx, path, pageQuery(groupProps, "role,id", filters, limit, offset), &response); err != nil {
 		return GroupList{}, fmt.Errorf("list groups: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return GroupList{}, fmt.Errorf("list groups: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return GroupList{}, fmt.Errorf("list groups: %w", err)
 	}
 	result.Provenance = s.newProvenance()
-	result.Total, result.Count = *response.Meta.Total, len(response.Data)
+	result.Total, result.Count = counted, len(response.Data)
 	result.Groups = make([]Group, 0, len(response.Data))
 	for _, row := range response.Data {
 		result.Groups = append(result.Groups, groupOf(row))
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
@@ -152,12 +153,12 @@ type GroupDetails struct {
 	Provenance    Provenance     `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Group         Group          `json:"group" jsonschema:"the group"`
 	User          *UserReference `json:"user,omitempty" jsonschema:"for a personal group, its user; absent when the user is deleted or not visible to the caller"`
-	Members       int            `json:"members" jsonschema:"the number of users in the group: list them with list_users and group"`
+	Members       *int           `json:"members" jsonschema:"the number of users in the group: list them with list_users and group; null when the collector did not count them, for more rows than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Apps          []GroupApp     `json:"apps" jsonschema:"the apps the group is responsible for, sorted by code, at most 50"`
-	AppsTotal     int            `json:"apps_total" jsonschema:"the number of apps the group is responsible for"`
+	AppsTotal     *int           `json:"apps_total" jsonschema:"the number of apps the group is responsible for; null when the collector did not count them"`
 	AppsTruncated bool           `json:"apps_truncated,omitempty" jsonschema:"whether apps were left out beyond 50"`
-	Nodes         int            `json:"nodes" jsonschema:"the number of nodes whose responsible team is exactly this group: list them with list_nodes and team, whose filter is a text the team contains and may also list the nodes of a team whose name holds this one, such as DBA2 for DBA"`
-	Services      int            `json:"services" jsonschema:"the number of services of the apps of the group: list them with list_services and app"`
+	Nodes         *int           `json:"nodes" jsonschema:"the number of nodes whose responsible team is exactly this group: list them with list_nodes and team, whose filter is a text the team contains and may also list the nodes of a team whose name holds this one, such as DBA2 for DBA; null when the collector did not count them, for more rows than its count limit or a count that failed: not counted, neither zero nor a size"`
+	Services      *int           `json:"services" jsonschema:"the number of services of the apps of the group: list them with list_services and app; null when the collector did not count them, for more rows than its count limit or a count that failed: not counted, neither zero nor a size"`
 }
 
 type GroupApp struct {
@@ -193,17 +194,18 @@ func (s *Service) GetGroup(ctx context.Context, group string) (GroupDetails, err
 	if err := s.client.GetJSON(ctx, path+"/apps", url.Values{"props": {"app,description"}, "orderby": {"app"}, "limit": {strconv.Itoa(maxGroupApps)}}, &apps); err != nil {
 		return GroupDetails{}, fmt.Errorf("get apps of group %s: %w", found.Role, err)
 	}
-	if apps.Meta.Total == nil || *apps.Meta.Total < 0 || len(apps.Data) > maxGroupApps {
-		return GroupDetails{}, fmt.Errorf("get apps of group %s: unexpected collector response", found.Role)
+	appsTotal, err := pageTotal(apps.Meta.Total, len(apps.Data), maxGroupApps)
+	if err != nil {
+		return GroupDetails{}, fmt.Errorf("get apps of group %s: %w", found.Role, err)
 	}
-	result.AppsTotal, result.AppsTruncated = *apps.Meta.Total, *apps.Meta.Total > len(apps.Data)
+	result.AppsTotal, result.AppsTruncated = appsTotal, scanTruncated(appsTotal, len(apps.Data), maxGroupApps)
 	result.Apps = make([]GroupApp, 0, len(apps.Data))
 	for _, app := range apps.Data {
 		result.Apps = append(result.Apps, GroupApp{Name: app.App, Description: app.Description})
 	}
 	for _, count := range []struct {
 		what, idProp string
-		into         *int
+		into         **int
 	}{{"users", "id", &result.Members}, {"nodes", "node_id", &result.Nodes}, {"services", "svc_id", &result.Services}} {
 		if *count.into, _, _, _, err = s.countRows(ctx, path+"/"+count.what, count.idProp, nil, "", 0); err != nil {
 			return GroupDetails{}, fmt.Errorf("count %s of group %s: %w", count.what, found.Role, err)
@@ -236,7 +238,7 @@ type ListUsersOptions struct {
 type UserList struct {
 	Provenance    Provenance `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Group         *Group     `json:"group,omitempty" jsonschema:"the group whose members are listed"`
-	Total         int        `json:"total" jsonschema:"the number of users matching, as the collector counts them, or with name as the MCP counts them among those it read"`
+	Total         *int       `json:"total" jsonschema:"the number of users matching, as the collector counts them, or with name as the MCP counts them among those it read; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	ScanTruncated bool       `json:"scan_truncated,omitempty" jsonschema:"with name, whether the MCP read only the first 1000 users, so that other users may match the name"`
 	Count         int        `json:"count" jsonschema:"the number of users returned in this page"`
 	Users         []User     `json:"users" jsonschema:"the users sorted by last name, then first name"`
@@ -293,16 +295,17 @@ func (s *Service) ListUsers(ctx context.Context, options ListUsersOptions) (User
 	if err := s.client.GetJSON(ctx, path, pageQuery(userProps, order, nil, limit, offset), &response); err != nil {
 		return UserList{}, fmt.Errorf("list users: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return UserList{}, fmt.Errorf("list users: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return UserList{}, fmt.Errorf("list users: %w", err)
 	}
 	result.Provenance = s.newProvenance()
-	result.Total, result.Count = *response.Meta.Total, len(response.Data)
+	result.Total, result.Count = counted, len(response.Data)
 	result.Users = make([]User, 0, len(response.Data))
 	for _, row := range response.Data {
 		result.Users = append(result.Users, row.user())
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
@@ -317,8 +320,9 @@ func (s *Service) searchUsers(ctx context.Context, result UserList, path, name s
 	if err := s.client.GetJSON(ctx, path, pageQuery(userProps, "last_name,first_name,id", nil, maxUserNameScan, 0), &response); err != nil {
 		return UserList{}, fmt.Errorf("list users: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > maxUserNameScan {
-		return UserList{}, fmt.Errorf("list users: unexpected collector response")
+	scanned, err := pageTotal(response.Meta.Total, len(response.Data), maxUserNameScan)
+	if err != nil {
+		return UserList{}, fmt.Errorf("list users: %w", err)
 	}
 	var matching []User
 	for _, row := range response.Data {
@@ -327,7 +331,7 @@ func (s *Service) searchUsers(ctx context.Context, result UserList, path, name s
 		}
 	}
 	result.Provenance = s.newProvenance()
-	result.Total, result.ScanTruncated = len(matching), *response.Meta.Total > len(response.Data)
+	result.Total, result.ScanTruncated = intPtr(len(matching)), scanTruncated(scanned, len(response.Data), maxUserNameScan)
 	end := min(offset+limit, len(matching))
 	result.Users = []User{}
 	if offset < len(matching) {

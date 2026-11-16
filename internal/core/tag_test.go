@@ -21,7 +21,7 @@ func TestListTagsOfTheCollector(t *testing.T) {
 	if request.path != "/tags" || request.query.Get("filter") != `tag_name:~a\.b` || request.query.Get("orderby") != "tag_name,tag_id" || strings.Contains(request.query.Get("props"), "tag_attach_data") {
 		t.Fatalf("request = %+v", request)
 	}
-	if tags.Total != 4 || tags.Count != 3 || !tags.Truncated || tags.NextCursor == "" || tags.Node != nil ||
+	if deref(tags.Total) != 4 || tags.Count != 3 || !tags.Truncated || tags.NextCursor == "" || tags.Node != nil ||
 		tags.Tags[0].Data != `[{"key":"shared","op":"=","value":"from the tag"}]` || tags.Tags[1].Data != `{"scope":"compliance"}` ||
 		tags.Tags[2].Data != "" || tags.Tags[2].Exclude != "^pci-dss$" || tags.Tags[0].Created != "2026-10-12T14:36:56+02:00" {
 		t.Fatalf("tags = %+v", tags)
@@ -70,11 +70,11 @@ func TestListTagsOfANodeByName(t *testing.T) {
 	if request := collector.requests[1]; request.path != "/nodes/n-1/tags" || len(request.query["filter"]) != 0 {
 		t.Fatalf("request = %+v", request)
 	}
-	if tags.Total != 2 || tags.Count != 2 || tags.Tags[0].Name != "Verified" || tags.Tags[1].Name != "verified-2026" || tags.Truncated {
+	if deref(tags.Total) != 2 || tags.Count != 2 || tags.Tags[0].Name != "Verified" || tags.Tags[1].Name != "verified-2026" || tags.Truncated {
 		t.Fatalf("tags = %+v", tags)
 	}
 	tags, err = newTestService(collector).ListTags(t.Context(), ListTagsOptions{Node: "dev2n1", Name: "absent"})
-	if err != nil || tags.Total != 0 || len(tags.Tags) != 0 {
+	if err != nil || deref(tags.Total) != 0 || len(tags.Tags) != 0 {
 		t.Fatalf("absent tag = %+v, %v", tags, err)
 	}
 	page, err := newTestService(collector).ListTags(t.Context(), ListTagsOptions{Node: "dev2n1", Name: "verified", Limit: 1})
@@ -131,7 +131,7 @@ func TestTagFilterReadsTheNodesAndServicesHoldingTheTag(t *testing.T) {
 		collector.requests[1].query.Get("filter") != "os_name:~linux" || collector.requests[1].query.Get("orderby") != "nodename,node_id" {
 		t.Fatalf("requests = %+v", collector.requests)
 	}
-	if nodes.Tag == nil || nodes.Tag.TagID != tagID || nodes.Tag.Name != "pci-dss" || nodes.Total != 2 || !nodes.Truncated {
+	if nodes.Tag == nil || nodes.Tag.TagID != tagID || nodes.Tag.Name != "pci-dss" || deref(nodes.Total) != 2 || !nodes.Truncated {
 		t.Fatalf("nodes = %+v", nodes)
 	}
 	// A cursor is bound to the tag: it does not continue the list of all nodes.
@@ -139,21 +139,21 @@ func TestTagFilterReadsTheNodesAndServicesHoldingTheTag(t *testing.T) {
 		t.Fatal("cursor of a tagged list accepted without the tag")
 	}
 	count, err := service.CountNodes(t.Context(), CountNodesOptions{NodeFilters: NodeFilters{Tag: tagID}, GroupBy: "app"})
-	if err != nil || count.Tag == nil || count.Total != 2 || len(count.Groups) != 2 {
+	if err != nil || count.Tag == nil || deref(count.Total) != 2 || len(count.Groups) != 2 {
 		t.Fatalf("count = %+v, %v", count, err)
 	}
 	if request := collector.requests[len(collector.requests)-2]; request.query.Get("filter") != "tag_id:eq:"+tagID {
 		t.Fatalf("tag ID lookup = %+v", request)
 	}
 	services, err := service.ListServices(t.Context(), ListServicesOptions{ServiceFilters: ServiceFilters{Status: "down", Tag: "pci-dss"}})
-	if err != nil || services.Tag == nil || services.Total != 1 || services.Services[0].Svcname != "foo" {
+	if err != nil || services.Tag == nil || deref(services.Total) != 1 || services.Services[0].Svcname != "foo" {
 		t.Fatalf("services = %+v, %v", services, err)
 	}
 	if request := collector.requests[len(collector.requests)-1]; request.path != "/tags/"+tagID+"/services" || request.query.Get("filter") != "svc_status:eq:down" {
 		t.Fatalf("services request = %+v", request)
 	}
 	serviceCount, err := service.CountServices(t.Context(), CountServicesOptions{ServiceFilters: ServiceFilters{Tag: "pci-dss"}, GroupBy: "status"})
-	if err != nil || serviceCount.Tag == nil || serviceCount.Total != 1 || serviceCount.Groups[0].Value != "down" {
+	if err != nil || serviceCount.Tag == nil || deref(serviceCount.Total) != 1 || serviceCount.Groups[0].Value != "down" {
 		t.Fatalf("service count = %+v, %v", serviceCount, err)
 	}
 }

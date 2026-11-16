@@ -77,7 +77,7 @@ actions starting with it, through a `log_action:~^service\.` filter.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `node`, `service` | The node or service the filters resolved to |
-| `total` | Events matching the filters, as the collector counts them |
+| `total` | Events matching the filters, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Events in this page, and whether more remain |
 | `events[]` | `id`, `date`, `action`, `level`, `user`, `impersonator`, `origin`, `request_id`, `message`, `data`, `node_id`, `nodename`, `svc_id`, `svcname` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |

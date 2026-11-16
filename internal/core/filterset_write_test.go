@@ -83,7 +83,7 @@ func TestCreateFiltersetSendsTheEntries(t *testing.T) {
 		string(entries) != `[{"f_field":"loc_city","f_log_op":"AND","f_op":"=","f_table":"nodes","f_value":"Paris"},{"f_log_op":"AND NOT","filterset":"big-memory"}]` {
 		t.Fatalf("changes = %+v", changes)
 	}
-	if result.Outcome != FiltersetCreated || result.Filterset == nil || result.Filterset.NodesCount != 1 || len(result.Filterset.Criteria) != 2 {
+	if result.Outcome != FiltersetCreated || result.Filterset == nil || deref(result.Filterset.NodesCount) != 1 || len(result.Filterset.Criteria) != 2 {
 		t.Fatalf("result = %+v", result)
 	}
 	// No criteria are sent as an empty list: the collector creates the

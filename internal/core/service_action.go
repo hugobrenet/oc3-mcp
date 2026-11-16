@@ -40,7 +40,7 @@ type ServiceActionList struct {
 	Provenance Provenance        `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Service    *ServiceReference `json:"service,omitempty" jsonschema:"the service the service filter resolved to"`
 	Node       *NodeReference    `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
-	Total      int               `json:"total" jsonschema:"the number of actions matching the filters, as the collector counts them"`
+	Total      *int              `json:"total" jsonschema:"the number of actions matching the filters, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int               `json:"count" jsonschema:"the number of actions returned in this page"`
 	Actions    []ServiceAction   `json:"actions" jsonschema:"the actions, the most recent first"`
 	NextCursor string            `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -73,7 +73,7 @@ type ServiceActionLogs struct {
 	SessionID  string             `json:"session_id" jsonschema:"the agent session the logs belong to"`
 	Actions    []ServiceAction    `json:"actions" jsonschema:"the actions of the session, in the order the agent reported them"`
 	Logs       []ServiceActionLog `json:"logs" jsonschema:"the log entries of the session, in the order the agent reported them"`
-	Total      int                `json:"total" jsonschema:"the number of action and log rows the collector holds for the session"`
+	Total      *int               `json:"total" jsonschema:"the number of action and log rows the collector holds for the session; null when the collector did not count them"`
 	Truncated  bool               `json:"truncated" jsonschema:"whether rows or text were left out: after 500 rows, 8 KiB per entry or 256 KiB of text in all"`
 }
 
@@ -142,16 +142,17 @@ func (s *Service) ListServiceActions(ctx context.Context, options ListServiceAct
 	if err := s.client.GetJSON(ctx, "/services_actions", pageQuery(serviceActionProps, "-begin,-id", filters, limit, offset), &response); err != nil {
 		return ServiceActionList{}, fmt.Errorf("list service actions: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return ServiceActionList{}, fmt.Errorf("list service actions: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return ServiceActionList{}, fmt.Errorf("list service actions: %w", err)
 	}
 	result.Provenance = s.newProvenance()
-	result.Total, result.Count = *response.Meta.Total, len(response.Data)
+	result.Total, result.Count = counted, len(response.Data)
 	result.Actions = make([]ServiceAction, 0, len(response.Data))
 	for _, action := range response.Data {
 		result.Actions = append(result.Actions, action.summary())
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
@@ -254,7 +255,7 @@ type ServiceActionCount struct {
 	Provenance Provenance        `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Service    *ServiceReference `json:"service,omitempty" jsonschema:"the service the service filter resolved to"`
 	Node       *NodeReference    `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
-	Total      int               `json:"total" jsonschema:"the number of actions matching the filters, as the collector counts them"`
+	Total      *int              `json:"total" jsonschema:"the number of actions matching the filters, as the collector counts them; null when the collector did not count them, for more rows than its count limit or a count that failed: not counted, neither zero nor a size"`
 	GroupBy    string            `json:"group_by,omitempty" jsonschema:"the grouping asked"`
 	Groups     []CountGroup      `json:"groups,omitempty" jsonschema:"with group_by, the most frequent values first, and the number of matching actions with each"`
 	Distinct   int               `json:"distinct,omitempty" jsonschema:"with group_by, the number of distinct values among the matching actions"`
@@ -305,15 +306,16 @@ func (s *Service) GetServiceActionLogs(ctx context.Context, sessionID string) (S
 	if err := s.client.GetJSON(ctx, "/services_actions", query, &response); err != nil {
 		return ServiceActionLogs{}, fmt.Errorf("get service action logs of session %s: %w", sessionID, err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > maxActionSessionRows {
-		return ServiceActionLogs{}, fmt.Errorf("get service action logs of session %s: unexpected collector response", sessionID)
+	total, err := pageTotal(response.Meta.Total, len(response.Data), maxActionSessionRows)
+	if err != nil {
+		return ServiceActionLogs{}, fmt.Errorf("get service action logs of session %s: %w", sessionID, err)
 	}
 	if len(response.Data) == 0 {
 		return ServiceActionLogs{}, fmt.Errorf("get service action logs of session %s: no action of this session is visible in the collector", sessionID)
 	}
 	result := ServiceActionLogs{
-		Provenance: s.newProvenance(), SessionID: sessionID, Total: *response.Meta.Total,
-		Actions: []ServiceAction{}, Logs: []ServiceActionLog{}, Truncated: len(response.Data) < *response.Meta.Total,
+		Provenance: s.newProvenance(), SessionID: sessionID, Total: total,
+		Actions: []ServiceAction{}, Logs: []ServiceActionLog{}, Truncated: scanTruncated(total, len(response.Data), maxActionSessionRows),
 	}
 	textBytes := 0
 	for _, row := range response.Data {

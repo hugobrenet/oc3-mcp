@@ -126,7 +126,7 @@ func TestListNodePackagesQueriesOneNode(t *testing.T) {
 		t.Fatalf("request = %+v", request)
 	}
 	got := packages.Packages[0]
-	if packages.Node.Nodename != "dev2n1" || packages.Total != 2 || !packages.Truncated || packages.NextCursor == "" ||
+	if packages.Node.Nodename != "dev2n1" || deref(packages.Total) != 2 || !packages.Truncated || packages.NextCursor == "" ||
 		got.Name != "opensvc-server" || got.Version != "3.0.0~rc37" || got.InstalledAt != "2026-09-29 06:34:43" || got.LastReportedAt != "2026-10-12 05:39:28" || got.SignedBy != "" {
 		t.Fatalf("packages = %+v", packages)
 	}

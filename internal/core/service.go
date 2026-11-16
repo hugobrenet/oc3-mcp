@@ -101,7 +101,7 @@ type ServiceList struct {
 	Provenance Provenance     `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Node       *NodeReference `json:"node,omitempty" jsonschema:"the node the node filter resolved to; only services with an instance on it are listed"`
 	ServiceMembership
-	Total      int              `json:"total" jsonschema:"the number of services matching the filters, as the collector counts them"`
+	Total      *int             `json:"total" jsonschema:"the number of services matching the filters, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int              `json:"count" jsonschema:"the number of services returned in this page"`
 	Services   []ServiceSummary `json:"services" jsonschema:"the services sorted by name, then service ID"`
 	NextCursor string           `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -183,7 +183,7 @@ type ServiceAvailability struct {
 }
 
 type ServiceInstancePage struct {
-	Total     int               `json:"total" jsonschema:"the number of instances the collector holds for the service"`
+	Total     *int              `json:"total" jsonschema:"the number of instances the collector holds for the service; null when the collector did not count them"`
 	Count     int               `json:"count" jsonschema:"the number of instances returned"`
 	Items     []ServiceInstance `json:"items" jsonschema:"the instances sorted by node name"`
 	Truncated bool              `json:"truncated" jsonschema:"whether instances were left out after 200"`
@@ -389,10 +389,11 @@ func (s *Service) ListServices(ctx context.Context, options ListServicesOptions)
 			})
 		}
 	}
-	if total == nil || *total < 0 || len(services) > limit {
-		return ServiceList{}, fmt.Errorf("list services: unexpected collector response")
+	counted, err := pageTotal(total, len(services), limit)
+	if err != nil {
+		return ServiceList{}, fmt.Errorf("list services: %w", err)
 	}
-	result := ServiceList{Provenance: s.newProvenance(), Node: node, ServiceMembership: members, Total: *total, Count: len(services), Services: make([]ServiceSummary, 0, len(services))}
+	result := ServiceList{Provenance: s.newProvenance(), Node: node, ServiceMembership: members, Total: counted, Count: len(services), Services: make([]ServiceSummary, 0, len(services))}
 	for _, service := range services {
 		result.Services = append(result.Services, ServiceSummary{
 			SvcID: service.SvcID, Svcname: service.Svcname, ClusterID: service.ClusterID, App: service.SvcApp, Env: service.SvcEnv,
@@ -401,7 +402,7 @@ func (s *Service) ListServices(ctx context.Context, options ListServicesOptions)
 			StatusUpdated: service.SvcStatusUpdated,
 		})
 	}
-	if next := offset + len(services); len(services) > 0 && next < result.Total {
+	if next := offset + len(services); morePages(result.Total, offset, len(services), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
@@ -425,8 +426,9 @@ func (s *Service) GetService(ctx context.Context, service string) (ServiceDetail
 	if err := s.client.GetJSON(ctx, "/services/"+url.PathEscape(svc.SvcID)+"/nodes", instanceQuery, &instances); err != nil {
 		return ServiceDetails{}, fmt.Errorf("get service %s instances: %w", service, err)
 	}
-	if instances.Meta.Total == nil || *instances.Meta.Total < 0 || len(instances.Data) > maxServiceInstances {
-		return ServiceDetails{}, fmt.Errorf("get service %s instances: unexpected collector response", service)
+	instancesTotal, err := pageTotal(instances.Meta.Total, len(instances.Data), maxServiceInstances)
+	if err != nil {
+		return ServiceDetails{}, fmt.Errorf("get service %s instances: %w", service, err)
 	}
 
 	result := ServiceDetails{
@@ -447,8 +449,8 @@ func (s *Service) GetService(ctx context.Context, service string) (ServiceDetail
 		},
 		Availability: ServiceAvailability{RatePercent: svc.SvcAvailability, SLAPercent: svc.SvcSLA, Updated: svc.SvcAvailabilityUpdated},
 		Instances: ServiceInstancePage{
-			Total: *instances.Meta.Total, Count: len(instances.Data), Items: make([]ServiceInstance, 0, len(instances.Data)),
-			Truncated: len(instances.Data) < *instances.Meta.Total,
+			Total: instancesTotal, Count: len(instances.Data), Items: make([]ServiceInstance, 0, len(instances.Data)),
+			Truncated: scanTruncated(instancesTotal, len(instances.Data), maxServiceInstances),
 		},
 	}
 	result.Config.Text, result.Config.TextTruncated = maskServiceConfig(svc.SvcConfig)
