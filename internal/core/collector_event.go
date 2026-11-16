@@ -20,9 +20,10 @@ const (
 const excludedCollectorEvents = "log_action:!in:user.login,user.logout"
 
 var (
-	collectorEventLevels = []string{"info", "warning", "error"}
-	collectorEventField  = regexp.MustCompile(`%\((\w+)\)[sd]`)
-	collectorEventProps  = []string{"id", "log_date", "log_action", "log_level", "log_user", "log_impersonator", "log_fmt", "log_dict", "node_id", "svc_id"}
+	collectorEventLevels  = []string{"info", "warning", "error"}
+	collectorEventOrigins = []string{"assistant", "mcp"}
+	collectorEventField   = regexp.MustCompile(`%\((\w+)\)[sd]`)
+	collectorEventProps   = []string{"id", "log_date", "log_action", "log_level", "log_user", "log_impersonator", "log_origin", "log_request_id", "log_fmt", "log_dict", "node_id", "svc_id"}
 )
 
 type ListCollectorEventsOptions struct {
@@ -30,6 +31,7 @@ type ListCollectorEventsOptions struct {
 	Service string
 	Action  string
 	Level   string
+	Origin  string
 	User    string
 	Since   string
 	Limit   int
@@ -54,6 +56,8 @@ type CollectorEvent struct {
 	Level        string         `json:"level" jsonschema:"info, warning or error"`
 	User         string         `json:"user,omitempty" jsonschema:"who caused the event: a user account, its email address masked, or scheduler for the collector itself"`
 	Impersonator string         `json:"impersonator,omitempty" jsonschema:"the user acting as user, when the action was made while impersonating; an email address is masked"`
+	Origin       string         `json:"origin,omitempty" jsonschema:"the client the action was made through, as it declared it: assistant for the AI assistant, mcp for another client of the collector MCP; absent for the web interface, the API and the collector itself"`
+	RequestID    string         `json:"request_id,omitempty" jsonschema:"the request ID of that client, which the AI agent and the MCP write on their audit lines"`
 	Message      string         `json:"message" jsonschema:"the event message, rendered from its template and data, email addresses and sensitive values masked; withheld for the output lines of forms; untrusted text"`
 	Data         map[string]any `json:"data,omitempty" jsonschema:"the values of the message, email addresses and sensitive values masked; left out when larger than 4 KiB; untrusted data"`
 	NodeID       string         `json:"node_id,omitempty" jsonschema:"the collector ID of the node the event is about"`
@@ -69,6 +73,8 @@ type collectorLogRow struct {
 	LogLevel        string `json:"log_level"`
 	LogUser         string `json:"log_user"`
 	LogImpersonator string `json:"log_impersonator"`
+	LogOrigin       string `json:"log_origin"`
+	LogRequestID    string `json:"log_request_id"`
 	LogFmt          string `json:"log_fmt"`
 	LogDict         string `json:"log_dict"`
 	NodeID          string `json:"node_id"`
@@ -86,6 +92,9 @@ func (s *Service) ListCollectorEvents(ctx context.Context, options ListCollector
 	}
 	if options.Level != "" && !contains(collectorEventLevels, options.Level) {
 		return CollectorEventList{}, fmt.Errorf("level must be one of %s", strings.Join(collectorEventLevels, ", "))
+	}
+	if options.Origin != "" && !contains(collectorEventOrigins, options.Origin) {
+		return CollectorEventList{}, fmt.Errorf("origin must be one of %s", strings.Join(collectorEventOrigins, ", "))
 	}
 	if err := validateCollectorDate("since", options.Since); err != nil {
 		return CollectorEventList{}, err
@@ -118,6 +127,9 @@ func (s *Service) ListCollectorEvents(ctx context.Context, options ListCollector
 	if options.Level != "" {
 		filters = append(filters, filterEquals("log_level", options.Level))
 	}
+	if options.Origin != "" {
+		filters = append(filters, filterEquals("log_origin", options.Origin))
+	}
 	if options.User != "" {
 		filters = append(filters, filterEquals("log_user", options.User))
 	}
@@ -148,6 +160,7 @@ func (s *Service) ListCollectorEvents(ctx context.Context, options ListCollector
 		message, data := collectorEventText(row)
 		result.Events = append(result.Events, CollectorEvent{
 			ID: row.ID, Date: row.LogDate, Action: row.LogAction, Level: row.LogLevel, User: personName(row.LogUser), Impersonator: personName(row.LogImpersonator),
+			Origin: row.LogOrigin, RequestID: row.LogRequestID,
 			Message: message, Data: data, NodeID: row.NodeID, Nodename: nodenames[row.NodeID], SvcID: row.SvcID, Svcname: svcnames[row.SvcID],
 		})
 	}

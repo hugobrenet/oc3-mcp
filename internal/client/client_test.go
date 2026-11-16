@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/opensvc/oc3-mcp/internal/auth"
+	"github.com/opensvc/oc3-mcp/internal/requestid"
 	"github.com/opensvc/oc3-mcp/internal/testutil"
 )
 
@@ -187,6 +188,39 @@ func TestPutJSONWithinBoundsTheRequestByItsTimeout(t *testing.T) {
 	}
 	if err := client.PutJSONWithin(callerContext(t), "/forms/7", map[string]any{"data": map[string]any{}}, &output, 5*time.Second); err != nil || output["status"] != "COMPLETED" {
 		t.Fatalf("output = %v, %v", output, err)
+	}
+}
+
+// A request of the agent, with its delegated token, tells the collector it
+// comes through the assistant, and forwards the request ID of the agent; no
+// other X-Request-ID reaches the collector.
+func TestRequestsTellTheCollectorTheirOrigin(t *testing.T) {
+	type seen struct{ origin, requestID string }
+	var got seen
+	collector := testutil.NewCollector(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = seen{r.Header.Get("X-OpenSVC-Origin"), r.Header.Get("X-Request-ID")}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	client := newTestClient(t, collector)
+	const id = "0123456789abcdef0123456789abcdef"
+	for _, c := range []struct {
+		name string
+		ctx  context.Context
+		want seen
+	}{
+		{"with a request ID", requestid.With(callerContext(t), id), seen{"assistant", id}},
+		{"without a request ID", callerContext(t), seen{"assistant", ""}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got = seen{}
+			if err := client.GetJSON(c.ctx, "/nodes", nil, &struct{}{}); err != nil {
+				t.Fatal(err)
+			}
+			if got != c.want {
+				t.Fatalf("collector saw %+v, want %+v", got, c.want)
+			}
+		})
 	}
 }
 

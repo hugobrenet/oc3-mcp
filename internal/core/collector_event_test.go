@@ -88,6 +88,7 @@ func TestRenderCollectorEvent(t *testing.T) {
 func TestListCollectorEventsRejectsInvalidInputs(t *testing.T) {
 	for _, options := range []ListCollectorEventsOptions{
 		{Level: "fatal"},
+		{Origin: "browser"},
 		{Since: "yesterday"},
 		{Limit: 201},
 		{Action: " service.status"},
@@ -114,6 +115,29 @@ func TestListCollectorEventsFiltersAnActionFamily(t *testing.T) {
 		if got := collector.requests[0].query["filter"][1]; got != want {
 			t.Fatalf("action %q filter = %q, want %q", action, got, want)
 		}
+	}
+}
+
+// TestListCollectorEventsTellsTheOrigin reads the client an action was made
+// through, and filters on it.
+func TestListCollectorEventsTellsTheOrigin(t *testing.T) {
+	collector := &fakeCollector{body: `{"data":[
+		{"id":3,"log_date":"2026-11-10 12:00:00","log_action":"service.action","log_level":"info","log_user":"scheduler",
+		 "log_origin":"assistant","log_request_id":"0123456789abcdef0123456789abcdef","log_fmt":"restart","log_dict":"{}"}],
+		"meta":{"total":1}}`}
+	events, err := newTestService(collector).ListCollectorEvents(t.Context(), ListCollectorEventsOptions{Origin: "assistant"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := collector.requests[0]
+	if got := request.query["filter"][1]; got != "log_origin:eq:assistant" {
+		t.Fatalf("origin filter = %q", got)
+	}
+	if props := request.query.Get("props"); !strings.Contains(props, "log_origin") || !strings.Contains(props, "log_request_id") {
+		t.Fatalf("props = %q", props)
+	}
+	if event := events.Events[0]; event.Origin != "assistant" || event.RequestID != "0123456789abcdef0123456789abcdef" {
+		t.Fatalf("event = %+v", event)
 	}
 }
 
