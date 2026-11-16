@@ -172,7 +172,7 @@ func (s *Service) selectNodes(ctx context.Context, path string, filters []string
 			return nil, fmt.Errorf("select nodes: %w", err)
 		}
 		if len(response.Data) > selectionPage {
-			return nil, fmt.Errorf("select nodes: unexpected collector response")
+			return nil, fmt.Errorf("select nodes: %w: nothing was changed", errUnexpectedResponse)
 		}
 		// Not counted, the selection is beyond what the collector counts, or its
 		// count failed: refused as too large, nothing changed.
@@ -240,7 +240,7 @@ func (s *Service) resolveNodes(ctx context.Context, names []string) ([]collector
 				return nil, fmt.Errorf("get nodes: %w", err)
 			}
 			if len(response.Data) > selectionPage {
-				return nil, fmt.Errorf("get nodes: unexpected collector response")
+				return nil, fmt.Errorf("get nodes: %w: nothing was changed", errUnexpectedResponse)
 			}
 			if response.Meta.Total == nil || *response.Meta.Total > maxSelectionFiltered {
 				return nil, fmt.Errorf("get nodes: more than %d nodes match the names, or the collector did not count them: nothing was changed; name fewer nodes", maxSelectionFiltered)

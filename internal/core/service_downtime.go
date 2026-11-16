@@ -200,7 +200,7 @@ func (s *Service) readStatusLog(ctx context.Context, period foundStatusPeriod) (
 		return collectorStatusLog{}, fmt.Errorf("get status history of service %s: %w", period.service.Svcname, err)
 	}
 	if log.Data == nil || log.Availability == nil {
-		return collectorStatusLog{}, fmt.Errorf("get status history of service %s: unexpected collector response", period.service.Svcname)
+		return collectorStatusLog{}, fmt.Errorf("get status history of service %s: %w", period.service.Svcname, errUnexpectedResponse)
 	}
 	return log, nil
 }

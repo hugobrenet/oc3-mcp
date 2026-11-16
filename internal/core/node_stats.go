@@ -136,7 +136,7 @@ func (s *Service) GetNodeStats(ctx context.Context, options GetNodeStatsOptions)
 		return NodeStats{}, fmt.Errorf("get %s statistics of node %s: %w", options.Group, node.Nodename, err)
 	}
 	if response.Data == nil {
-		return NodeStats{}, fmt.Errorf("get %s statistics of node %s: unexpected collector response", options.Group, node.Nodename)
+		return NodeStats{}, fmt.Errorf("get %s statistics of node %s: %w", options.Group, node.Nodename, errUnexpectedResponse)
 	}
 
 	sort.SliceStable(response.Data, func(i, j int) bool {

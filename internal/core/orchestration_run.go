@@ -293,7 +293,7 @@ func (s *Service) readRun(ctx context.Context, id int) (collectorOrchestrationRu
 		return collectorOrchestrationRunDetails{}, fmt.Errorf("get orchestration run %d: %w", id, err)
 	}
 	if response.ID != id {
-		return collectorOrchestrationRunDetails{}, fmt.Errorf("get orchestration run %d: unexpected collector response", id)
+		return collectorOrchestrationRunDetails{}, fmt.Errorf("get orchestration run %d: %w", id, errUnexpectedResponse)
 	}
 	return response, nil
 }

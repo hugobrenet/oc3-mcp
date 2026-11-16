@@ -268,7 +268,7 @@ func (s *Service) GetNodeSysreportDiff(ctx context.Context, options GetNodeSysre
 			return SysreportDiff{}, fmt.Errorf("get sysreport change %s of node %s: %w", options.Revision, node.Nodename, err)
 		}
 		if response.Data == nil {
-			return SysreportDiff{}, fmt.Errorf("get sysreport change of node %s: unexpected collector response", node.Nodename)
+			return SysreportDiff{}, fmt.Errorf("get sysreport change of node %s: %w", node.Nodename, errUnexpectedResponse)
 		}
 		result.To = SysreportPoint{Revision: response.Data.CID, Date: response.Data.Date}
 		files = response.Data.Files
@@ -288,7 +288,7 @@ func (s *Service) GetNodeSysreportDiff(ctx context.Context, options GetNodeSysre
 			return SysreportDiff{}, fmt.Errorf("compare sysreport states of node %s: %w", node.Nodename, err)
 		}
 		if response.Data == nil {
-			return SysreportDiff{}, fmt.Errorf("compare sysreport states of node %s: unexpected collector response", node.Nodename)
+			return SysreportDiff{}, fmt.Errorf("compare sysreport states of node %s: %w", node.Nodename, errUnexpectedResponse)
 		}
 		result.From = &SysreportPoint{Revision: response.Data.Begin.CID, Date: response.Data.Begin.Date}
 		result.To = SysreportPoint{Revision: response.Data.End.CID, Date: response.Data.End.Date}
@@ -429,6 +429,7 @@ func (s *Service) GetNodeSysreportFile(ctx context.Context, options GetNodeSysre
 	if entry.Restricted {
 		return SysreportFileContent{}, fmt.Errorf("the collector withholds the content of %s, a sensitive path of the sysreport of node %s, from the caller", entry.Path, node.Nodename)
 	}
+	// An identifier out of its form is a value of the data, no other API.
 	if !sysreportObjectPattern.MatchString(entry.OID) {
 		return SysreportFileContent{}, fmt.Errorf("get sysreport file of node %s: unexpected collector response", node.Nodename)
 	}
@@ -439,7 +440,7 @@ func (s *Service) GetNodeSysreportFile(ctx context.Context, options GetNodeSysre
 		return SysreportFileContent{}, fmt.Errorf("get sysreport file %s of node %s: %w", entry.Path, node.Nodename, err)
 	}
 	if response.Data == nil {
-		return SysreportFileContent{}, fmt.Errorf("get sysreport file of node %s: unexpected collector response", node.Nodename)
+		return SysreportFileContent{}, fmt.Errorf("get sysreport file of node %s: %w", node.Nodename, errUnexpectedResponse)
 	}
 	result := SysreportFileContent{
 		Provenance: s.newProvenance(), Node: node, Revision: revision, Path: entry.Path, Kind: entry.Kind, Size: entry.Size,
@@ -481,6 +482,7 @@ func (s *Service) sysreportTree(ctx context.Context, nodeName string, at string)
 			}
 			return NodeReference{}, SysreportPoint{}, nil, fmt.Errorf("node %s sent no sysreport at or before %s", node.Nodename, at)
 		}
+		// A revision out of its form is a value of the data, no other API.
 		if !sysreportRevisionPattern.MatchString(response.Data[0].CID) {
 			return NodeReference{}, SysreportPoint{}, nil, fmt.Errorf("read sysreport of node %s: unexpected collector response", node.Nodename)
 		}
@@ -493,7 +495,7 @@ func (s *Service) sysreportTree(ctx context.Context, nodeName string, at string)
 		return NodeReference{}, SysreportPoint{}, nil, fmt.Errorf("list sysreport files of node %s: %w", node.Nodename, err)
 	}
 	if response.Data == nil {
-		return NodeReference{}, SysreportPoint{}, nil, fmt.Errorf("list sysreport files of node %s: unexpected collector response", node.Nodename)
+		return NodeReference{}, SysreportPoint{}, nil, fmt.Errorf("list sysreport files of node %s: %w", node.Nodename, errUnexpectedResponse)
 	}
 	return node, revision, response.Data, nil
 }

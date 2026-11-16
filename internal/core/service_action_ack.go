@@ -155,7 +155,7 @@ func (s *Service) ackSelectedServiceActions(ctx context.Context, options AckServ
 			return ServiceActionAcknowledgement{}, fmt.Errorf("select service actions: %w", err)
 		}
 		if len(response.Data) > selectionPage {
-			return ServiceActionAcknowledgement{}, fmt.Errorf("select service actions: unexpected collector response")
+			return ServiceActionAcknowledgement{}, fmt.Errorf("select service actions: %w: nothing was acknowledged", errUnexpectedResponse)
 		}
 		// Not counted, the selection is beyond what the collector counts, or its
 		// count failed: refused as too large, nothing acknowledged.

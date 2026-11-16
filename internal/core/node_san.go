@@ -105,7 +105,7 @@ func (s *Service) GetNodeSanTopology(ctx context.Context, node string) (NodeSanT
 		return NodeSanTopology{}, fmt.Errorf("get SAN topology of node %s: %w", found.Nodename, err)
 	}
 	if response.Data == nil || len(response.Data.Nodes) > maxSanDevices || len(response.Data.Links) > maxSanLinks {
-		return NodeSanTopology{}, fmt.Errorf("get SAN topology of node %s: unexpected collector response", found.Nodename)
+		return NodeSanTopology{}, fmt.Errorf("get SAN topology of node %s: %w", found.Nodename, errUnexpectedResponse)
 	}
 	result := NodeSanTopology{
 		Node:    NodeReference{NodeID: found.NodeID, Nodename: found.Nodename, ClusterID: found.ClusterID},
@@ -127,7 +127,7 @@ func (s *Service) GetNodeSanTopology(ctx context.Context, node string) (NodeSanT
 		}
 	}
 	if serverID == "" {
-		return NodeSanTopology{}, fmt.Errorf("get SAN topology of node %s: unexpected collector response without the node", found.Nodename)
+		return NodeSanTopology{}, fmt.Errorf("get SAN topology of node %s: %w without the node", found.Nodename, errUnexpectedResponse)
 	}
 	outgoing := make(map[string][]SanLink)
 	for _, item := range response.Data.Links {

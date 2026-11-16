@@ -334,7 +334,7 @@ func (s *Service) GetComplianceRuleset(ctx context.Context, ruleset string) (Com
 	}
 	own, ok := byName[row.Name]
 	if !ok {
-		return ComplianceRulesetDetails{}, fmt.Errorf("export ruleset %s: unexpected collector response", row.Name)
+		return ComplianceRulesetDetails{}, fmt.Errorf("export ruleset %s: %w", row.Name, errUnexpectedResponse)
 	}
 	self := export.Rulesets[own]
 	result.Publications, result.Responsibles = self.Publications, self.Responsibles

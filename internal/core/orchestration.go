@@ -325,13 +325,13 @@ func (s *Service) CheckOrchestration(ctx context.Context, options CheckOrchestra
 		return OrchestrationCheck{}, fmt.Errorf("check orchestration: %w", err)
 	}
 	if len(response.Data) > len(input.Steps) {
-		return OrchestrationCheck{}, fmt.Errorf("check orchestration: unexpected collector response")
+		return OrchestrationCheck{}, fmt.Errorf("check orchestration: %w", errUnexpectedResponse)
 	}
 	result.Valid = len(response.Data) == len(input.Steps)
 	result.Steps = make([]CheckedStep, 0, len(response.Data))
 	for _, checked := range response.Data {
 		if checked.Step < 0 || checked.Step >= len(input.Steps) {
-			return OrchestrationCheck{}, fmt.Errorf("check orchestration: unexpected collector response")
+			return OrchestrationCheck{}, fmt.Errorf("check orchestration: %w", errUnexpectedResponse)
 		}
 		step := input.Steps[checked.Step]
 		message, _ := truncateUTF8(checked.Message, maxOrchestrationTextBytes)
