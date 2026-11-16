@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -54,6 +55,11 @@ func auditToolCalls(next mcp.MethodHandler) mcp.MethodHandler {
 					detail = text.Text
 					break
 				}
+			}
+			// A collector whose API this MCP does not follow: an outcome of
+			// its own, which the audit is searched by.
+			if strings.HasPrefix(detail, "collector_incompatible:") {
+				outcome = "collector_incompatible"
 			}
 		}
 		attrs := []slog.Attr{

@@ -218,6 +218,7 @@ func newToolsHandler(collector *client.Client, actions bool, route ...mcp.Middle
 	if err := content.Register(server, collector); err != nil {
 		return nil, err
 	}
+	tools.SetServerVersion(serverVersion)
 	registrar, err := tools.NewRegistrar(server)
 	if err != nil {
 		return nil, err

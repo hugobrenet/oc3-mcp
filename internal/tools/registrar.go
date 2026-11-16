@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -55,6 +56,14 @@ func addTool[In, Out any](registrar *Registrar, tool *mcp.Tool, handler mcp.Tool
 	// The registrar sets the search metadata; a declaration sets none.
 	if tool.Meta, err = searchMeta(tool.Name); err != nil {
 		return err
+	}
+
+	// Every tool says so when the collector answers in a way this MCP cannot use.
+	explained := handler
+	name := tool.Name
+	handler = func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, Out, error) {
+		result, out, err := explained(ctx, req, in)
+		return result, out, explainIncompatible(name, err)
 	}
 
 	defer func() {
