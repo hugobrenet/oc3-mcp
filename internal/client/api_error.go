@@ -23,6 +23,9 @@ type APIError struct {
 	StatusCode int
 	Status     string
 	Text       string
+	// routed: the body is the {"message": ...} of the router, no problem of
+	// a handler.
+	routed bool
 }
 
 func (e *APIError) Error() string {
@@ -62,11 +65,13 @@ func newAPIError(method string, path string, response *http.Response) *APIError 
 		return apiError
 	}
 	var problem struct {
-		Text string `json:"text"`
+		Text    string `json:"text"`
+		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(body, &problem); err != nil {
 		return apiError
 	}
+	apiError.routed = problem.Text == "" && problem.Message != ""
 	apiError.Text = normalizeProblemText(problem.Text, maxErrorTextRunes)
 	return apiError
 }

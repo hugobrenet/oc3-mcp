@@ -207,7 +207,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return newAPIError(method, path, response)
+		return responseError(method, path, response)
 	}
 	// A route that answers nothing, such as the deletion of an AI resource,
 	// answers 204 without a body: a caller expecting nothing takes it.
@@ -216,7 +216,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 	}
 	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" {
-		return fmt.Errorf("OpenSVC collector %s returned unexpected content type %q", path, response.Header.Get("Content-Type"))
+		return &IncompatibleError{Method: method, Path: path, Reason: fmt.Sprintf("returned unexpected content type %q", response.Header.Get("Content-Type"))}
 	}
 	payload, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBodySize+1))
 	if err != nil {
@@ -229,7 +229,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		return nil
 	}
 	if err := json.Unmarshal(payload, output); err != nil {
-		return fmt.Errorf("decode OpenSVC collector %s response: %w", path, err)
+		return decodeError(method, path, err)
 	}
 	return nil
 }
