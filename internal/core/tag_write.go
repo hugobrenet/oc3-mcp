@@ -123,6 +123,7 @@ func (s *Service) readTag(ctx context.Context, tag string) (collectorTag, error)
 	if err := s.client.GetJSON(ctx, "/tags/"+url.PathEscape(reference.TagID), url.Values{"props": {strings.Join(tagProps, ",")}, "meta": {"false"}}, &response); err != nil {
 		return collectorTag{}, fmt.Errorf("get tag %s: %w", reference.Name, err)
 	}
+	// Two tags of this ID, or none, is a state of the data, no other API.
 	if len(response.Data) != 1 {
 		return collectorTag{}, fmt.Errorf("get tag %s: unexpected collector response", reference.Name)
 	}

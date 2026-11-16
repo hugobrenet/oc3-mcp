@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/opensvc/oc3-mcp/internal/client"
 )
 
 const (
@@ -177,9 +178,20 @@ func collectorDate(value string) string {
 	return value
 }
 
-// errUnexpectedResponse is an answer of the collector out of its API: a
-// negative total, a page longer than asked.
-var errUnexpectedResponse = errors.New("unexpected collector response")
+// errUnexpectedResponse is a read whose answer is out of the collector API: a
+// negative total, a page longer than asked, a field the API requires missing.
+// It is an answer of another API, which errors.Is finds as
+// client.ErrIncompatible: the tool tells the model the collector moved on,
+// rather than a passing failure. The outcome of a write the collector
+// answered out of its API is ambiguous, not incompatible: those keep their
+// own error, which says how to find what was done.
+var errUnexpectedResponse error = unexpectedResponse{}
+
+type unexpectedResponse struct{}
+
+func (unexpectedResponse) Error() string { return "unexpected collector response" }
+
+func (unexpectedResponse) Is(target error) bool { return target == client.ErrIncompatible }
 
 // pageTotal reads the total of a page of a collector list: the number of rows
 // matching, as the collector counted them, or nil when it gave none. The

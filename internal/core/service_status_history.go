@@ -135,7 +135,7 @@ func (s *Service) GetServiceStatusHistory(ctx context.Context, options ServiceSt
 		return ServiceStatusHistory{}, fmt.Errorf("get status history of service %s: %w", service.Svcname, err)
 	}
 	if response.Data == nil || (result.Node == nil && response.Availability == nil) {
-		return ServiceStatusHistory{}, fmt.Errorf("get status history of service %s: unexpected collector response", service.Svcname)
+		return ServiceStatusHistory{}, fmt.Errorf("get status history of service %s: %w", service.Svcname, errUnexpectedResponse)
 	}
 	if result.Node == nil {
 		result.Availability = response.availabilityWindow()

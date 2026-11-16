@@ -225,7 +225,7 @@ INFO mcp tool call tool=get_node issuer=https://sso.example.com/application/o/co
 | `client_id` | On HTTPS, the client application from the `client_id` or `azp` claim; empty on the socket |
 | `exchange` | `delegated` on the socket; on HTTPS, `ok`, the error message of a refused exchange, or `none` when no exchange was attempted |
 | `collector_subject` | The subject of the token the collector received, to correlate with its logs |
-| `outcome`, `detail` | `ok`, `tool_error` (collector refusal such as HTTP 401 or 404, or validation error), `collector_incompatible` (the collector answered in a way this MCP cannot use: a route it does not know, a response of another shape, another content type; its API moved on and the MCP must be upgraded) or `error` (protocol error); `detail` is the bounded error text already returned to the client |
+| `outcome`, `detail` | `ok`, `tool_error` (collector refusal such as HTTP 401 or 404, or validation error), `collector_incompatible` (the collector answered a read in a way this MCP cannot use: a route it does not know, a response of another shape or out of its API, such as a negative total or a page longer than asked, another content type; its API moved on and the MCP must be upgraded; a write answered out of the API stays a `tool_error` saying how to find what was done, as a value of the data out of its form, such as a sysreport revision, or two tags of one ID) or `error` (protocol error); `detail` is the bounded error text already returned to the client |
 | `duration` | Total call duration, including the collector requests |
 | `request_id` | On the socket, the `X-Request-ID` the AI agent sends, which its own audit lines carry; empty on HTTPS, or when absent or not 32 lowercase hexadecimal characters |
 

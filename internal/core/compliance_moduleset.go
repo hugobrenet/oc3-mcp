@@ -321,7 +321,7 @@ func (s *Service) GetComplianceModuleset(ctx context.Context, moduleset string) 
 	}
 	own, ok := byName[row.Name]
 	if !ok {
-		return ComplianceModulesetDetails{}, fmt.Errorf("export moduleset %s: unexpected collector response", row.Name)
+		return ComplianceModulesetDetails{}, fmt.Errorf("export moduleset %s: %w", row.Name, errUnexpectedResponse)
 	}
 	result := ComplianceModulesetDetails{
 		Moduleset:    ComplianceModuleset{ID: row.ID, Name: row.Name, Author: personName(row.Author), Updated: row.Updated},

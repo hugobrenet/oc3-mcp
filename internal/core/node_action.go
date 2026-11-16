@@ -235,7 +235,7 @@ func (s *Service) lookupNodeRow(ctx context.Context, node string, props []string
 		return nil, fmt.Errorf("get node %s: %w", node, err)
 	}
 	if len(response.Data) != 1 || propText(response.Data[0], "node_id") != found.NodeID {
-		return nil, fmt.Errorf("get node %s: unexpected collector response", node)
+		return nil, fmt.Errorf("get node %s: %w", node, errUnexpectedResponse)
 	}
 	return response.Data[0], nil
 }

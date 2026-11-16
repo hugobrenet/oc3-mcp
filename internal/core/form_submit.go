@@ -226,7 +226,7 @@ func (s *Service) pendingRequestStep(ctx context.Context, id int) (int, error) {
 	}
 	step, err := strconv.Atoi(anyText(response.Data[0].LastFormID))
 	if err != nil || step <= 0 {
-		return 0, fmt.Errorf("get request %d: unexpected collector response", id)
+		return 0, fmt.Errorf("get request %d: %w", id, errUnexpectedResponse)
 	}
 	return step, nil
 }

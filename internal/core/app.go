@@ -63,7 +63,7 @@ func (s *Service) GetApp(ctx context.Context, app string) (App, error) {
 		return App{}, fmt.Errorf("get app %s: %w%s", app, err, notFoundHint(err))
 	}
 	if found.App == "" {
-		return App{}, fmt.Errorf("get app %s: unexpected collector response", app)
+		return App{}, fmt.Errorf("get app %s: %w", app, errUnexpectedResponse)
 	}
 	result := App{
 		ID: found.ID, Name: found.App, Description: found.Description, Domain: found.AppDomain, TeamOps: found.AppTeamOps, Updated: found.Updated,
@@ -75,7 +75,7 @@ func (s *Service) GetApp(ctx context.Context, app string) (App, error) {
 		return App{}, fmt.Errorf("get responsibles of app %s: %w", found.App, err)
 	}
 	if responsibles.Data == nil {
-		return App{}, fmt.Errorf("get responsibles of app %s: unexpected collector response", found.App)
+		return App{}, fmt.Errorf("get responsibles of app %s: %w", found.App, errUnexpectedResponse)
 	}
 	if len(responsibles.Data) > maxAppResponsibles {
 		responsibles.Data, result.ResponsiblesTruncated = responsibles.Data[:maxAppResponsibles], true

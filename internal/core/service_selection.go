@@ -342,7 +342,7 @@ func (s *Service) selectInstances(ctx context.Context, filters []string, limit i
 			return nil, fmt.Errorf("select service instances: %w", err)
 		}
 		if len(response.Data) > selectionPage {
-			return nil, fmt.Errorf("select service instances: unexpected collector response")
+			return nil, fmt.Errorf("select service instances: %w: nothing was changed", errUnexpectedResponse)
 		}
 		// Not counted, the selection is beyond what the collector counts, or its
 		// count failed: refused as too large, nothing changed.
@@ -385,7 +385,7 @@ func (s *Service) selectServices(ctx context.Context, path, prefix string, filte
 			return nil, fmt.Errorf("select services: %w", err)
 		}
 		if len(response.Data) > selectionPage {
-			return nil, fmt.Errorf("select services: unexpected collector response")
+			return nil, fmt.Errorf("select services: %w: nothing was changed", errUnexpectedResponse)
 		}
 		// Not counted, the selection is beyond what the collector counts, or its
 		// count failed: refused as too large, nothing changed.
@@ -452,7 +452,7 @@ func (s *Service) resolveServices(ctx context.Context, names []string) ([]select
 				return nil, fmt.Errorf("get services: %w", err)
 			}
 			if len(response.Data) > selectionPage {
-				return nil, fmt.Errorf("get services: unexpected collector response")
+				return nil, fmt.Errorf("get services: %w: nothing was changed", errUnexpectedResponse)
 			}
 			if response.Meta.Total == nil || *response.Meta.Total > maxSelectionFiltered {
 				return nil, fmt.Errorf("get services: more than %d services match the names, or the collector did not count them: nothing was changed; name fewer services", maxSelectionFiltered)

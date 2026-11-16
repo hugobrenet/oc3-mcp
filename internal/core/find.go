@@ -181,14 +181,14 @@ func (s *Service) FindObjects(ctx context.Context, options FindObjectsOptions) (
 		return FoundObjects{}, fmt.Errorf("find objects: %w", err)
 	}
 	if response.Data == nil {
-		return FoundObjects{}, fmt.Errorf("find objects: unexpected collector response")
+		return FoundObjects{}, fmt.Errorf("find objects: %w", errUnexpectedResponse)
 	}
 	result := FoundObjects{Text: text, Groups: make([]FoundGroup, 0, len(response.Data))}
 	lower := strings.ToLower(text)
 	for _, group := range response.Data {
 		kind, ok := findKinds[group.Kind]
 		if !ok || !slices.Contains(kinds, group.Kind) || len(group.Items) > limit {
-			return FoundObjects{}, fmt.Errorf("find objects: unexpected collector response")
+			return FoundObjects{}, fmt.Errorf("find objects: %w", errUnexpectedResponse)
 		}
 		found := FoundGroup{Kind: group.Kind, Items: make([]FoundObject, 0, len(group.Items)), More: group.More, Error: group.Error}
 		for _, item := range group.Items {

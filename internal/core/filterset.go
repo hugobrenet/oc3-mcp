@@ -171,7 +171,7 @@ func (s *Service) GetFilterset(ctx context.Context, filterset string) (Filterset
 	}
 	own, ok := criteria[row.Name]
 	if !ok {
-		return FiltersetDetails{}, fmt.Errorf("export filterset %s: unexpected collector response", row.Name)
+		return FiltersetDetails{}, fmt.Errorf("export filterset %s: %w", row.Name, errUnexpectedResponse)
 	}
 	result.Criteria = own
 	// The included filtersets, at any depth, each once.

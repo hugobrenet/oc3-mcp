@@ -115,7 +115,7 @@ func (s *Service) ListPackageDifferences(ctx context.Context, options ListPackag
 		return PackageDifferences{}, fmt.Errorf("list package differences: %w", err)
 	}
 	if response.Data == nil {
-		return PackageDifferences{}, fmt.Errorf("list package differences: unexpected collector response")
+		return PackageDifferences{}, fmt.Errorf("list package differences: %w", errUnexpectedResponse)
 	}
 	names := make(map[string]string, len(response.Meta.Nodes))
 	result.ComparedNodes = make([]NodeReference, 0, len(response.Meta.Nodes))

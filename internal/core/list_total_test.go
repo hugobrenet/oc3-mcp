@@ -1,10 +1,13 @@
 package core
 
 import (
+	"errors"
 	"net/url"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/opensvc/oc3-mcp/internal/client"
 )
 
 // eventsCollector answers the collector log as a collector past its count
@@ -140,4 +143,19 @@ func TestACountNotGivenIsNull(t *testing.T) {
 	if err != nil || count.Total != nil || len(count.Groups) != 1 || count.Groups[0].Count != 3 {
 		t.Fatalf("count = %+v, %v", count, err)
 	}
+}
+
+// A selection the collector answered out of its API, a page longer than
+// asked, is an answer of another API, said refused before any write.
+func TestASelectionOutOfTheAPIChangesNothing(t *testing.T) {
+	nodes := make([]string, selectionPage+1)
+	for i := range nodes {
+		nodes[i] = `{"node_id":"n-` + strconv.Itoa(i) + `","nodename":"n` + strconv.Itoa(i) + `"}`
+	}
+	collector := tagCollector(t, "["+strings.Join(nodes, ",")+"]", len(nodes), nil)
+	_, err := newTestService(collector).AttachNodeTag(t.Context(), NodeTagOptions{Tag: "tag-mcp", NodeSelection: NodeSelection{Filters: NodeFilters{Status: "In service"}}})
+	if !errors.Is(err, client.ErrIncompatible) || !strings.Contains(err.Error(), "select nodes: unexpected collector response: nothing was changed") {
+		t.Fatalf("got %v, want an answer of another API, nothing changed", err)
+	}
+	onlyReads(t, collector)
 }
