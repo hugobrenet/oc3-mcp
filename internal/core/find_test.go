@@ -65,19 +65,29 @@ type fakeNotFound struct{}
 func (fakeNotFound) Error() string  { return "HTTP 404 Not Found" }
 func (fakeNotFound) NotFound() bool { return true }
 
-func (notFoundCollector) GetJSON(context.Context, string, url.Values, any) error {
+// It refuses every request, noted for the contract as any request is.
+func (notFoundCollector) GetJSON(_ context.Context, path string, _ url.Values, _ any) error {
+	recordRoute("GET", path)
 	return fakeNotFound{}
 }
 
-func (notFoundCollector) PostJSON(context.Context, string, any, any) error { return fakeNotFound{} }
-
-func (notFoundCollector) PutJSON(context.Context, string, any, any) error { return fakeNotFound{} }
-
-func (notFoundCollector) DeleteJSON(context.Context, string, url.Values, any) error {
+func (notFoundCollector) PostJSON(_ context.Context, path string, _ any, _ any) error {
+	recordRoute("POST", path)
 	return fakeNotFound{}
 }
 
-func (notFoundCollector) DeleteJSONBody(context.Context, string, any, any) error {
+func (notFoundCollector) PutJSON(_ context.Context, path string, _ any, _ any) error {
+	recordRoute("PUT", path)
+	return fakeNotFound{}
+}
+
+func (notFoundCollector) DeleteJSON(_ context.Context, path string, _ url.Values, _ any) error {
+	recordRoute("DELETE", path)
+	return fakeNotFound{}
+}
+
+func (notFoundCollector) DeleteJSONBody(_ context.Context, path string, _ any, _ any) error {
+	recordRoute("DELETE", path)
 	return fakeNotFound{}
 }
 

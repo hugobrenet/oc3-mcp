@@ -131,7 +131,8 @@ func TestAttachNodeTagReportsARefusal(t *testing.T) {
 // incompatible with the tags of the node.
 type refusingCollector struct{ *fakeCollector }
 
-func (refusingCollector) PostJSON(context.Context, string, any, any) error {
+func (refusingCollector) PostJSON(_ context.Context, path string, _ any, _ any) error {
+	recordRoute("POST", path)
 	return errString("HTTP 409 Conflict: tag 'tag-mcp' is not compatible with other tags attached to node 'n-1'")
 }
 
