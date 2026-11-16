@@ -46,7 +46,7 @@ type IPList struct {
 	Node             *NodeReference    `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
 	Network          *NetworkReference `json:"network,omitempty" jsonschema:"the declared network the network filter resolved to"`
 	SpecialExcluded  bool              `json:"special_addresses_excluded" jsonschema:"whether loopback, link-local, multicast and unspecified addresses were left out of node_addresses"`
-	Total            int               `json:"total" jsonschema:"the number of node addresses matching the filters, as the collector counts them"`
+	Total            *int              `json:"total" jsonschema:"the number of node addresses matching the filters, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	ServiceTotal     *int              `json:"service_total,omitempty" jsonschema:"with ip, the number of service IP resources naming the address, as the collector counts them, once this page reached them"`
 	Count            int               `json:"count" jsonschema:"the number of node and service addresses returned in this page"`
 	NodeAddresses    []NodeAddress     `json:"node_addresses" jsonschema:"the addresses the node inventories list, sorted by address, node name and interface; an address may be listed on several nodes or interfaces"`
@@ -224,10 +224,11 @@ func (s *Service) ListIPs(ctx context.Context, options ListIPsOptions) (IPList, 
 	if err := s.client.GetJSON(ctx, "/ips", pageQuery(nodeAddressProps, "addr,nodename,intf,id", filters, limit, cursor.Nodes), &response); err != nil {
 		return IPList{}, fmt.Errorf("list node addresses: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return IPList{}, fmt.Errorf("list node addresses: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return IPList{}, fmt.Errorf("list node addresses: %w", err)
 	}
-	result.Total = *response.Meta.Total
+	result.Total = counted
 	result.NodeAddresses = make([]NodeAddress, 0, len(response.Data))
 	for _, row := range response.Data {
 		address := NodeAddress{
@@ -241,7 +242,7 @@ func (s *Service) ListIPs(ctx context.Context, options ListIPsOptions) (IPList, 
 		result.NodeAddresses = append(result.NodeAddresses, address)
 	}
 	next := ipCursor{Nodes: cursor.Nodes + len(response.Data), Services: cursor.Services, Filters: fingerprint}
-	nodesLeft := len(response.Data) > 0 && next.Nodes < result.Total
+	nodesLeft := morePages(result.Total, cursor.Nodes, len(response.Data), limit)
 	servicesLeft := false
 
 	// The service addresses follow the node addresses, in the room the page
@@ -252,11 +253,11 @@ func (s *Service) ListIPs(ctx context.Context, options ListIPsOptions) (IPList, 
 		if err := s.client.GetJSON(ctx, "/resources", query, &resources); err != nil {
 			return IPList{}, fmt.Errorf("list service addresses: %w", err)
 		}
-		if resources.Meta.Total == nil || *resources.Meta.Total < 0 || len(resources.Data) > room {
-			return IPList{}, fmt.Errorf("list service addresses: unexpected collector response")
+		servicesTotal, err := pageTotal(resources.Meta.Total, len(resources.Data), room)
+		if err != nil {
+			return IPList{}, fmt.Errorf("list service addresses: %w", err)
 		}
-		total := *resources.Meta.Total
-		result.ServiceTotal = &total
+		result.ServiceTotal = servicesTotal
 		for _, row := range resources.Data {
 			result.ServiceAddresses = append(result.ServiceAddresses, ServiceAddress{
 				SvcID: row.SvcID, Svcname: row.Svcname, NodeID: row.NodeID, Nodename: row.Nodename, VMName: row.VMName, RID: row.RID,
@@ -264,7 +265,7 @@ func (s *Service) ListIPs(ctx context.Context, options ListIPsOptions) (IPList, 
 			})
 		}
 		next.Services += len(resources.Data)
-		servicesLeft = len(resources.Data) > 0 && next.Services < total
+		servicesLeft = morePages(servicesTotal, cursor.Services, len(resources.Data), room)
 	} else if searchServices && !nodesLeft {
 		// The node addresses fill the page: only count the service addresses
 		// a next page would read.
@@ -272,12 +273,13 @@ func (s *Service) ListIPs(ctx context.Context, options ListIPsOptions) (IPList, 
 		if err := s.client.GetJSON(ctx, "/resources", pageQuery([]string{"id"}, "id", serviceFilters, 1, cursor.Services), &resources); err != nil {
 			return IPList{}, fmt.Errorf("count service addresses: %w", err)
 		}
-		if resources.Meta.Total == nil || *resources.Meta.Total < 0 {
-			return IPList{}, fmt.Errorf("count service addresses: unexpected collector response")
+		servicesTotal, err := pageTotal(resources.Meta.Total, len(resources.Data), 1)
+		if err != nil {
+			return IPList{}, fmt.Errorf("count service addresses: %w", err)
 		}
-		total := *resources.Meta.Total
-		result.ServiceTotal = &total
-		servicesLeft = cursor.Services < total
+		result.ServiceTotal = servicesTotal
+		// Not counted, a next page reads them, empty if none remain.
+		servicesLeft = servicesTotal == nil || cursor.Services < *servicesTotal
 	} else if searchServices {
 		// The node addresses go on: a next page reads the service addresses.
 		servicesLeft = true

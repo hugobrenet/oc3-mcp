@@ -38,7 +38,7 @@ type ComplianceModulesetList struct {
 	Provenance Provenance            `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Node       *NodeReference        `json:"node,omitempty" jsonschema:"the node the node filter resolved to: the modulesets attached to it"`
 	Service    *ServiceReference     `json:"service,omitempty" jsonschema:"the service the service filter resolved to: the modulesets attached to it"`
-	Total      int                   `json:"total" jsonschema:"the number of modulesets matching the filters, as the collector counts them"`
+	Total      *int                  `json:"total" jsonschema:"the number of modulesets matching the filters, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int                   `json:"count" jsonschema:"the number of modulesets returned in this page"`
 	Modulesets []ComplianceModuleset `json:"modulesets" jsonschema:"the modulesets sorted by name"`
 	NextCursor string                `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -132,7 +132,12 @@ func (s *Service) ListComplianceModulesets(ctx context.Context, options ListComp
 		if err := s.client.GetJSON(ctx, "/compliance/modulesets_modules", query, &response); err != nil {
 			return ComplianceModulesetList{}, fmt.Errorf("list modulesets of module %s: %w", options.Module, err)
 		}
-		if response.Meta.Total != nil && *response.Meta.Total > maxModulesetScan {
+		modulesTotal, err := pageTotal(response.Meta.Total, len(response.Data), maxModulesetScan)
+		if err != nil {
+			return ComplianceModulesetList{}, fmt.Errorf("list modulesets of module %s: %w", options.Module, err)
+		}
+		// Not counted, a read as full as the bound may leave modules out too.
+		if scanTruncated(modulesTotal, len(response.Data), maxModulesetScan) {
 			return ComplianceModulesetList{}, fmt.Errorf("list modulesets of module %s: more than %d modules match", options.Module, maxModulesetScan)
 		}
 		var withModule []int
@@ -144,7 +149,8 @@ func (s *Service) ListComplianceModulesets(ctx context.Context, options ListComp
 		ids, selected = withModule, true
 	}
 	if selected && len(ids) == 0 {
-		result.Provenance = s.newProvenance()
+		// None selected: counted by the MCP, zero.
+		result.Provenance, result.Total = s.newProvenance(), intPtr(0)
 		return result, nil
 	}
 
@@ -164,15 +170,16 @@ func (s *Service) ListComplianceModulesets(ctx context.Context, options ListComp
 	if err := s.client.GetJSON(ctx, "/compliance/modulesets", pageQuery([]string{"id", "modset_name", "modset_author", "modset_updated"}, "modset_name,id", filters, limit, offset), &response); err != nil {
 		return ComplianceModulesetList{}, fmt.Errorf("list modulesets: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return ComplianceModulesetList{}, fmt.Errorf("list modulesets: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return ComplianceModulesetList{}, fmt.Errorf("list modulesets: %w", err)
 	}
 	modules, err := s.modulesetModules(ctx, response.Data)
 	if err != nil {
 		return ComplianceModulesetList{}, err
 	}
 	result.Provenance = s.newProvenance()
-	result.Total, result.Count = *response.Meta.Total, len(response.Data)
+	result.Total, result.Count = counted, len(response.Data)
 	for _, row := range response.Data {
 		moduleset := ComplianceModuleset{ID: row.ID, Name: row.Name, Author: personName(row.Author), Updated: row.Updated, Modules: []ComplianceModule{}}
 		all := modules[row.ID]
@@ -183,7 +190,7 @@ func (s *Service) ListComplianceModulesets(ctx context.Context, options ListComp
 		moduleset.Modules = append(moduleset.Modules, all...)
 		result.Modulesets = append(result.Modulesets, moduleset)
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
@@ -209,8 +216,9 @@ func (s *Service) modulesetModules(ctx context.Context, modulesets []collectorMo
 		if err := s.client.GetJSON(ctx, "/compliance/modulesets_modules", query, &response); err != nil {
 			return nil, fmt.Errorf("list modules of the modulesets: %w", err)
 		}
-		if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > maxModulesetScan {
-			return nil, fmt.Errorf("list modules of the modulesets: unexpected collector response")
+		batchTotal, err := pageTotal(response.Meta.Total, len(response.Data), maxModulesetScan)
+		if err != nil {
+			return nil, fmt.Errorf("list modules of the modulesets: %w", err)
 		}
 		for _, row := range response.Data {
 			// A moduleset without module is a row with a zero ID.
@@ -219,8 +227,9 @@ func (s *Service) modulesetModules(ctx context.Context, modulesets []collectorMo
 			}
 			modules[row.ModulesetID] = append(modules[row.ModulesetID], ComplianceModule{Name: row.Name, Autofix: collectorBool(row.Autofix)})
 		}
+		more := morePages(batchTotal, offset, len(response.Data), maxModulesetScan)
 		offset += len(response.Data)
-		if len(response.Data) == 0 || offset >= *response.Meta.Total {
+		if !more {
 			return modules, nil
 		}
 		if offset >= maxModulesetModuleRows {
@@ -237,11 +246,11 @@ type ComplianceModulesetDetails struct {
 	Included          []IncludedModuleset `json:"included_modulesets,omitempty" jsonschema:"the modulesets it includes, at any depth, with their modules: their modules run with its own"`
 	Rulesets          []ModulesetRuleset  `json:"rulesets,omitempty" jsonschema:"the rulesets attached to the moduleset or to an included one, and the rulesets they include, sorted by name: their variables are what its modules read"`
 	Parents           []string            `json:"included_by,omitempty" jsonschema:"the modulesets including this one"`
-	NodesCount        int                 `json:"nodes_count" jsonschema:"the number of nodes the moduleset is attached to directly, among those the caller sees; the modulesets including it, in included_by, carry their own attachments"`
+	NodesCount        *int                `json:"nodes_count" jsonschema:"the number of nodes the moduleset is attached to directly, among those the caller sees; the modulesets including it, in included_by, carry their own attachments; null when the collector did not count them"`
 	Nodes             []string            `json:"nodes,omitempty" jsonschema:"the names of those nodes, sorted, at most 50"`
-	ServicesCount     int                 `json:"services_count" jsonschema:"the number of services the moduleset is attached to directly, as the service itself, among those the caller sees"`
+	ServicesCount     *int                `json:"services_count" jsonschema:"the number of services the moduleset is attached to directly, as the service itself, among those the caller sees; null when the collector did not count them"`
 	Services          []string            `json:"services,omitempty" jsonschema:"the names of those services, sorted, at most 50"`
-	EncapsulatedCount int                 `json:"encapsulated_services_count" jsonschema:"the number of services the moduleset is attached to directly as their encapsulated service, run in their containers"`
+	EncapsulatedCount *int                `json:"encapsulated_services_count" jsonschema:"the number of services the moduleset is attached to directly as their encapsulated service, run in their containers; null when the collector did not count them"`
 	Encapsulated      []string            `json:"encapsulated_services,omitempty" jsonschema:"the names of those services, sorted, at most 50"`
 }
 
@@ -388,23 +397,24 @@ func (s *Service) GetComplianceModuleset(ctx context.Context, moduleset string) 
 // attachedNames reads the number of the nodes or services a compliance
 // object is attached to, and the first of their names; with slave, the
 // services it is attached to as their encapsulated service.
-func (s *Service) attachedNames(ctx context.Context, path, prop, orderby string, slave bool) (int, []string, error) {
+func (s *Service) attachedNames(ctx context.Context, path, prop, orderby string, slave bool) (*int, []string, error) {
 	query := pageQuery([]string{prop}, orderby, nil, maxModulesetAttachments, 0)
 	if slave {
 		query.Set("slave", "true")
 	}
 	var response collectorList[map[string]any]
 	if err := s.client.GetJSON(ctx, path, query, &response); err != nil {
-		return 0, nil, err
+		return nil, nil, err
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > maxModulesetAttachments {
-		return 0, nil, fmt.Errorf("unexpected collector response")
+	total, err := pageTotal(response.Meta.Total, len(response.Data), maxModulesetAttachments)
+	if err != nil {
+		return nil, nil, err
 	}
 	names := make([]string, 0, len(response.Data))
 	for _, row := range response.Data {
 		names = append(names, propText(row, prop))
 	}
-	return *response.Meta.Total, names, nil
+	return total, names, nil
 }
 
 func includedNames(included []IncludedModuleset) []string {

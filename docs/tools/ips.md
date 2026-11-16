@@ -96,8 +96,8 @@ these addresses are most of their rows: 539 of 619 on the test collector.
 | `ip` | The searched address, in canonical form |
 | `node`, `network` | The node and the declared network the filters resolved to |
 | `special_addresses_excluded` | Whether special addresses were left out |
-| `total` | Node addresses matching the filters, as the collector counts them |
-| `service_total` | With `ip`, service addresses naming it, as the collector counts them, once a page reached them |
+| `total` | Node addresses matching the filters, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
+| `service_total` | With `ip`, service addresses naming it, as the collector counts them, once a page reached them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Node and service addresses in this page, and whether more remain in either list |
 | `node_addresses[]` | `address`, `prefix_length`, `type`, `interface`, `mac`, `node_id`, `nodename`, `network_id`, `network_name`, `deprecated`, `last_reported_at` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |

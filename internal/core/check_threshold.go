@@ -109,7 +109,7 @@ type ListCheckThresholdsOptions struct {
 type CheckThresholdList struct {
 	Provenance Provenance           `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Scope      string               `json:"scope" jsonschema:"settings, defaults or contextual"`
-	Total      int                  `json:"total" jsonschema:"the number of rows matching, as the collector counts them"`
+	Total      *int                 `json:"total" jsonschema:"the number of rows matching, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int                  `json:"count" jsonschema:"the number of rows returned in this page"`
 	Thresholds []CheckThresholdRule `json:"thresholds" jsonschema:"the rows, by check type; defaults by priority, contextual thresholds the most recent first"`
 	NextCursor string               `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -234,8 +234,11 @@ func (s *Service) unknownCheck(ctx context.Context, key checkKey) error {
 		}
 	}
 	more := ""
-	if total := derefInt(response.Meta.Total); total > len(response.Data) {
-		more = fmt.Sprintf(", and %d more", total-len(response.Data))
+	if total := response.Meta.Total; total != nil && *total > len(response.Data) {
+		more = fmt.Sprintf(", and %d more", *total-len(response.Data))
+	} else if total == nil && len(response.Data) >= maxCheckInstancesHint {
+		// Not counted, a read as full as the bound leaves some out.
+		more = ", and more"
 	}
 	return fmt.Errorf("%s; the instances of its %s checks are: %s%s", what, key.chkType, strings.Join(instances, ", "), more)
 }
@@ -346,8 +349,13 @@ func (s *Service) checkRules(ctx context.Context, path string, props []string, o
 	if err := s.client.GetJSON(ctx, path, pageQuery(props, orderby, []string{filterEquals("chk_type", chkType)}, maxCheckThresholdRules, 0), &response); err != nil {
 		return nil, false, err
 	}
+	total, err := pageTotal(response.Meta.Total, len(response.Data), maxCheckThresholdRules)
+	if err != nil {
+		return nil, false, err
+	}
+	truncated := scanTruncated(total, len(response.Data), maxCheckThresholdRules)
 	rows := slices.DeleteFunc(response.Data, func(row collectorCheckRule) bool { return row.ChkType != chkType })
-	return rows, derefInt(response.Meta.Total) > len(response.Data), nil
+	return rows, truncated, nil
 }
 
 // contextualApplies tells whether the filterset of contextual thresholds
@@ -457,14 +465,15 @@ func (s *Service) ListCheckThresholds(ctx context.Context, options ListCheckThre
 	if err := s.client.GetJSON(ctx, path, pageQuery(props, orderby, filters, limit, offset), &response); err != nil {
 		return CheckThresholdList{}, fmt.Errorf("list check thresholds: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return CheckThresholdList{}, fmt.Errorf("list check thresholds: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return CheckThresholdList{}, fmt.Errorf("list check thresholds: %w", err)
 	}
-	result := CheckThresholdList{Scope: options.Scope, Total: *response.Meta.Total, Count: len(response.Data), Thresholds: make([]CheckThresholdRule, 0, len(response.Data))}
+	result := CheckThresholdList{Scope: options.Scope, Total: counted, Count: len(response.Data), Thresholds: make([]CheckThresholdRule, 0, len(response.Data))}
 	for _, row := range response.Data {
 		result.Thresholds = append(result.Thresholds, row.rule())
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}

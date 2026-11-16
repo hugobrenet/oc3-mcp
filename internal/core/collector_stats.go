@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 	"sort"
 	"strconv"
@@ -32,31 +31,38 @@ type collectorStats struct {
 
 // countRows counts the rows of path matching filters and, with prop, the
 // rows of its most frequent values, as the collector computes them. idProp
-// is the prop read to count the rows without prop.
-func (s *Service) countRows(ctx context.Context, path string, idProp string, filters []string, prop string, limit int) (total int, groups []CountGroup, distinct int, other int, err error) {
+// is the prop read to count the rows without prop. The total is nil when the
+// collector did not count the rows: more than its count limit, or a count
+// that failed.
+func (s *Service) countRows(ctx context.Context, path string, idProp string, filters []string, prop string, limit int) (total *int, groups []CountGroup, distinct int, other int, err error) {
 	query := url.Values{"filter": filters}
 	if prop == "" {
 		query.Set("limit", "1")
 		query.Set("props", idProp)
 		var response collectorList[struct{}]
 		if err := s.client.GetJSON(ctx, path, query, &response); err != nil {
-			return 0, nil, 0, 0, err
+			return nil, nil, 0, 0, err
 		}
-		if response.Meta.Total == nil || *response.Meta.Total < 0 {
-			return 0, nil, 0, 0, fmt.Errorf("unexpected collector response")
+		total, err := pageTotal(response.Meta.Total, len(response.Data), 1)
+		if err != nil {
+			return nil, nil, 0, 0, err
 		}
-		return *response.Meta.Total, nil, 0, 0, nil
+		return total, nil, 0, 0, nil
 	}
 	query.Set("stats", "true")
 	query.Set("props", prop)
 	query.Set("limit", strconv.Itoa(limit))
 	var response collectorStats
 	if err := s.client.GetJSON(ctx, path, query, &response); err != nil {
-		return 0, nil, 0, 0, err
+		return nil, nil, 0, 0, err
 	}
 	values, ok := response.Data[prop]
-	if !ok || response.Meta.Total == nil || *response.Meta.Total < 0 || len(values) > limit {
-		return 0, nil, 0, 0, fmt.Errorf("unexpected collector response")
+	if !ok {
+		return nil, nil, 0, 0, errUnexpectedResponse
+	}
+	total, err = pageTotal(response.Meta.Total, len(values), limit)
+	if err != nil {
+		return nil, nil, 0, 0, err
 	}
 	groups = make([]CountGroup, 0, len(values))
 	for value, count := range values {
@@ -71,5 +77,5 @@ func (s *Service) countRows(ctx context.Context, path string, idProp string, fil
 		}
 		return groups[i].Value < groups[j].Value
 	})
-	return *response.Meta.Total, groups, response.Meta.Distinct[prop], response.Meta.Other[prop], nil
+	return total, groups, response.Meta.Distinct[prop], response.Meta.Other[prop], nil
 }

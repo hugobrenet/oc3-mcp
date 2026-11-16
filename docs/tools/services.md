@@ -141,7 +141,7 @@ language is not exposed.
 | `filterset` | With `filterset`, the filterset it resolved to: `id`, `name` |
 | `ruleset` | With `ruleset`, the ruleset it resolved to: `id`, `name`, `type` |
 | `moduleset` | With `moduleset`, the moduleset it resolved to: `id`, `name` |
-| `total` | Services matching the filters, as the collector counts them |
+| `total` | Services matching the filters, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Services in this page, and whether more remain |
 | `services[]` | `svc_id`, `svcname`, `cluster_id`, `app`, `env`, `topology`, `status` (the aggregated overall status), `availstatus`, `frozen` (`frozen`, `unfrozen`, `mixed` or `n/a`), `placement`, `provisioned`, `nodes` (the nodes of the configuration), `status_updated` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
@@ -190,7 +190,7 @@ each, and refuses a count longer than 5 seconds.
 | `tag` | With `tag`, the tag it resolved to |
 | `filterset` | With `filterset`, the filterset it resolved to |
 | `ruleset`, `moduleset` | With `ruleset` or `moduleset`, the ruleset or moduleset it resolved to |
-| `total` | Services matching the filters |
+| `total` | Services matching the filters; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `group_by` | The grouping asked |
 | `groups[]` | With `group_by`: `value`, empty for the services without one, and `count`, the most frequent first |
 | `distinct` | With `group_by`: distinct values among the matching services |
@@ -332,7 +332,7 @@ GET /api/resources?props=…&orderby=nodes.nodename,rid,id&filter=svc_id:eq:<svc
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `service`, `node` | The service, and the node with `node`, the filters resolved to |
-| `total` | Resources matching the filters, as the collector counts them |
+| `total` | Resources matching the filters, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Resources in this page, and whether more remain |
 | `resources[]` | `rid`, `type`, `status`, `description`, `log`, `log_truncated`, `node_id`, `nodename`, `monitored`, `disabled`, `optional`, `vmname`, `changed`, `updated` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
@@ -398,7 +398,7 @@ by `mon_frozen_at,svc_id,node_id,mon_vmname`.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `service`, `node` | The service or node the filters resolved to |
-| `total` | Instances matching the filters, as the collector counts them |
+| `total` | Instances matching the filters, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Instances in this page, and whether more remain |
 | `instances[]` | `svc_id`, `svcname`, `cluster_id`, `topology`, `service_availability`, `service_frozen`, `node_id`, `nodename`, `availability`, `overall`, `frozen`, `frozen_at`, `monitor_status`, `vmname`, `vmtype`, `last_reported_at` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
@@ -438,7 +438,7 @@ The filters of `list_instances`, and:
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `service`, `node` | The service or node the filters resolved to |
-| `total` | Instances matching the filters |
+| `total` | Instances matching the filters; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `group_by`, `groups[]` | With `group_by`: each `value` and its `count`, the most frequent first |
 | `distinct`, `other`, `truncated` | The number of distinct values, the instances whose value was left out by `limit`, and whether some were |
 

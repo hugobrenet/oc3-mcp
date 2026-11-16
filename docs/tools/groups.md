@@ -78,7 +78,7 @@ last name, at most 6 words.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `user` | With `user`, the user it resolved to: `id`, `name` |
-| `total` | Groups matching, as the collector counts them |
+| `total` | Groups matching, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Groups in this page, and whether more remain |
 | `groups[]` | `id`, `name`, `description`, `kind`, and `user_id` for a personal group |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
@@ -122,9 +122,9 @@ may also list the nodes of a team whose name holds this one, such as `DBA2` for
 | `group` | `id`, `name`, `description`, `kind`, `user_id` |
 | `user` | For a personal group, its user: `id`, `name` |
 | `apps[]`, `apps_total`, `apps_truncated` | The apps the group is responsible for, `name` and `description`, at most 50 |
-| `members` | Users member of the group: list them with `list_users` and `group` |
-| `nodes` | Nodes whose responsible team is the group: list them with `list_nodes` and `team` |
-| `services` | Services of its apps: list them with `list_services` and `app` |
+| `members` | Users member of the group: list them with `list_users` and `group`; `null` when the collector did not count them, see [conventions](README.md#conventions) |
+| `nodes` | Nodes whose responsible team is the group: list them with `list_nodes` and `team`; `null` when the collector did not count them, see [conventions](README.md#conventions) |
+| `services` | Services of its apps: list them with `list_services` and `app`; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 
 ### `list_users`
 
@@ -157,7 +157,7 @@ column at a time, and the members of a group not at all.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `group` | With `group`, the group it resolved to |
-| `total` | Users matching, as the collector counts them, or with `name` as the MCP counts them among those it read |
+| `total` | Users matching, as the collector counts them, or with `name` as the MCP counts them among those it read; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `scan_truncated` | With `name`, whether only the first 1000 users were read |
 | `count`, `truncated` | Users in this page, and whether more remain |
 | `users[]` | `id`, `username`, `first_name`, `last_name`, an email address in them masked |

@@ -68,7 +68,7 @@ Pass `node` or `service`, not both.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `node`, `service` | The node or service whose tags are listed |
-| `total` | Tags matching, as the collector counts them |
+| `total` | Tags matching, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Tags in this page, and whether more remain |
 | `tags[]` | `tag_id`, `name`, `created`, `exclude`, `data`, `attach_data`, `data_truncated` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |

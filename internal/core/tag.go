@@ -33,7 +33,7 @@ type TagList struct {
 	Provenance Provenance        `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Node       *NodeReference    `json:"node,omitempty" jsonschema:"the node whose tags are listed"`
 	Service    *ServiceReference `json:"service,omitempty" jsonschema:"the service whose tags are listed"`
-	Total      int               `json:"total" jsonschema:"the number of tags matching, as the collector counts them"`
+	Total      *int              `json:"total" jsonschema:"the number of tags matching, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int               `json:"count" jsonschema:"the number of tags returned in this page"`
 	Tags       []Tag             `json:"tags" jsonschema:"the tags sorted by name"`
 	NextCursor string            `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -109,11 +109,12 @@ func (s *Service) ListTags(ctx context.Context, options ListTagsOptions) (TagLis
 	if err := s.client.GetJSON(ctx, path, pageQuery(props, "tag_name,tag_id", filters, limit, offset), &response); err != nil {
 		return TagList{}, fmt.Errorf("list tags: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return TagList{}, fmt.Errorf("list tags: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return TagList{}, fmt.Errorf("list tags: %w", err)
 	}
 	result.Provenance = s.newProvenance()
-	result.Total, result.Count = *response.Meta.Total, len(response.Data)
+	result.Total, result.Count = counted, len(response.Data)
 	result.Tags = make([]Tag, 0, len(response.Data))
 	for _, row := range response.Data {
 		data, dataCut := tagText(row.TagData)
@@ -123,7 +124,7 @@ func (s *Service) ListTags(ctx context.Context, options ListTagsOptions) (TagLis
 			Data: data, AttachData: attach, DataTruncated: dataCut || attachCut,
 		})
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
@@ -276,21 +277,23 @@ func (s *Service) matchAttachedTags(ctx context.Context, result TagList, path st
 		if err := s.client.GetJSON(ctx, path, pageQuery(props, "tag_name,tag_id", nil, maxListTagsLimit, read), &response); err != nil {
 			return TagList{}, fmt.Errorf("list tags: %w", err)
 		}
-		if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > maxListTagsLimit {
-			return TagList{}, fmt.Errorf("list tags: unexpected collector response")
+		counted, err := pageTotal(response.Meta.Total, len(response.Data), maxListTagsLimit)
+		if err != nil {
+			return TagList{}, fmt.Errorf("list tags: %w", err)
 		}
 		for _, row := range response.Data {
 			if strings.Contains(strings.ToLower(row.TagName), needle) {
 				matched = append(matched, row)
 			}
 		}
+		more := morePages(counted, read, len(response.Data), maxListTagsLimit)
 		read += len(response.Data)
-		if len(response.Data) == 0 || read >= *response.Meta.Total {
+		if !more {
 			break
 		}
 	}
 	result.Provenance = s.newProvenance()
-	result.Total = len(matched)
+	result.Total = intPtr(len(matched))
 	page := matched[min(offset, len(matched)):min(offset+limit, len(matched))]
 	result.Count = len(page)
 	result.Tags = make([]Tag, 0, len(page))
@@ -302,7 +305,7 @@ func (s *Service) matchAttachedTags(ctx context.Context, result TagList, path st
 			Data: data, AttachData: attach, DataTruncated: dataCut || attachCut,
 		})
 	}
-	if next := offset + len(page); len(page) > 0 && next < result.Total {
+	if next := offset + len(page); len(page) > 0 && next < len(matched) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}

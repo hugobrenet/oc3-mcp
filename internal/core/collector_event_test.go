@@ -41,7 +41,7 @@ func TestListCollectorEventsReadsTheLog(t *testing.T) {
 		t.Fatalf("names request = %+v", names)
 	}
 	status, change := events.Events[0], events.Events[1]
-	if events.Total != 5 || !events.Truncated || events.NextCursor == "" ||
+	if deref(events.Total) != 5 || !events.Truncated || events.NextCursor == "" ||
 		status.Message != "service 'test/svc/zfs30' has zero live instance. Status flagged 'undef'" || status.Svcname != "test/svc/zfs30" || status.User != "scheduler" {
 		t.Fatalf("status = %+v", status)
 	}

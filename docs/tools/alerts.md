@@ -62,7 +62,7 @@ the typed inputs; the collector filter language is not exposed.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `node`, `service` | The node or service the filters resolved to |
-| `total` | Alerts matching the filters, as the collector counts them |
+| `total` | Alerts matching the filters, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Alerts in this page, and whether more remain |
 | `alerts[]` | `id`, `type`, `severity`, `message`, `node_id`, `nodename`, `svc_id`, `svcname`, `env`, `instance`, `created`, `updated` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |

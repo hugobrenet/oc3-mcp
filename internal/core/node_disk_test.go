@@ -38,7 +38,7 @@ func TestListNodeDisksReadsDisksAndTheirOtherNodes(t *testing.T) {
 		t.Fatalf("sharing request = %+v", sharing)
 	}
 	shared, local := disks.Disks[0], disks.Disks[1]
-	if disks.Node.Nodename != "dev2n1" || disks.Total != 3 || !disks.Truncated || disks.NextCursor == "" ||
+	if disks.Node.Nodename != "dev2n1" || deref(disks.Total) != 3 || !disks.Truncated || disks.NextCursor == "" ||
 		shared.Vendor != "LIO-ORG" || shared.SizeMB != 1024 || shared.Array != "array-1" || shared.ArrayGroup != "pool1" || shared.DiskGroup != "vg1" ||
 		shared.Svcname != "web" || strings.Join(shared.SharedWith, ",") != "dev2n2,dev2n3" {
 		t.Fatalf("shared disk = %+v", shared)

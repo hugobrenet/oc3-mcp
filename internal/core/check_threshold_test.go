@@ -121,7 +121,7 @@ func TestListCheckThresholdsByScope(t *testing.T) {
 		t.Fatal(err)
 	}
 	last := collector.requests[len(collector.requests)-1]
-	if list.Total != 1 || list.Thresholds[0].Nodename != "dev2n1" || list.Thresholds[0].Pattern != nil || strings.Contains(list.Thresholds[0].ChangedBy, "@") ||
+	if deref(list.Total) != 1 || list.Thresholds[0].Nodename != "dev2n1" || list.Thresholds[0].Pattern != nil || strings.Contains(list.Thresholds[0].ChangedBy, "@") ||
 		!slices.Equal(last.query["filter"], []string{"node_id:eq:n-1", "chk_type:eq:fs_u"}) {
 		t.Fatalf("settings = %+v, request = %+v", list, last)
 	}

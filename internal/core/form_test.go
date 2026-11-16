@@ -28,7 +28,7 @@ func TestListFormsReadsTheirDefinition(t *testing.T) {
 		t.Fatalf("request = %+v", request)
 	}
 	flow, user, broken, disk, closing, odd := forms.Forms[0], forms.Forms[1], forms.Forms[2], forms.Forms[3], forms.Forms[4], forms.Forms[5]
-	if forms.Total != 8 || !forms.Truncated || forms.NextCursor == "" || flow.Label != "Firewall flow opening" || flow.Description != "Request a firewall flow." ||
+	if deref(forms.Total) != 8 || !forms.Truncated || forms.NextCursor == "" || flow.Label != "Firewall flow opening" || flow.Description != "Request a firewall flow." ||
 		flow.Author != "Manager" || flow.Inputs == nil || *flow.Inputs != 3 || strings.Join(flow.Outputs, ",") != "workflow" || len(flow.NextSteps) != 1 ||
 		flow.NextSteps[0].Condition != "always" || strings.Join(flow.NextSteps[0].Forms, ",") != "sample-firewall-review" || flow.NextSteps[0].Assignee != "Network" {
 		t.Fatalf("flow = %+v", flow)
@@ -79,7 +79,7 @@ func TestListFormsSearchesTheTitlesWithText(t *testing.T) {
 	if request.query.Get("limit") != "1000" || request.query.Get("offset") != "0" || request.query.Get("filter") != "form_type:eq:custo" {
 		t.Fatalf("request = %+v", request)
 	}
-	if forms.Total != 3 || forms.Count != 2 || !forms.ScanTruncated || !forms.Truncated || forms.Forms[0].Name != "sample-vm-request" || forms.Forms[1].Name != "Amundi_01" {
+	if deref(forms.Total) != 3 || forms.Count != 2 || !forms.ScanTruncated || !forms.Truncated || forms.Forms[0].Name != "sample-vm-request" || forms.Forms[1].Name != "Amundi_01" {
 		t.Fatalf("forms = %+v", forms)
 	}
 	next, err := newTestService(collector).ListForms(t.Context(), ListFormsOptions{Text: "virtual", Type: "custo", Limit: 2, Cursor: forms.NextCursor})

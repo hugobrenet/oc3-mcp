@@ -25,7 +25,7 @@ type ListFiltersetsOptions struct {
 
 type FiltersetList struct {
 	Provenance Provenance  `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
-	Total      int         `json:"total" jsonschema:"the number of filtersets matching, as the collector counts them"`
+	Total      *int        `json:"total" jsonschema:"the number of filtersets matching, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int         `json:"count" jsonschema:"the number of filtersets returned in this page"`
 	Filtersets []Filterset `json:"filtersets" jsonschema:"the filtersets sorted by name"`
 	NextCursor string      `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -69,14 +69,15 @@ func (s *Service) ListFiltersets(ctx context.Context, options ListFiltersetsOpti
 	if err := s.client.GetJSON(ctx, "/filtersets", pageQuery(filtersetProps, "fset_name,id", filters, limit, offset), &response); err != nil {
 		return FiltersetList{}, fmt.Errorf("list filtersets: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return FiltersetList{}, fmt.Errorf("list filtersets: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return FiltersetList{}, fmt.Errorf("list filtersets: %w", err)
 	}
-	result := FiltersetList{Provenance: s.newProvenance(), Total: *response.Meta.Total, Count: len(response.Data), Filtersets: make([]Filterset, 0, len(response.Data))}
+	result := FiltersetList{Provenance: s.newProvenance(), Total: counted, Count: len(response.Data), Filtersets: make([]Filterset, 0, len(response.Data))}
 	for _, row := range response.Data {
 		result.Filtersets = append(result.Filtersets, filtersetOf(row))
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
@@ -88,9 +89,9 @@ type FiltersetDetails struct {
 	Filterset       Filterset            `json:"filterset" jsonschema:"the filterset"`
 	Criteria        []FiltersetCriterion `json:"criteria" jsonschema:"its criteria in their order, each with its logic, as the filterset is defined; the collector does not apply the logic of an included filterset, see the description"`
 	Included        []IncludedFilterset  `json:"included_filtersets,omitempty" jsonschema:"the filtersets its criteria include, at any depth, with their criteria"`
-	NodesCount      int                  `json:"nodes_count" jsonschema:"the number of nodes the filterset selects, as the collector computes it, among those the caller sees"`
+	NodesCount      *int                 `json:"nodes_count" jsonschema:"the number of nodes the filterset selects, as the collector computes it, among those the caller sees; null when the collector did not count them"`
 	Nodes           []string             `json:"nodes,omitempty" jsonschema:"the names of those nodes, sorted, at most 50"`
-	ServicesCount   int                  `json:"services_count" jsonschema:"the number of services the filterset selects, among those the caller sees: a criterion on the nodes selects the services they run"`
+	ServicesCount   *int                 `json:"services_count" jsonschema:"the number of services the filterset selects, among those the caller sees: a criterion on the nodes selects the services they run; null when the collector did not count them"`
 	Services        []string             `json:"services,omitempty" jsonschema:"the names of those services, sorted, at most 50"`
 	Rulesets        []string             `json:"rulesets,omitempty" jsonschema:"the contextual rulesets applying to what the filterset selects"`
 	IncludedBy      []string             `json:"included_by,omitempty" jsonschema:"the filtersets including this one in their criteria"`
@@ -198,6 +199,7 @@ func (s *Service) GetFilterset(ctx context.Context, filterset string) (Filterset
 
 	// A filterset without criterion selects nothing; on dev2 the collector
 	// answers its members with a 500, cannot resolve filterset.
+	result.NodesCount, result.ServicesCount = intPtr(0), intPtr(0)
 	if len(result.Criteria) > 0 {
 		if result.NodesCount, result.Nodes, err = s.attachedNames(ctx, path+"/nodes", "nodename", "nodename,node_id", false); err != nil {
 			return FiltersetDetails{}, fmt.Errorf("list the nodes of filterset %s: %w", row.Name, err)

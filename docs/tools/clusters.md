@@ -47,7 +47,7 @@ GET /api/clusters?props=…&orderby=cluster_name,cluster_id&filter=…&limit=…
 | Output field | Meaning |
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
-| `total` | Clusters matching the filters, as the collector counts them |
+| `total` | Clusters matching the filters, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Clusters in this page, and whether more remain |
 | `clusters[]` | `cluster_id`, `name`, `nodes`, `node_count`, `service_count`, `agent_versions`, `quorum`, `frozen`, `updated` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |

@@ -26,7 +26,7 @@ func TestListStorageArraysSumsTheirDiskGroups(t *testing.T) {
 		t.Fatalf("request = %+v", collector.requests[0])
 	}
 	array := list.Arrays[0]
-	if list.Total != 3 || !list.Truncated || list.NextCursor == "" || array.Model != "PowerMax_8500" || array.Cache != "2097152" ||
+	if deref(list.Total) != 3 || !list.Truncated || list.NextCursor == "" || array.Model != "PowerMax_8500" || array.Cache != "2097152" ||
 		array.SizeMB != 1000 || array.UsedMB != 250 || array.FreeMB != 750 || len(array.DiskGroups) != 2 ||
 		array.DiskGroups[0].UsedPct != 25 || array.DiskGroups[0].ReservedMB != 400 || array.DiskGroups[1].UsedPct != 0 {
 		t.Fatalf("list = %+v", list)
@@ -101,7 +101,7 @@ func TestListSANSwitchPortsOfANode(t *testing.T) {
 		t.Fatalf("request = %+v", request)
 	}
 	port := list.Ports[0]
-	if list.Node.Nodename != "kvm1" || list.Total != 1 || list.Truncated || port.SpeedGbps != 32 || port.ConnectedTo != "kvm1" || port.RemotePort != "10:00" || port.Port != 3 {
+	if list.Node.Nodename != "kvm1" || deref(list.Total) != 1 || list.Truncated || port.SpeedGbps != 32 || port.ConnectedTo != "kvm1" || port.RemotePort != "10:00" || port.Port != 3 {
 		t.Fatalf("list = %+v", list)
 	}
 	collector = &fakeCollector{answer: func(path string, query url.Values) string {
@@ -122,7 +122,7 @@ func TestListSANSwitchPortsOfANode(t *testing.T) {
 		{Fabric: "lyn-fabric-a", Switch: "edge01"}: "map[switch:[lyn-sana-edge01]]",
 	} {
 		list, err := newTestService(collector).ListSANSwitchPorts(t.Context(), options)
-		if err != nil || fmt.Sprint(list.NamesContaining) != want || list.Total != 0 {
+		if err != nil || fmt.Sprint(list.NamesContaining) != want || deref(list.Total) != 0 {
 			t.Fatalf("options %+v: %+v, %v", options, list, err)
 		}
 	}
@@ -132,7 +132,7 @@ func TestListSANSwitchPortsOfANode(t *testing.T) {
 		}
 		return `{"data":[],"meta":{"total":0}}`
 	}}
-	if list, err := newTestService(collector).ListSANSwitchPorts(t.Context(), ListSANSwitchPortsOptions{Fabric: "lyn-fabric-b", State: "No_Light"}); err != nil || list.Total != 0 || list.NamesContaining != nil {
+	if list, err := newTestService(collector).ListSANSwitchPorts(t.Context(), ListSANSwitchPortsOptions{Fabric: "lyn-fabric-b", State: "No_Light"}); err != nil || deref(list.Total) != 0 || list.NamesContaining != nil {
 		t.Fatalf("known fabric without match: %+v, %v", list, err)
 	}
 	for _, options := range []ListSANSwitchPortsOptions{{Type: "f-port"}, {State: " Online"}, {Limit: 501}} {

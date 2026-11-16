@@ -35,7 +35,7 @@ type GetRequestOptions struct {
 type RequestDetails struct {
 	Provenance Provenance    `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Request    Request       `json:"request" jsonschema:"the request"`
-	TotalSteps int           `json:"total_steps" jsonschema:"the number of forms submitted in the request, as the collector counts them"`
+	TotalSteps *int          `json:"total_steps" jsonschema:"the number of forms submitted in the request, as the collector counts them; null when the collector did not count them"`
 	Steps      []RequestStep `json:"steps" jsonschema:"the forms submitted in the request in this page, the first one first"`
 	NextCursor string        `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same id for the next steps"`
 	Truncated  bool          `json:"truncated" jsonschema:"whether steps remain after this page, because of limit or of the size of their values"`
@@ -117,10 +117,11 @@ func (s *Service) GetRequest(ctx context.Context, options GetRequestOptions) (Re
 	if err := s.client.GetJSON(ctx, "/forms_store", query, &steps); err != nil {
 		return RequestDetails{}, fmt.Errorf("get the steps of request %d: %w", options.ID, err)
 	}
-	if steps.Meta.Total == nil || *steps.Meta.Total < 0 || len(steps.Data) > limit {
-		return RequestDetails{}, fmt.Errorf("get the steps of request %d: unexpected collector response", options.ID)
+	counted, err := pageTotal(steps.Meta.Total, len(steps.Data), limit)
+	if err != nil {
+		return RequestDetails{}, fmt.Errorf("get the steps of request %d: %w", options.ID, err)
 	}
-	result.TotalSteps = *steps.Meta.Total
+	result.TotalSteps = counted
 	result.Steps = make([]RequestStep, 0, len(steps.Data))
 	budget := maxRequestValues
 	for i, row := range steps.Data {
@@ -147,7 +148,8 @@ func (s *Service) GetRequest(ctx context.Context, options GetRequestOptions) (Re
 		budget -= size
 		result.Steps = append(result.Steps, step)
 	}
-	if next := offset + len(result.Steps); len(result.Steps) > 0 && next < result.TotalSteps {
+	// A step left for the next page, its values over the budget, is one more.
+	if next := offset + len(result.Steps); len(result.Steps) > 0 && (len(result.Steps) < len(steps.Data) || morePages(result.TotalSteps, offset, len(steps.Data), limit)) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}

@@ -76,7 +76,7 @@ type ListNodesOptions struct {
 type NodeList struct {
 	Provenance Provenance `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	NodeMembership
-	Total      int           `json:"total" jsonschema:"the number of nodes matching the filters, as the collector counts them"`
+	Total      *int          `json:"total" jsonschema:"the number of nodes matching the filters, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int           `json:"count" jsonschema:"the number of nodes returned in this page"`
 	Nodes      []NodeSummary `json:"nodes" jsonschema:"the nodes sorted by node name, then node ID"`
 	NextCursor string        `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -265,10 +265,11 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 	if err := s.client.GetJSON(ctx, path, pageQuery(nodeSummaryProps, "nodename,node_id", filters, limit, offset), &response); err != nil {
 		return NodeList{}, fmt.Errorf("list nodes: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return NodeList{}, fmt.Errorf("list nodes: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return NodeList{}, fmt.Errorf("list nodes: %w", err)
 	}
-	result := NodeList{Provenance: s.newProvenance(), NodeMembership: membership, Total: *response.Meta.Total, Count: len(response.Data), Nodes: make([]NodeSummary, 0, len(response.Data))}
+	result := NodeList{Provenance: s.newProvenance(), NodeMembership: membership, Total: counted, Count: len(response.Data), Nodes: make([]NodeSummary, 0, len(response.Data))}
 	for _, node := range response.Data {
 		result.Nodes = append(result.Nodes, NodeSummary{
 			NodeID: node.NodeID, Nodename: node.Nodename, ClusterID: node.ClusterID, App: node.App, Env: node.NodeEnv,
@@ -276,7 +277,7 @@ func (s *Service) ListNodes(ctx context.Context, options ListNodesOptions) (Node
 			Frozen: collectorBool(node.NodeFrozen), FrozenAt: node.NodeFrozenAt,
 		})
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}

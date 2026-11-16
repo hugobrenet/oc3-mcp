@@ -67,7 +67,7 @@ the exit code it names, through a `run_status:eq:<code>` filter.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `node`, `service` | The node or service the filters resolved to |
-| `total` | Statuses matching the filters, as the collector counts them |
+| `total` | Statuses matching the filters, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Statuses in this page, and whether more remain |
 | `statuses[]` | `id`, `module`, `node_id`, `nodename`, `svc_id`, `svcname`, `action`, `status`, `exit_code`, `date`, `log` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
@@ -111,7 +111,7 @@ The node and the service are resolved as for `list_compliance_status`. The
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `node`, `service` | The node or service the filters resolved to |
-| `total` | Runs matching the filters, as the collector counts them |
+| `total` | Runs matching the filters, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Runs in this page, and whether more remain |
 | `runs[]` | `id`, `module`, `node_id`, `nodename`, `svc_id`, `svcname`, `action`, `status`, `exit_code`, `date`, `log`, as in `list_compliance_status` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
@@ -149,7 +149,7 @@ their service group is the empty value.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `node`, `service` | The node or service the filters resolved to |
-| `total` | Runs matching the filters |
+| `total` | Runs matching the filters; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `group_by` | The grouping asked |
 | `groups[]` | With `group_by`: `value`, empty for the runs without one, and `count`, the most frequent first |
 | `distinct` | With `group_by`: distinct values among the matching runs |
@@ -196,7 +196,7 @@ service endpoints ignore `filter`.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `node`, `service` | The node or service the filters resolved to |
-| `total` | Modulesets matching, as the collector counts them |
+| `total` | Modulesets matching, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Modulesets in this page, and whether more remain |
 | `modulesets[]` | `id`, `name`, `author`, `updated`, `modules_count`, `modules[]` (`name`, `autofix`), at most 50, and `modules_truncated` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
@@ -291,7 +291,7 @@ to the node or the service, apply too, and are not listed:
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `node`, `service` | The node or service the filters resolved to |
-| `total` | Rulesets matching, as the collector counts them |
+| `total` | Rulesets matching, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Rulesets in this page, and whether more remain |
 | `rulesets[]` | `id`, `name`, `type`, `public` (whether it may be attached), and with `node` or `service` `applies_by` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |

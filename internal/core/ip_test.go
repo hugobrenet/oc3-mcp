@@ -43,7 +43,7 @@ func TestListIPsByAddressReadsNodeThenServiceAddresses(t *testing.T) {
 		t.Fatalf("resources request = %+v", resources)
 	}
 	address := ips.NodeAddresses[0]
-	if ips.IP != "2001:db8::21" || ips.SpecialExcluded || ips.Total != 1 || ips.Count != 2 || address.Nodename != "dev2n1" || address.Interface != "br-prd" ||
+	if ips.IP != "2001:db8::21" || ips.SpecialExcluded || deref(ips.Total) != 1 || ips.Count != 2 || address.Nodename != "dev2n1" || address.Interface != "br-prd" ||
 		address.PrefixLength != "64" || address.NetworkID != 0 || address.LastReportedAt != "2026-10-15 17:44:40" {
 		t.Fatalf("ips = %+v", ips)
 	}

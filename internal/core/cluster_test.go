@@ -18,7 +18,7 @@ func TestListClustersQueriesClusters(t *testing.T) {
 		strings.Join(request.query["filter"], "|") != "cluster_name:~reliable|cluster_id:eq:82e47bfb-182f-413b-b5dd-9de8164095d5" {
 		t.Fatalf("request = %+v", request)
 	}
-	if clusters.Total != 2 || !clusters.Truncated || clusters.NextCursor == "" {
+	if deref(clusters.Total) != 2 || !clusters.Truncated || clusters.NextCursor == "" {
 		t.Fatalf("page = %+v", clusters)
 	}
 	got := clusters.Clusters[0]

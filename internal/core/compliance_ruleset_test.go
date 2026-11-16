@@ -17,7 +17,7 @@ func TestListComplianceRulesetsFiltersTheType(t *testing.T) {
 		collector.requests[0].query.Get("orderby") != "ruleset_name,id" {
 		t.Fatalf("request = %+v", collector.requests[0])
 	}
-	if list.Total != 7 || !list.Truncated || !list.Rulesets[0].Public || list.Rulesets[1].Public || list.Rulesets[0].AppliesBy != "" {
+	if deref(list.Total) != 7 || !list.Truncated || !list.Rulesets[0].Public || list.Rulesets[1].Public || list.Rulesets[0].AppliesBy != "" {
 		t.Fatalf("list = %+v", list)
 	}
 }
@@ -85,7 +85,7 @@ func TestListComplianceRulesetsOfAServiceWithoutAny(t *testing.T) {
 		return `{"data":[]}`
 	}}
 	list, err := newTestService(collector).ListComplianceRulesets(t.Context(), ListComplianceRulesetsOptions{Service: "foo"})
-	if err != nil || list.Total != 0 || list.Rulesets == nil || list.Service.Svcname != "foo" {
+	if err != nil || deref(list.Total) != 0 || list.Rulesets == nil || list.Service.Svcname != "foo" {
 		t.Fatalf("list = %+v, %v", list, err)
 	}
 	if collector.requests[1].path != "/services/s-1/compliance/rulesets" || len(collector.requests) != 3 {
@@ -129,11 +129,11 @@ func TestGetComplianceRulesetReadsItsVariablesAndUsage(t *testing.T) {
 		variables[variable.Name] = variable.Value
 	}
 	// A loop of inclusions is followed once.
-	if ruleset.Ruleset.Type != "contextual" || ruleset.Filterset == nil || ruleset.Filterset.Name != "web-nodes" || ruleset.Filterset.NodesCount != 12 || ruleset.Filterset.Nodes[0] != "web1" ||
+	if ruleset.Ruleset.Type != "contextual" || ruleset.Filterset == nil || ruleset.Filterset.Name != "web-nodes" || deref(ruleset.Filterset.NodesCount) != 12 || ruleset.Filterset.Nodes[0] != "web1" ||
 		ruleset.VariablesCount != 3 || variables["db_password"] != maskedRequestValue || strings.Contains(variables["nginx_conf"], "s3cret") ||
 		!strings.Contains(variables["nginx_conf"], "/etc/nginx/nginx.conf") || strings.Contains(variables["admin"], "@") ||
 		len(ruleset.Included) != 2 || ruleset.Included[0].Name != "os.linux.security" || ruleset.Included[1].Name != "os.linux.base" ||
-		ruleset.Modulesets[0] != "app.web" || ruleset.NodesCount != 2 || ruleset.Nodes[0] != "web1" || ruleset.Responsibles[0] != "Test Web" {
+		ruleset.Modulesets[0] != "app.web" || deref(ruleset.NodesCount) != 2 || ruleset.Nodes[0] != "web1" || ruleset.Responsibles[0] != "Test Web" {
 		t.Fatalf("ruleset = %+v", ruleset)
 	}
 	for _, request := range collector.requests {

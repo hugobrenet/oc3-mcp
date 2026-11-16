@@ -172,7 +172,7 @@ func TestCountServiceActionsGroupsByNode(t *testing.T) {
 	if filters := strings.Join(last.query["filter"], " "); filters != "log_type:eq:status node_id:eq:n-1 status:eq:err ack:!eq:1" || last.query.Get("props") != "nodes.nodename" || last.query.Get("stats") != "true" {
 		t.Fatalf("request = %+v", last)
 	}
-	if count.Total != 363 || count.Node.Nodename != "dev2n1" || len(count.Groups) != 1 || count.Groups[0].Value != "dev2n1" || count.Groups[0].Count != 363 {
+	if deref(count.Total) != 363 || count.Node.Nodename != "dev2n1" || len(count.Groups) != 1 || count.Groups[0].Value != "dev2n1" || count.Groups[0].Count != 363 {
 		t.Fatalf("count = %+v", count)
 	}
 	if _, err := newTestService(&fakeCollector{}).CountServiceActions(t.Context(), CountServiceActionsOptions{GroupBy: "date"}); err == nil {

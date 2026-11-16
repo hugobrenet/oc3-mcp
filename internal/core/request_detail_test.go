@@ -64,7 +64,7 @@ func TestGetRequestReadsItsStepsByInputKeyAndLabel(t *testing.T) {
 		t.Fatal(err)
 	}
 	if collector.requests[0].query.Get("filter") != "id:eq:1355" || collector.requests[1].query.Get("filter") != "form_head_id:eq:1412" ||
-		collector.requests[1].query.Get("limit") != "20" || request.TotalSteps != 2 || request.Truncated || request.Request.Creator != "Manager" {
+		collector.requests[1].query.Get("limit") != "20" || deref(request.TotalSteps) != 2 || request.Truncated || request.Request.Creator != "Manager" {
 		t.Fatalf("request = %+v, %+v", request, collector.requests)
 	}
 	first := request.Steps[0]

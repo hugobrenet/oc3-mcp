@@ -40,7 +40,7 @@ func TestListNodeSysreportChangesPagesAndBoundsTheFiles(t *testing.T) {
 		t.Fatalf("query = %v", query)
 	}
 	initial := changes.Changes[1]
-	if changes.Node.Nodename != "dev2n1" || changes.Total != 5 || changes.Count != 2 || !changes.Truncated || changes.NextCursor == "" ||
+	if changes.Node.Nodename != "dev2n1" || deref(changes.Total) != 5 || changes.Count != 2 || !changes.Truncated || changes.NextCursor == "" ||
 		changes.Changes[0].Revision != sysreportHead || changes.Changes[0].Files[0].Kind != "command" ||
 		!initial.Initial || initial.FilesCount != maxSysreportChangeFiles+3 || len(initial.Files) != maxSysreportChangeFiles || !initial.FilesTruncated {
 		t.Fatalf("changes = %+v", changes)
@@ -69,7 +69,7 @@ func TestListNodeSysreportChangesTellsANodeWithoutSysreport(t *testing.T) {
 		return `{"data":[{"cid":"` + sysreportHead + `","date":"2026-10-14T16:09:38+02:00","files":[{"path":"/etc/hosts","kind":"file"}]}],"meta":{"total":1}}`
 	}}
 	changes, err = newTestService(collector).ListNodeSysreportChanges(t.Context(), ListNodeSysreportChangesOptions{Node: "dev2n1", Path: "nosuch"})
-	if err != nil || changes.NoSysreport || changes.Total != 0 || len(collector.requests) != 3 || collector.requests[2].query.Get("limit") != "1" {
+	if err != nil || changes.NoSysreport || deref(changes.Total) != 0 || len(collector.requests) != 3 || collector.requests[2].query.Get("limit") != "1" {
 		t.Fatalf("with filters: %+v, %v, %d requests", changes, err, len(collector.requests))
 	}
 }

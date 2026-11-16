@@ -107,15 +107,16 @@ func (s *Service) GetServiceResourceHistory(ctx context.Context, options Service
 	if err := s.client.GetJSON(ctx, path, query, &response); err != nil {
 		return ServiceResourceHistory{}, fmt.Errorf("get resource history of service %s: %w", service.Svcname, err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > maxResourcePeriodsRead {
-		return ServiceResourceHistory{}, fmt.Errorf("get resource history of service %s: unexpected collector response", service.Svcname)
+	read, err := pageTotal(response.Meta.Total, len(response.Data), maxResourcePeriodsRead)
+	if err != nil {
+		return ServiceResourceHistory{}, fmt.Errorf("get resource history of service %s: %w", service.Svcname, err)
 	}
 	nodenames, err := s.readNames(ctx, base+"/nodes", "node_id", "nodes.nodename")
 	if err != nil {
 		return ServiceResourceHistory{}, fmt.Errorf("get resource history of service %s: name the nodes: %w", service.Svcname, err)
 	}
 	result.Read = len(response.Data)
-	result.Truncated = len(response.Data) < *response.Meta.Total
+	result.Truncated = scanTruncated(read, len(response.Data), maxResourcePeriodsRead)
 
 	var periods []collectorResourcePeriod
 	for _, period := range response.Data {

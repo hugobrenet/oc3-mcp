@@ -37,7 +37,7 @@ type ComplianceStatusList struct {
 	Provenance Provenance         `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Node       *NodeReference     `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
 	Service    *ServiceReference  `json:"service,omitempty" jsonschema:"the service the service filter resolved to"`
-	Total      int                `json:"total" jsonschema:"the number of module statuses matching the filters, as the collector counts them"`
+	Total      *int               `json:"total" jsonschema:"the number of module statuses matching the filters, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int                `json:"count" jsonschema:"the number of module statuses returned in this page"`
 	Statuses   []ComplianceStatus `json:"statuses" jsonschema:"the last run of each module, the most recent first"`
 	NextCursor string             `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -98,16 +98,17 @@ func (s *Service) ListComplianceStatus(ctx context.Context, options ListComplian
 	if err := s.client.GetJSON(ctx, "/compliance/status", pageQuery(complianceStatusProps, "-run_date,-id", filters, limit, offset), &response); err != nil {
 		return ComplianceStatusList{}, fmt.Errorf("list compliance status: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return ComplianceStatusList{}, fmt.Errorf("list compliance status: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return ComplianceStatusList{}, fmt.Errorf("list compliance status: %w", err)
 	}
 	result.Provenance = s.newProvenance()
-	result.Total, result.Count = *response.Meta.Total, len(response.Data)
+	result.Total, result.Count = counted, len(response.Data)
 	result.Statuses = make([]ComplianceStatus, 0, len(response.Data))
 	for _, row := range response.Data {
 		result.Statuses = append(result.Statuses, ComplianceStatus(complianceRunOf(row)))
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
@@ -209,7 +210,7 @@ type ComplianceRunList struct {
 	Provenance Provenance        `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Node       *NodeReference    `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
 	Service    *ServiceReference `json:"service,omitempty" jsonschema:"the service the service filter resolved to"`
-	Total      int               `json:"total" jsonschema:"the number of runs matching the filters, as the collector counts them"`
+	Total      *int              `json:"total" jsonschema:"the number of runs matching the filters, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int               `json:"count" jsonschema:"the number of runs returned in this page"`
 	Runs       []ComplianceRun   `json:"runs" jsonschema:"the runs of the compliance modules, the most recent first"`
 	NextCursor string            `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -255,17 +256,18 @@ func (s *Service) ListComplianceRuns(ctx context.Context, options ListCompliance
 	if err := s.client.GetJSON(ctx, "/compliance/logs", pageQuery(complianceStatusProps, "-run_date,-id", scope.filters, limit, offset), &response); err != nil {
 		return ComplianceRunList{}, fmt.Errorf("list compliance runs: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return ComplianceRunList{}, fmt.Errorf("list compliance runs: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return ComplianceRunList{}, fmt.Errorf("list compliance runs: %w", err)
 	}
 	result := ComplianceRunList{
 		Provenance: s.newProvenance(), Node: scope.node, Service: scope.service,
-		Total: *response.Meta.Total, Count: len(response.Data), Runs: make([]ComplianceRun, 0, len(response.Data)),
+		Total: counted, Count: len(response.Data), Runs: make([]ComplianceRun, 0, len(response.Data)),
 	}
 	for _, row := range response.Data {
 		result.Runs = append(result.Runs, complianceRunOf(row))
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
@@ -321,7 +323,7 @@ type ComplianceRunCount struct {
 	Provenance Provenance        `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Node       *NodeReference    `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
 	Service    *ServiceReference `json:"service,omitempty" jsonschema:"the service the service filter resolved to"`
-	Total      int               `json:"total" jsonschema:"the number of runs matching the filters, as the collector counts them"`
+	Total      *int              `json:"total" jsonschema:"the number of runs matching the filters, as the collector counts them; null when the collector did not count them, for more rows than its count limit or a count that failed: not counted, neither zero nor a size"`
 	GroupBy    string            `json:"group_by,omitempty" jsonschema:"the grouping asked"`
 	Groups     []CountGroup      `json:"groups,omitempty" jsonschema:"with group_by, the most frequent values first, and the number of matching runs with each; a status is named ok, nok or na, another exit code given as is"`
 	Distinct   int               `json:"distinct,omitempty" jsonschema:"with group_by, the number of distinct values among the matching runs"`

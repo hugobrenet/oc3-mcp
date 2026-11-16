@@ -28,7 +28,7 @@ func TestListComplianceModulesetsWithTheirModules(t *testing.T) {
 		t.Fatalf("requests = %+v", collector.requests)
 	}
 	base, draft := list.Modulesets[0], list.Modulesets[1]
-	if list.Total != 6 || !list.Truncated || base.Author != "Admin" || base.ModulesCount != 2 || base.Modules[0].Name != "linux.sysctl" ||
+	if deref(list.Total) != 6 || !list.Truncated || base.Author != "Admin" || base.ModulesCount != 2 || base.Modules[0].Name != "linux.sysctl" ||
 		base.Modules[1].Name != "linux.files" || !base.Modules[1].Autofix || base.Modules[0].Autofix || draft.ModulesCount != 0 || draft.Modules == nil {
 		t.Fatalf("list = %+v", list)
 	}
@@ -55,7 +55,7 @@ func TestListComplianceModulesetsOfANodeAndOfAModule(t *testing.T) {
 	}
 	// The node attaches 3 and 5, the module is in 3 and 7: only 3 is listed.
 	if collector.requests[2].query.Get("filter") != `modset_mod_name:~^linux\.` || collector.requests[3].query.Get("filter") != "id:in:3" ||
-		list.Node == nil || list.Node.Nodename != "dev2n1" || list.Total != 1 {
+		list.Node == nil || list.Node.Nodename != "dev2n1" || deref(list.Total) != 1 {
 		t.Fatalf("list = %+v, requests %+v", list, collector.requests)
 	}
 	// Nothing selected is answered without listing the modulesets.
@@ -66,7 +66,7 @@ func TestListComplianceModulesetsOfANodeAndOfAModule(t *testing.T) {
 		return `{"data":[]}`
 	}}
 	list, err = newTestService(collector).ListComplianceModulesets(t.Context(), ListComplianceModulesetsOptions{Node: "dev2n1"})
-	if err != nil || list.Total != 0 || list.Modulesets == nil || len(collector.requests) != 2 {
+	if err != nil || deref(list.Total) != 0 || list.Modulesets == nil || len(collector.requests) != 2 {
 		t.Fatalf("empty = %+v, %v, %d requests", list, err, len(collector.requests))
 	}
 	for _, options := range []ListComplianceModulesetsOptions{{Node: "a", Service: "b"}, {Name: " a"}, {Limit: 201}, {Cursor: "garbage"}} {
@@ -109,7 +109,7 @@ func TestGetComplianceModulesetReadsItsTree(t *testing.T) {
 		len(moduleset.Included) != 1 || moduleset.Included[0].Name != "base.linux" || moduleset.Included[0].Modules[0].Name != "linux.files" ||
 		len(moduleset.Rulesets) != 2 || moduleset.Rulesets[0].Name != "ctx.dev2" || moduleset.Rulesets[0].Filterset != "dev2-nodes" || moduleset.Rulesets[1].Variables != 3 ||
 		moduleset.Publications[0] != "Everybody" || moduleset.Responsibles[0] != "Infra Unix" || moduleset.Parents[0] != "all.prod" ||
-		moduleset.NodesCount != 60 || len(moduleset.Nodes) != 2 || moduleset.ServicesCount != 0 || moduleset.EncapsulatedCount != 1 || moduleset.Encapsulated[0] != "db" ||
+		deref(moduleset.NodesCount) != 60 || len(moduleset.Nodes) != 2 || deref(moduleset.ServicesCount) != 0 || deref(moduleset.EncapsulatedCount) != 1 || moduleset.Encapsulated[0] != "db" ||
 		strings.Join(moduleset.Rulesets[1].AttachedTo, ",") != "sec.hardening" || moduleset.Rulesets[1].IncludedBy != nil ||
 		moduleset.Rulesets[0].AttachedTo != nil || strings.Join(moduleset.Rulesets[0].IncludedBy, ",") != "os.linux.security" {
 		t.Fatalf("moduleset = %+v", moduleset)

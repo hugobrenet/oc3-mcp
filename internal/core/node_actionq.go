@@ -76,7 +76,7 @@ type NodeActionList struct {
 	Provenance Provenance         `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Node       *NodeReference     `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
 	Service    *ServiceReference  `json:"service,omitempty" jsonschema:"the service the service filter resolved to"`
-	Total      int                `json:"total" jsonschema:"the number of actions matching, as the collector counts them"`
+	Total      *int               `json:"total" jsonschema:"the number of actions matching, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int                `json:"count" jsonschema:"the number of actions returned in this page"`
 	Actions    []NodeQueuedAction `json:"actions" jsonschema:"the actions, the most recently queued first"`
 	Pending    int                `json:"pending" jsonschema:"the number of actions of this page not over: waiting, notified, queued, sent or running"`
@@ -261,10 +261,11 @@ func (s *Service) readActionPage(ctx context.Context, page *actionPage) (NodeAct
 	if err := s.client.GetJSON(ctx, "/actions", pageQuery(props, "-id", page.filters, page.limit, page.offset), &response); err != nil {
 		return NodeActionList{}, fmt.Errorf("list actions: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > page.limit {
-		return NodeActionList{}, fmt.Errorf("list actions: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), page.limit)
+	if err != nil {
+		return NodeActionList{}, fmt.Errorf("list actions: %w", err)
 	}
-	result.Total, result.Count = *response.Meta.Total, len(response.Data)
+	result.Total, result.Count = counted, len(response.Data)
 
 	// The queue names its users by ID, without a join: the names not read
 	// yet are read once for the page.
@@ -309,7 +310,7 @@ func (s *Service) readActionPage(ctx context.Context, page *actionPage) (NodeAct
 		}
 		result.Actions = append(result.Actions, action)
 	}
-	if next := page.offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := page.offset + len(response.Data); morePages(result.Total, page.offset, len(response.Data), page.limit) {
 		result.NextCursor = encodeListCursor(next, page.fingerprint)
 		result.Truncated = true
 	}

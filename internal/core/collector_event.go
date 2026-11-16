@@ -42,7 +42,7 @@ type CollectorEventList struct {
 	Provenance Provenance        `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Node       *NodeReference    `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
 	Service    *ServiceReference `json:"service,omitempty" jsonschema:"the service the service filter resolved to"`
-	Total      int               `json:"total" jsonschema:"the number of events matching the filters, as the collector counts them"`
+	Total      *int              `json:"total" jsonschema:"the number of events matching the filters, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int               `json:"count" jsonschema:"the number of events returned in this page"`
 	Events     []CollectorEvent  `json:"events" jsonschema:"the events, the most recent first"`
 	NextCursor string            `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -146,15 +146,16 @@ func (s *Service) ListCollectorEvents(ctx context.Context, options ListCollector
 	if err := s.client.GetJSON(ctx, "/logs", pageQuery(collectorEventProps, "-log_date,-id", filters, limit, offset), &response); err != nil {
 		return CollectorEventList{}, fmt.Errorf("list collector events: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return CollectorEventList{}, fmt.Errorf("list collector events: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return CollectorEventList{}, fmt.Errorf("list collector events: %w", err)
 	}
 	nodenames, svcnames, err := s.eventNames(ctx, response.Data)
 	if err != nil {
 		return CollectorEventList{}, fmt.Errorf("list collector events: name the nodes and services: %w", err)
 	}
 	result.Provenance = s.newProvenance()
-	result.Total, result.Count = *response.Meta.Total, len(response.Data)
+	result.Total, result.Count = counted, len(response.Data)
 	result.Events = make([]CollectorEvent, 0, len(response.Data))
 	for _, row := range response.Data {
 		message, data := collectorEventText(row)
@@ -164,7 +165,7 @@ func (s *Service) ListCollectorEvents(ctx context.Context, options ListCollector
 			Message: message, Data: data, NodeID: row.NodeID, Nodename: nodenames[row.NodeID], SvcID: row.SvcID, Svcname: svcnames[row.SvcID],
 		})
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}

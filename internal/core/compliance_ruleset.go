@@ -41,7 +41,7 @@ type ComplianceRulesetList struct {
 	Provenance Provenance          `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
 	Node       *NodeReference      `json:"node,omitempty" jsonschema:"the node the node filter resolved to"`
 	Service    *ServiceReference   `json:"service,omitempty" jsonschema:"the service the service filter resolved to"`
-	Total      int                 `json:"total" jsonschema:"the number of rulesets matching the filters, as the collector counts them"`
+	Total      *int                `json:"total" jsonschema:"the number of rulesets matching the filters, as the collector counts them; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int                 `json:"count" jsonschema:"the number of rulesets returned in this page"`
 	Rulesets   []ComplianceRuleset `json:"rulesets" jsonschema:"the rulesets sorted by name"`
 	NextCursor string              `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page"`
@@ -107,7 +107,8 @@ func (s *Service) ListComplianceRulesets(ctx context.Context, options ListCompli
 		}
 	}
 	if appliesBy != nil && len(appliesBy) == 0 {
-		result.Provenance = s.newProvenance()
+		// None applies: counted by the MCP, zero.
+		result.Provenance, result.Total = s.newProvenance(), intPtr(0)
 		return result, nil
 	}
 
@@ -135,17 +136,18 @@ func (s *Service) ListComplianceRulesets(ctx context.Context, options ListCompli
 	if err := s.client.GetJSON(ctx, "/compliance/rulesets", pageQuery([]string{"id", "ruleset_name", "ruleset_type", "ruleset_public"}, "ruleset_name,id", filters, limit, offset), &response); err != nil {
 		return ComplianceRulesetList{}, fmt.Errorf("list rulesets: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return ComplianceRulesetList{}, fmt.Errorf("list rulesets: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return ComplianceRulesetList{}, fmt.Errorf("list rulesets: %w", err)
 	}
 	result.Provenance = s.newProvenance()
-	result.Total, result.Count = *response.Meta.Total, len(response.Data)
+	result.Total, result.Count = counted, len(response.Data)
 	for _, row := range response.Data {
 		result.Rulesets = append(result.Rulesets, ComplianceRuleset{
 			ID: row.ID, Name: row.Name, Type: row.Type, Public: collectorBool(row.Public), AppliesBy: appliesBy[row.ID],
 		})
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}
@@ -172,7 +174,13 @@ func (s *Service) applyingRulesets(ctx context.Context, attached, kind, idProp, 
 	if err := s.client.GetJSON(ctx, "/compliance/rulesets", pageQuery([]string{"id"}, "id", []string{filterEquals("ruleset_type", "contextual")}, maxContextualRulesets, 0), &contextual); err != nil {
 		return nil, fmt.Errorf("list contextual rulesets: %w", err)
 	}
-	if contextual.Meta.Total == nil || *contextual.Meta.Total > maxContextualRulesets {
+	contextualTotal, err := pageTotal(contextual.Meta.Total, len(contextual.Data), maxContextualRulesets)
+	if err != nil {
+		return nil, fmt.Errorf("list contextual rulesets: %w", err)
+	}
+	// All of them are matched, or none: a read as full as the bound, not
+	// counted, may leave some out.
+	if scanTruncated(contextualTotal, len(contextual.Data), maxContextualRulesets) {
 		return nil, fmt.Errorf("list contextual rulesets: more than %d contextual rulesets to match", maxContextualRulesets)
 	}
 	if len(contextual.Data) == 0 {
@@ -194,8 +202,12 @@ func (s *Service) applyingRulesets(ctx context.Context, attached, kind, idProp, 
 	if err := s.client.GetJSON(ctx, "/compliance/rulesets_variables", query, &variables); err != nil {
 		return nil, fmt.Errorf("read the filtersets of the contextual rulesets: %w", err)
 	}
-	if variables.Meta.Total == nil || *variables.Meta.Total > len(variables.Data) {
-		return nil, fmt.Errorf("read the filtersets of the contextual rulesets: unexpected collector response")
+	variablesTotal, err := pageTotal(variables.Meta.Total, len(variables.Data), maxModulesetScan)
+	if err != nil {
+		return nil, fmt.Errorf("read the filtersets of the contextual rulesets: %w", err)
+	}
+	if scanTruncated(variablesTotal, len(variables.Data), maxModulesetScan) {
+		return nil, fmt.Errorf("read the filtersets of the contextual rulesets: more than %d to read", maxModulesetScan)
 	}
 	filtersets := map[int][]int{}
 	for _, row := range variables.Data {
@@ -209,7 +221,8 @@ func (s *Service) applyingRulesets(ctx context.Context, attached, kind, idProp, 
 		if err := s.client.GetJSON(ctx, path, pageQuery([]string{idProp}, "", []string{filterEquals(idProp, id)}, 1, 0), &members); err != nil {
 			return nil, fmt.Errorf("match the filterset %d: %w", fsetID, err)
 		}
-		if members.Meta.Total == nil || *members.Meta.Total == 0 {
+		// The filterset holds it when the collector gives its row.
+		if len(members.Data) == 0 {
 			continue
 		}
 		for _, id := range rulesets {
@@ -233,19 +246,19 @@ type ComplianceRulesetDetails struct {
 	Responsibles       []string          `json:"responsibles,omitempty" jsonschema:"the groups responsible for the ruleset: their members may change it"`
 	IncludedBy         []string          `json:"included_by,omitempty" jsonschema:"the rulesets including this one: it applies where they apply"`
 	Modulesets         []string          `json:"modulesets,omitempty" jsonschema:"the modulesets this ruleset is attached to"`
-	NodesCount         int               `json:"nodes_count" jsonschema:"the number of nodes the ruleset is attached to directly, among those the caller sees; the rulesets and modulesets including it carry their own attachments"`
+	NodesCount         *int              `json:"nodes_count" jsonschema:"the number of nodes the ruleset is attached to directly, among those the caller sees; the rulesets and modulesets including it carry their own attachments; null when the collector did not count them"`
 	Nodes              []string          `json:"nodes,omitempty" jsonschema:"the names of those nodes, sorted, at most 50"`
-	ServicesCount      int               `json:"services_count" jsonschema:"the number of services the ruleset is attached to directly, as the service itself, among those the caller sees"`
+	ServicesCount      *int              `json:"services_count" jsonschema:"the number of services the ruleset is attached to directly, as the service itself, among those the caller sees; null when the collector did not count them"`
 	Services           []string          `json:"services,omitempty" jsonschema:"the names of those services, sorted, at most 50"`
-	EncapsulatedCount  int               `json:"encapsulated_services_count" jsonschema:"the number of services the ruleset is attached to directly as their encapsulated service, run in their containers"`
+	EncapsulatedCount  *int              `json:"encapsulated_services_count" jsonschema:"the number of services the ruleset is attached to directly as their encapsulated service, run in their containers; null when the collector did not count them"`
 	Encapsulated       []string          `json:"encapsulated_services,omitempty" jsonschema:"the names of those services, sorted, at most 50"`
 }
 
 type RulesetFilterset struct {
 	Name          string   `json:"name" jsonschema:"the filterset name"`
-	NodesCount    int      `json:"nodes_count" jsonschema:"the number of nodes the filterset selects, among those the caller sees: the ruleset applies to them"`
+	NodesCount    *int     `json:"nodes_count" jsonschema:"the number of nodes the filterset selects, among those the caller sees: the ruleset applies to them; null when the collector did not count them"`
 	Nodes         []string `json:"nodes,omitempty" jsonschema:"the names of those nodes, sorted, at most 50"`
-	ServicesCount int      `json:"services_count" jsonschema:"the number of services the filterset selects, among those the caller sees"`
+	ServicesCount *int     `json:"services_count" jsonschema:"the number of services the filterset selects, among those the caller sees; null when the collector did not count them"`
 	Services      []string `json:"services,omitempty" jsonschema:"the names of those services, sorted, at most 50"`
 }
 

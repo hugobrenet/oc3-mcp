@@ -107,14 +107,23 @@ func (s *Service) DeleteServiceInstance(ctx context.Context, service, node strin
 	return result, nil
 }
 
-// countInstances counts the service instances the filters select.
+// countInstances counts the service instances the filters select. Not
+// counted, none is none when the collector gives no row; with a row, the
+// deletion is refused rather than told with a count it cannot give.
 func (s *Service) countInstances(ctx context.Context, filters []string) (int, error) {
 	var response collectorList[map[string]any]
 	if err := s.client.GetJSON(ctx, "/services_instances", pageQuery([]string{"svc_id"}, "svc_id", filters, 1, 0), &response); err != nil {
 		return 0, fmt.Errorf("count instances: %w", err)
 	}
-	if response.Meta.Total == nil {
-		return 0, fmt.Errorf("count instances: unexpected collector response")
+	total, err := pageTotal(response.Meta.Total, len(response.Data), 1)
+	if err != nil {
+		return 0, fmt.Errorf("count instances: %w", err)
 	}
-	return *response.Meta.Total, nil
+	if total == nil {
+		if len(response.Data) == 0 {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("count instances: the collector did not count them: nothing was deleted")
+	}
+	return *total, nil
 }

@@ -69,7 +69,7 @@ type ListOrchestrationRunsOptions struct {
 
 type OrchestrationRunList struct {
 	Provenance Provenance         `json:"provenance" jsonschema:"API source and MCP collection time of this result"`
-	Total      int                `json:"total" jsonschema:"the number of runs matching the filters"`
+	Total      *int               `json:"total" jsonschema:"the number of runs matching the filters; null when the collector did not count them, for a list longer than its count limit or a count that failed: not counted, neither zero nor a size"`
 	Count      int                `json:"count" jsonschema:"the number of runs returned in this page"`
 	Runs       []OrchestrationRun `json:"runs" jsonschema:"the runs, the latest first"`
 	NextCursor string             `json:"next_cursor,omitempty" jsonschema:"the opaque cursor to pass with the same filters for the next page; a run started between two pages shifts them"`
@@ -124,14 +124,15 @@ func (s *Service) ListOrchestrationRuns(ctx context.Context, options ListOrchest
 	if err := s.client.GetJSON(ctx, "/orchestration_runs", pageQuery(orchestrationRunProps, "-started,-id", filters, limit, offset), &response); err != nil {
 		return OrchestrationRunList{}, fmt.Errorf("list orchestration runs: %w", err)
 	}
-	if response.Meta.Total == nil || *response.Meta.Total < 0 || len(response.Data) > limit {
-		return OrchestrationRunList{}, fmt.Errorf("list orchestration runs: unexpected collector response")
+	counted, err := pageTotal(response.Meta.Total, len(response.Data), limit)
+	if err != nil {
+		return OrchestrationRunList{}, fmt.Errorf("list orchestration runs: %w", err)
 	}
-	result := OrchestrationRunList{Provenance: s.newProvenance(), Total: *response.Meta.Total, Count: len(response.Data), Runs: make([]OrchestrationRun, 0, len(response.Data))}
+	result := OrchestrationRunList{Provenance: s.newProvenance(), Total: counted, Count: len(response.Data), Runs: make([]OrchestrationRun, 0, len(response.Data))}
 	for _, row := range response.Data {
 		result.Runs = append(result.Runs, orchestrationRunOf(row))
 	}
-	if next := offset + len(response.Data); len(response.Data) > 0 && next < result.Total {
+	if next := offset + len(response.Data); morePages(result.Total, offset, len(response.Data), limit) {
 		result.NextCursor = encodeListCursor(next, fingerprint)
 		result.Truncated = true
 	}

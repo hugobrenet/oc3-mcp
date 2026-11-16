@@ -68,7 +68,7 @@ With `service` or `node`, the MCP first resolves it, as `get_service` and
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `service`, `node` | The service or node the filters resolved to |
-| `total` | Actions matching the filters, as the collector counts them |
+| `total` | Actions matching the filters, as the collector counts them; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `count`, `truncated` | Actions in this page, and whether more remain |
 | `actions[]` | `id`, `session_id`, `svc_id`, `svcname`, `node_id`, `nodename`, `rid` (empty for the whole instance), `action`, `origin`, `status`, `begin`, `end`, `duration_seconds`, `command` |
 | `next_cursor` | Opaque cursor of the next page, when `truncated` |
@@ -138,7 +138,7 @@ count tool between the pages.
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
 | `service`, `node` | The service or node filter, resolved |
-| `total` | Actions matching the filters |
+| `total` | Actions matching the filters; `null` when the collector did not count them, see [conventions](README.md#conventions) |
 | `group_by`, `groups[]`, `distinct`, `other`, `truncated` | With `group_by`: `value` and `count` of each value, the number of distinct values, and the actions of the values left out by `limit` |
 
 ### Acknowledgement

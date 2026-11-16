@@ -28,7 +28,7 @@ func TestListServiceActionsQueriesActionRows(t *testing.T) {
 		strings.Contains(request.query.Get("props"), "status_log") {
 		t.Fatalf("request = %+v", request)
 	}
-	if actions.Service.Svcname != "kvm/svc/vm1" || actions.Node.Nodename != "dev2n2" || actions.Total != 4 || !actions.Truncated || actions.NextCursor == "" {
+	if actions.Service.Svcname != "kvm/svc/vm1" || actions.Node.Nodename != "dev2n2" || deref(actions.Total) != 4 || !actions.Truncated || actions.NextCursor == "" {
 		t.Fatalf("page = %+v", actions)
 	}
 	got := actions.Actions[0]
@@ -74,7 +74,7 @@ func TestGetServiceActionLogsSplitsActionsAndLogs(t *testing.T) {
 	if request.path != "/services_actions" || request.query.Get("filter") != "sid:eq:"+testSessionID || request.query.Get("orderby") != "id" || request.query.Get("limit") != "500" {
 		t.Fatalf("request = %+v", request)
 	}
-	if logs.SessionID != testSessionID || logs.Total != 3 || logs.Truncated || len(logs.Actions) != 1 || len(logs.Logs) != 2 ||
+	if logs.SessionID != testSessionID || deref(logs.Total) != 3 || logs.Truncated || len(logs.Actions) != 1 || len(logs.Logs) != 2 ||
 		logs.Actions[0].Status != "err" || logs.Logs[0].Time != "2026-10-11 21:11:19" || logs.Logs[0].Nodename != "dev2n2" ||
 		logs.Logs[1].Level != "err" || logs.Logs[1].RID != "container#1" || !strings.Contains(logs.Logs[1].Text, "Cannot access storage file") {
 		t.Fatalf("logs = %+v", logs)
