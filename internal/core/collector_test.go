@@ -86,6 +86,7 @@ func (f *fakeCollector) DeleteJSONBody(_ context.Context, path string, input any
 }
 
 func (f *fakeCollector) record(request fakeRequest) {
+	recordRoute(request.method, request.path)
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 	f.requests = append(f.requests, request)

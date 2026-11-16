@@ -16,8 +16,12 @@ type complianceCollector struct {
 	refusals map[string]string
 }
 
+// change notes a change as CHANGE, which the tests read, whatever its method;
+// the contract notes its method (recordRoute).
 func (c complianceCollector) change(path string) error {
-	c.record(fakeRequest{method: "CHANGE", path: path})
+	c.mutex.Lock()
+	c.requests = append(c.requests, fakeRequest{method: "CHANGE", path: path})
+	c.mutex.Unlock()
 	if text, ok := c.refusals[path]; ok {
 		return errString(text)
 	}
@@ -25,10 +29,12 @@ func (c complianceCollector) change(path string) error {
 }
 
 func (c complianceCollector) PostJSON(_ context.Context, path string, _ any, _ any) error {
+	recordRoute("POST", path)
 	return c.change(path)
 }
 
 func (c complianceCollector) DeleteJSON(_ context.Context, path string, _ url.Values, _ any) error {
+	recordRoute("DELETE", path)
 	return c.change(path)
 }
 
