@@ -69,7 +69,7 @@ var toolKeywords = map[string][]string{
 	"delete_app":                   {"remove app", "drop application", "app deletion"},
 	"delete_filterset":             {"drop filterset", "erase filterset", "filterset deletion"},
 	"delete_form":                  {"remove form", "delete form", "drop form"},
-	"delete_node":                  {"remove node", "decommission", "purge node", "drop node"},
+	"delete_node":                  {"remove node", "decommission", "purge node", "drop node", "delete nodes", "remove nodes", "several nodes"},
 	"delete_orchestration":         {"delete orchestration", "remove workflow", "drop runbook"},
 	"delete_service":               {"remove service", "purge service", "decommission service", "clean inventory"},
 	"delete_service_instance":      {"remove instance", "stale instance", "orphan instance", "purge instance"},
@@ -166,7 +166,7 @@ var toolKeywords = map[string][]string{
 	"unjustify_service_downtime":   {"remove downtime justification", "count downtime again"},
 	"update_app":                   {"rename app", "edit app", "app domain", "app ops team", "application code"},
 	"update_form":                  {"edit form", "change form", "modify form", "form yaml", "rename form"},
-	"update_node":                  {"modify node", "change node", "set app", "set status", "edit node", "node owner", "node location"},
+	"update_node":                  {"modify node", "change node", "set app", "set status", "edit node", "node owner", "node location", "update nodes", "bulk update", "several nodes", "status of nodes"},
 	"update_orchestration":         {"edit orchestration", "change steps", "rename orchestration", "modify workflow", "add step"},
 	"update_tag":                   {"rename tag", "edit tag", "change tag", "tag exclusion", "tag data"},
 }

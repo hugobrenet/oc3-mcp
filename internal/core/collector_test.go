@@ -15,7 +15,9 @@ type fakeCollector struct {
 	// bodies answers a path with its own body instead of body.
 	bodies map[string]string
 	// answer, when set, answers instead of bodies and body.
-	answer   func(path string, query url.Values) string
+	answer func(path string, query url.Values) string
+	// failures fails a request, by its method and path, such as "POST /nodes/n-1".
+	failures map[string]error
 	err      error
 	requests []fakeRequest
 	// mutex guards requests: the tag changes call the collector from
@@ -35,6 +37,9 @@ func (f *fakeCollector) GetJSON(_ context.Context, path string, query url.Values
 	if f.err != nil {
 		return f.err
 	}
+	if err := f.failures["GET "+path]; err != nil {
+		return err
+	}
 	if f.answer != nil {
 		return json.Unmarshal([]byte(f.answer(path, query)), output)
 	}
@@ -51,6 +56,9 @@ func (f *fakeCollector) PostJSON(_ context.Context, path string, input any, outp
 	f.record(fakeRequest{method: "POST", path: path, body: body})
 	if f.err != nil {
 		return f.err
+	}
+	if err := f.failures["POST "+path]; err != nil {
+		return err
 	}
 	return f.reply(path, nil, output)
 }
@@ -70,6 +78,9 @@ func (f *fakeCollector) DeleteJSON(_ context.Context, path string, query url.Val
 	f.record(fakeRequest{method: "DELETE", path: path, query: query})
 	if f.err != nil {
 		return f.err
+	}
+	if err := f.failures["DELETE "+path]; err != nil {
+		return err
 	}
 	return f.reply(path, nil, output)
 }

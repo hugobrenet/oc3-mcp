@@ -40,8 +40,8 @@ Implementation:
 | Tool | Annotations | Collector privilege |
 |---|---|---|
 | `create_node` | not read-only, not destructive | Manager |
-| `update_node` | destructive, idempotent | NodeManager, and responsible for the node |
-| `delete_node` | destructive, idempotent | NodeManager, and responsible for the node |
+| `update_node` | destructive, idempotent | NodeManager, and responsible for each node |
+| `delete_node` | destructive, idempotent | NodeManager, and responsible for each node |
 | `attach_node_tag` | not read-only, not destructive, idempotent | Responsible for each node |
 | `detach_node_tag` | destructive, idempotent | Responsible for each node |
 | `attach_node_ruleset`, `detach_node_ruleset`, `attach_node_moduleset`, `detach_node_moduleset` | destructive, idempotent | Responsible for each node |
@@ -133,27 +133,73 @@ The node holds its properties only until an agent registers and pushes it.
 
 ### `update_node`
 
-Sets properties of one node. A property left out is not changed; an empty
-value clears it, except `app` and `team_responsible`.
+Sets properties of one node or of several, in one call, so that one
+confirmation covers the whole set. A property left out is not changed; an
+empty value clears it, except `app` and `team_responsible`. The collector has
+no bulk route: the MCP sends one update per node, four at a time, and an
+update is not atomic.
+
+#### Selection of the nodes to update
+
+The nodes are given one of three ways, one of them only:
+
+- `node`: one exact node name or node ID;
+- `nodes`: at most 50 exact node names or node IDs, such as the rows the
+  user ticked, resolved as for the tags: an unknown, invisible or ambiguous
+  name refuses the whole call before any change. The description asks the
+  model to name them by their names, which the user reads in the
+  confirmation, and by their IDs only when a name is ambiguous;
+- `where`: the filters of `list_nodes` and `count_nodes`, at least one, as
+  for the tags, see [selection](#selection), `tag`, `filterset`, `ruleset`
+  and `moduleset` included: the MCP reads the selection, and refuses one of
+  more than 1000 nodes, or one that changed while it was read, before any
+  change. An empty `where` is refused: no call updates every node.
+
+The filters go under `where`, apart from the properties to set, which share
+some of their names: `{"where": {"status": "Commissioning"}, "status": "In
+service"}` sets In service the nodes in Commissioning.
+
+#### Outcome of each node
+
+Each node is read first, so that no value is lost without a trace:
+
+- `set`: the update was sent and the collector applied it; `changes[]` gives
+  the value of each property before, and `not_applied[]` a value the
+  collector holds other than the one asked;
+- `unchanged`: the node held every value asked already, nothing was sent;
+- `refused`: the collector refused the read or the update with a 4xx, such
+  as a node the caller is not responsible for; the others are updated still;
+- `unknown`: the update was sent, and the collector answered out of its API
+  or not at all, such as a timeout or a 5xx: `get_node` tells what the node
+  holds;
+- `not_attempted`: nothing was sent for the node, the call ended or the node
+  could not be read.
+
+A read answered out of the collector API before any update was sent fails
+the call as `collector_incompatible`; after one, the nodes left are not
+attempted. One node whose update is refused is an outcome, not a tool error,
+as for the tags.
+
+The details go up to 256 KiB of values, node after node: past it, the nodes
+set keep their outcome, and `details_omitted` counts those whose values
+before and not applied are left out.
 
 #### Collector API
 
 ```text
 GET  /api/apps/<app>, GET /api/groups/<team_responsible>   when given
-GET  /api/nodes/<node>?props=node_id
-GET  /api/nodes/<node_id>?props=node_id,nodename,cluster_id,<properties>
-POST /api/nodes/<node_id>   {properties}
+GET  /api/nodes or /api/tags/<tag_id>/nodes or /api/filtersets/<id>/nodes?props=node_id,nodename,cluster_id&filter=…
+GET  /api/nodes/<node_id>?props=node_id,<properties>   each node
+POST /api/nodes/<node_id>   {properties}                each node to change
 ```
-
-The node is one exact node name or node ID; a name several nodes hold is
-refused with their IDs. The values before the update are read first, so that
-none is lost without a trace.
 
 #### Input
 
 | Input | Meaning |
 |---|---|
-| `node` | One exact node name or node ID |
+| `node` | Optional: one exact node name or node ID |
+| `nodes` | Optional: at most 50 exact node names or node IDs |
+| `where` | Optional: the filters selecting the nodes, see [selection of the nodes to update](#selection-of-the-nodes-to-update) |
 | properties | At least one, see [properties](#properties) |
 
 #### Output
@@ -161,20 +207,35 @@ none is lost without a trace.
 | Output field | Meaning |
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
-| `node` | `node_id`, `nodename`, `cluster_id` |
-| `changes[]` | `property`, `before`, `after`, for each property set |
-| `not_applied[]` | `property`, `requested`, `applied`: the properties the collector holds with another value than asked for |
+| `properties` | The properties set, with the value asked, empty to clear |
+| `filter_tag`, `filterset`, `filter_ruleset`, `filter_moduleset` | The tag, filterset, ruleset or moduleset filter of `where`, resolved |
+| `selected` | Nodes selected |
+| `changed`, `unchanged`, `refused`, `unknown` | Nodes set, holding the values already, refused by the collector, of an outcome not known |
+| `nodes[]` | `node_id`, `nodename`, `outcome`, `reason` of a refusal or of an outcome not known, and with `set`, `changes[]` (`property`, `before`) and `not_applied[]` (`property`, `requested`, `applied`), sorted by node name |
+| `details_omitted` | Nodes set whose details are left out, past the bound |
 
 ### `delete_node`
 
-Deletes one node from the collector, irreversibly.
+Deletes one node or several from the collector, irreversibly, in one call, so
+that one confirmation covers the whole set. The collector has no bulk route:
+the MCP sends one deletion per node, four at a time, and a deletion is not
+atomic.
+
+The nodes are selected as for `update_node`, see [selection of the nodes to
+update](#selection-of-the-nodes-to-update): `node`, `nodes`, at most 50, or
+the filters of `list_nodes` under `where`, at most 1000. A selection by
+filters deletes what it selects when the call runs: the user answers for what
+the filter holds, the confirmation showing the filter, not the nodes. The
+description asks the model to name nodes by their names, which the user
+reads in the confirmation, and by their IDs only when a name is ambiguous. An
+unknown, invisible or ambiguous name refuses the whole call before any
+deletion.
 
 #### Collector API
 
 ```text
-GET    /api/nodes/<node>?props=node_id
-GET    /api/nodes/<node_id>?props=node_id,nodename,cluster_id
-DELETE /api/nodes/<node_id>
+GET    /api/nodes or /api/tags/<tag_id>/nodes or /api/filtersets/<id>/nodes?props=node_id,nodename,cluster_id&filter=…
+DELETE /api/nodes/<node_id>   each node
 ```
 
 The collector deletes the node and, in one transaction, its addresses
@@ -189,15 +250,19 @@ and statistics history are not deleted.
 
 | Input | Meaning |
 |---|---|
-| `node` | One exact node name or node ID |
+| `node` | Optional: one exact node name or node ID |
+| `nodes` | Optional: at most 50 exact node names or node IDs |
+| `where` | Optional: the filters selecting the nodes, as for `update_node` |
 
 #### Output
 
 | Output field | Meaning |
 |---|---|
 | `provenance` | Collector API source and MCP collection time |
-| `node` | `node_id`, `nodename`, `cluster_id` of the deleted node |
-| `deleted` | `true` |
+| `filter_tag`, `filterset`, `filter_ruleset`, `filter_moduleset` | The tag, filterset, ruleset or moduleset filter of `where`, resolved |
+| `selected` | Nodes selected |
+| `changed`, `refused`, `unknown` | Nodes deleted, refused by the collector with a 4xx, of an outcome not known |
+| `nodes[]` | `node_id`, `nodename`, `outcome` (`deleted`, `refused`, `unknown` when the collector answered out of its API or not at all, which `get_node` tells, `not_attempted` when the call ended before) and `reason`, sorted by node name |
 
 ### `attach_node_tag` and `detach_node_tag`
 

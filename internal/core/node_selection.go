@@ -29,10 +29,14 @@ const (
 	ChangeAlreadyDetached = "already_detached"
 	ChangeQueued          = "queued"
 	ChangeSet             = "set"
+	ChangeDeleted         = "deleted"
 	ChangeRemoved         = "removed"
 	ChangeUnchanged       = "unchanged"
 	ChangeRefused         = "refused"
 	ChangeNotAttempted    = "not_attempted"
+	// ChangeUnknown is a change sent whose outcome is not known: the
+	// collector answered out of its API, or not at all.
+	ChangeUnknown = "unknown"
 )
 
 // NodeSelection selects the nodes of a change: Nodes, exact names or IDs,
@@ -52,17 +56,21 @@ type NodeChangeSummary struct {
 	Changed         int                           `json:"changed" jsonschema:"the number of nodes changed"`
 	Unchanged       int                           `json:"unchanged" jsonschema:"the number of nodes already as asked"`
 	Refused         int                           `json:"refused" jsonschema:"the number of nodes the collector refused the change for"`
+	Unknown         int                           `json:"unknown,omitempty" jsonschema:"the number of nodes a change was sent for whose outcome is not known: read them to tell what they hold"`
 	Nodes           []NodeChangeOutcome           `json:"nodes" jsonschema:"the outcome on each node, sorted by node name"`
 }
 
 type NodeChangeOutcome struct {
 	NodeID    string `json:"node_id" jsonschema:"the collector node ID"`
 	Nodename  string `json:"nodename" jsonschema:"the node name"`
-	Outcome   string `json:"outcome" jsonschema:"attached, already_attached, detached, already_detached, queued, refused, or not_attempted when the call ended before"`
-	Reason    string `json:"reason,omitempty" jsonschema:"with refused, the reason the collector gave"`
+	Outcome   string `json:"outcome" jsonschema:"attached, already_attached, detached, already_detached, queued, set, unchanged when the node held every value asked already, deleted, refused, unknown when the change was sent and the collector answered out of its API or not at all, or not_attempted when nothing was sent for the node, the call ended or the node could not be read"`
+	Reason    string `json:"reason,omitempty" jsonschema:"with refused, the reason the collector gave; with unknown or not_attempted, what happened"`
 	ActionID  int    `json:"action_id,omitempty" jsonschema:"with queued, the ID of the action in the queue, which list_node_actions follows"`
 	QueuedFor string `json:"queued_for,omitempty" jsonschema:"with queued, how the node reads its queue: feed, read by an om3 agent; pull or push, the means of the former agent"`
 	Warning   string `json:"warning,omitempty" jsonschema:"with queued, why the action may never run, such as a node queued for pull, which an om3 agent never reads; tell the user"`
+	// Changes and NotApplied tell an update of the properties of the node.
+	Changes    []NodeChange           `json:"changes,omitempty" jsonschema:"with set, each property the call set, with its value before the update; after it, the value asked, but those of not_applied"`
+	NotApplied []NodePropertyMismatch `json:"not_applied,omitempty" jsonschema:"with set, the properties the collector holds with another value than the one asked for"`
 }
 
 // forEachSelected runs change on the count items selected, a few at a time,
@@ -149,12 +157,14 @@ func (s *Service) changeSelectedNodes(ctx context.Context, selection NodeSelecti
 	})
 	for _, outcome := range outcomes {
 		switch outcome.Outcome {
-		case ChangeAttached, ChangeDetached, ChangeQueued:
+		case ChangeAttached, ChangeDetached, ChangeQueued, ChangeSet, ChangeDeleted:
 			summary.Changed++
-		case ChangeAlreadyAttached, ChangeAlreadyDetached:
+		case ChangeAlreadyAttached, ChangeAlreadyDetached, ChangeUnchanged:
 			summary.Unchanged++
 		case ChangeRefused:
 			summary.Refused++
+		case ChangeUnknown:
+			summary.Unknown++
 		}
 	}
 	summary.Selected, summary.Nodes = len(nodes), outcomes

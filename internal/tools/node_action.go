@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/opensvc/oc3-mcp/internal/core"
@@ -54,15 +55,65 @@ type CreateNodeInput struct {
 
 type CreateNodeOutput = core.NodeCreation
 
+// UpdateNodeInput selects the nodes of an update, one node, nodes or the
+// filters of list_nodes under where, apart from the properties to set, which
+// share some of their names, and the properties.
 type UpdateNodeInput struct {
-	Node string `json:"node" jsonschema:"one exact node name or collector node ID"`
+	Node  string            `json:"node,omitempty" jsonschema:"optional one exact node name, or collector node ID when its name is ambiguous; not with nodes or where"`
+	Nodes []string          `json:"nodes,omitempty" jsonschema:"optional exact node names, or collector node IDs for those whose name is ambiguous, at most 50, such as the rows the user ticked; the confirmation the user approves shows them, which names make readable; not with node or where"`
+	Where *NodeFiltersInput `json:"where,omitempty" jsonschema:"optional filters of list_nodes and count_nodes selecting the nodes to update, at least one, at most 1000 nodes, such as {\"filterset\": \"prod-eu\"} or {\"status\": \"Commissioning\"}; not with node or nodes"`
 	NodePropertiesInput
+}
+
+// options gives the update of the input, its nodes given one way only: node,
+// nodes, or where with one filter at least.
+func (input UpdateNodeInput) options() (core.NodeUpdateOptions, error) {
+	selection, err := nodeSelection(input.Node, input.Nodes, input.Where)
+	if err != nil {
+		return core.NodeUpdateOptions{}, err
+	}
+	return core.NodeUpdateOptions{NodeSelection: selection, Properties: input.properties()}, nil
 }
 
 type UpdateNodeOutput = core.NodeUpdate
 
+// DeleteNodeInput selects the nodes to delete: one node, nodes, or the
+// filters of list_nodes under where, as update_node does.
 type DeleteNodeInput struct {
-	Node string `json:"node" jsonschema:"one exact node name or collector node ID"`
+	Node  string            `json:"node,omitempty" jsonschema:"optional one exact node name, or collector node ID when its name is ambiguous; not with nodes or where"`
+	Nodes []string          `json:"nodes,omitempty" jsonschema:"optional exact node names, or collector node IDs for those whose name is ambiguous, at most 50, such as the rows the user ticked; the confirmation the user approves shows them, which names make readable; not with node or where"`
+	Where *NodeFiltersInput `json:"where,omitempty" jsonschema:"optional filters of list_nodes and count_nodes selecting the nodes to delete, at least one, at most 1000 nodes, such as {\"tag\": \"to_delete\"}; not with node or nodes"`
+}
+
+// selection gives the nodes of the input, given one way only: node, nodes,
+// or where with one filter at least.
+func (input DeleteNodeInput) selection() (core.NodeSelection, error) {
+	return nodeSelection(input.Node, input.Nodes, input.Where)
+}
+
+// nodeSelection gives the nodes of a change, given one way only: node,
+// nodes, or where with one filter at least.
+func nodeSelection(node string, nodes []string, where *NodeFiltersInput) (core.NodeSelection, error) {
+	given := 0
+	for _, set := range []bool{node != "", len(nodes) > 0, where != nil} {
+		if set {
+			given++
+		}
+	}
+	if given != 1 {
+		return core.NodeSelection{}, fmt.Errorf("pass node, nodes or where, one of them")
+	}
+	switch {
+	case node != "":
+		return core.NodeSelection{Nodes: []string{node}}, nil
+	case where != nil:
+		filters := where.core()
+		if filters == (core.NodeFilters{}) {
+			return core.NodeSelection{}, fmt.Errorf("pass one filter at least under where: no call changes every node")
+		}
+		return core.NodeSelection{Filters: filters}, nil
+	}
+	return core.NodeSelection{Nodes: nodes}, nil
 }
 
 type DeleteNodeOutput = core.NodeDeletion
@@ -198,14 +249,21 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 		&mcp.Tool{
 			Name:  "update_node",
 			Title: "Update node",
-			Description: "Set properties of one node in the OpenSVC collector: its app, the group responsible for it, its status, role, asset data and location. A property left out is not changed; an empty value clears it, except app and team_responsible. " +
-				"Returns each property set with its value before and after the update. Changing team_responsible changes who may manage the node. " +
+			Description: "Set properties of one node or of several in the OpenSVC collector, in one call: their app, the group responsible for them, their status, role, asset data and location. " +
+				"Select one node with node, exact nodes with nodes, at most 50, or the nodes the filters of list_nodes select with where, such as a filterset, a tag, a status, a ruleset or a moduleset, at most 1000: a set the user names by a criterion goes by where, the rows they ticked by nodes. " +
+				"Name the nodes by their names, which the confirmation the user approves shows, as read from list_nodes or get_node when only their IDs are known; an ID only for a name several clusters hold. " +
+				"An unknown or ambiguous node name refuses the whole call, before any change. A property left out is not changed; an empty value clears it, except app and team_responsible. " +
+				"Returns the outcome on each node: set, with each property set and its value before the update; unchanged, when it held every value asked already; refused, with the reason, the others updated still; unknown, when the collector answered out of its API or not at all, which get_node tells. Changing team_responsible changes who may manage the node. " +
 				"The agent of the node rewrites asset_env, sec_zone, team_integ, team_support and the location at each push when the configuration of its node sets them. " +
 				"Requires the NodeManager privilege and to be responsible for the node.",
 			Annotations: actionAnnotations(true, true),
 		},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input UpdateNodeInput) (*mcp.CallToolResult, UpdateNodeOutput, error) {
-			result, err := service.UpdateNode(ctx, input.Node, input.properties())
+			options, err := input.options()
+			if err != nil {
+				return nil, UpdateNodeOutput{}, err
+			}
+			result, err := service.UpdateNodes(ctx, options)
 			if err != nil {
 				return nil, UpdateNodeOutput{}, err
 			}
@@ -446,12 +504,20 @@ func RegisterNodeActionTools(registrar *Registrar, service *core.Service) error 
 		&mcp.Tool{
 			Name:  "delete_node",
 			Title: "Delete node",
-			Description: "Delete one node from the OpenSVC collector, irreversibly, with its related entries. They are its addresses, adapters, tags, packages, patches, service instance states and their history, resource history, live checks, alerts and SAN zones, and the credentials of its agent, which must register again to push. " +
-				"It does not stop or change the node itself. Requires the NodeManager privilege and to be responsible for the node.",
+			Description: "Delete one node or several from the OpenSVC collector, irreversibly, in one call, with their related entries. They are their addresses, adapters, tags, packages, patches, service instance states and their history, resource history, live checks, alerts and SAN zones, and the credentials of their agent, which must register again to push. " +
+				"Select one node with node, exact nodes with nodes, at most 50, such as the rows the user ticked, or the nodes the filters of list_nodes select with where, such as a tag or a status, at most 1000: a set the user names by a criterion goes by where. " +
+				"Name nodes by their names, which the confirmation the user approves shows, as read from list_nodes or get_node when only their IDs are known; an ID only for a name several clusters hold. " +
+				"An unknown or ambiguous node name refuses the whole call, before any deletion. " +
+				"Returns the outcome on each node: deleted; refused, with the reason, the others deleted still; unknown, when the collector answered out of its API or not at all, which get_node tells. " +
+				"It does not stop or change the nodes themselves. Requires the NodeManager privilege and to be responsible for each node.",
 			Annotations: actionAnnotations(true, true),
 		},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input DeleteNodeInput) (*mcp.CallToolResult, DeleteNodeOutput, error) {
-			result, err := service.DeleteNode(ctx, input.Node)
+			selection, err := input.selection()
+			if err != nil {
+				return nil, DeleteNodeOutput{}, err
+			}
+			result, err := service.DeleteNodes(ctx, selection)
 			if err != nil {
 				return nil, DeleteNodeOutput{}, err
 			}

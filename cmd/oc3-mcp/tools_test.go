@@ -766,7 +766,16 @@ func TestNodeActionToolsChangeTheCollector(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.Method + " " + r.URL.EscapedPath() {
 		case "GET /nodes":
-			_, _ = w.Write([]byte(`{"data":[],"meta":{"total":0}}`))
+			// The node to create is none yet; the nodes to update are
+			// resolved by name, or selected by their status.
+			switch r.URL.Query().Get("filter") {
+			case "nodename:in:lab01":
+				_, _ = w.Write([]byte(`{"data":[{"node_id":"n-9","nodename":"lab01"}],"meta":{"total":1}}`))
+			case "status:eq:Commissioning":
+				_, _ = w.Write([]byte(`{"data":[{"node_id":"n-9","nodename":"lab01"}],"meta":{"total":1}}`))
+			default:
+				_, _ = w.Write([]byte(`{"data":[],"meta":{"total":0}}`))
+			}
 		case "GET /apps/DATA":
 			_, _ = w.Write([]byte(`{"id":3,"app":"DATA"}`))
 		case "POST /nodes":
@@ -788,14 +797,49 @@ func TestNodeActionToolsChangeTheCollector(t *testing.T) {
 	if result.IsError || created["node"].(map[string]any)["node_id"] != "n-9" || posted["nodename"] != "lab01" || posted["node_id"] != nil {
 		t.Fatalf("create_node = %+v, posted %v", created, posted)
 	}
-	result, update := call("update_node", map[string]any{"node": "lab01", "status": "In service"})
-	changes, _ := update["changes"].([]any)
-	if result.IsError || len(changes) != 1 || changes[0].(map[string]any)["after"] != "In service" {
-		t.Fatalf("update_node = %+v", update)
+	// One node, or the nodes a filter selects under where, apart from the
+	// status to set: one call, one outcome per node.
+	for _, arguments := range []map[string]any{
+		{"node": "lab01", "status": "In service"},
+		{"nodes": []string{"lab01"}, "status": "In service"},
+		{"where": map[string]any{"status": "Commissioning"}, "status": "In service"},
+	} {
+		result, update := call("update_node", arguments)
+		nodes, _ := update["nodes"].([]any)
+		properties, _ := update["properties"].(map[string]any)
+		if result.IsError || update["selected"] != float64(1) || update["changed"] != float64(1) || len(nodes) != 1 || properties["status"] != "In service" {
+			t.Fatalf("update_node %v = %+v", arguments, update)
+		}
+		changes, _ := nodes[0].(map[string]any)["changes"].([]any)
+		if len(changes) != 1 || changes[0].(map[string]any)["property"] != "status" || changes[0].(map[string]any)["before"] != "" {
+			t.Fatalf("update_node %v changes = %+v", arguments, nodes[0])
+		}
 	}
-	result, deletion := call("delete_node", map[string]any{"node": "lab01"})
-	if result.IsError || deletion["deleted"] != true {
-		t.Fatalf("delete_node = %+v", deletion)
+	// One selection only, and where with one filter at least: no call
+	// updates every node.
+	for _, arguments := range []map[string]any{
+		{"node": "lab01", "nodes": []string{"lab02"}, "status": "In service"},
+		{"node": "lab01", "where": map[string]any{"status": "Commissioning"}, "status": "In service"},
+		{"nodes": []string{"lab01"}, "where": map[string]any{}, "status": "In service"},
+		{"where": map[string]any{}, "status": "In service"},
+		{"status": "In service"},
+	} {
+		if result, _ := call("update_node", arguments); !result.IsError {
+			t.Fatalf("update_node accepted %v", arguments)
+		}
+	}
+	// One node, nodes named or filters under where: one call, one outcome per node.
+	for _, arguments := range []map[string]any{{"node": "lab01"}, {"nodes": []string{"lab01"}}, {"where": map[string]any{"status": "Commissioning"}}} {
+		result, deletion := call("delete_node", arguments)
+		nodes, _ := deletion["nodes"].([]any)
+		if result.IsError || deletion["changed"] != float64(1) || len(nodes) != 1 || nodes[0].(map[string]any)["outcome"] != "deleted" {
+			t.Fatalf("delete_node %v = %+v", arguments, deletion)
+		}
+	}
+	for _, arguments := range []map[string]any{{}, {"node": "lab01", "nodes": []string{"lab02"}}, {"where": map[string]any{}}, {"node": "lab01", "where": map[string]any{"status": "x"}}} {
+		if result, _ := call("delete_node", arguments); !result.IsError {
+			t.Fatalf("delete_node accepted %v", arguments)
+		}
 	}
 }
 
@@ -916,8 +960,22 @@ func TestNodeActionToolsNeedActionsEnabled(t *testing.T) {
 				t.Fatalf("%s inputs = %v", name, inputs)
 			}
 		}
+		// An update selects one node, nodes or filters under where, none
+		// of them required.
+		var updateSchema struct {
+			Properties map[string]struct {
+				Type       any            `json:"type"`
+				Properties map[string]any `json:"properties"`
+			} `json:"properties"`
+			Required []string `json:"required"`
+		}
 		schema, _ := json.Marshal(found["update_node"].InputSchema)
-		if !strings.Contains(string(schema), `"loc_city"`) || !strings.Contains(string(schema), `"required":["node"]`) {
+		if err := json.Unmarshal(schema, &updateSchema); err != nil {
+			t.Fatal(err)
+		}
+		where := updateSchema.Properties["where"]
+		if len(updateSchema.Required) != 0 || updateSchema.Properties["loc_city"].Type == nil || updateSchema.Properties["nodes"].Type == nil ||
+			where.Properties["filterset"] == nil || where.Properties["status"] == nil || where.Properties["ruleset"] == nil {
 			t.Fatalf("update_node schema = %s", schema)
 		}
 		// The justification of a downtime requires its comment and whether
